@@ -1,7 +1,10 @@
 """
 Procesor zdrowia dysków - analizuje stan dysków i wykrywa problemy.
+Zaimplementowano filtrowanie ShadowCopy errors i de-duplikację zdarzeń.
 """
 from utils.disk_helper import filter_disk_errors_by_existing_drives, get_existing_drives
+from utils.shadowcopy_helper import filter_shadowcopy_errors
+from utils.event_deduplicator import deduplicate_events
 from utils.logger import get_logger
 
 logger = get_logger()
@@ -47,9 +50,10 @@ def process(storage_data):
                 "serial": disk.get("serial")
             })
     
-    # Sprawdź błędy SMART
+    # Sprawdź błędy SMART (z de-duplikacją)
     smart_errors = storage_data.get("smart_errors", [])
     if smart_errors:
+        smart_errors = deduplicate_events(smart_errors)
         for error in smart_errors:
             issues.append({
                 "type": "SMART_ERROR",
@@ -61,9 +65,10 @@ def process(storage_data):
                 "description": "SMART error indicates physical disk problems"
             })
     
-    # Sprawdź błędy I/O
+    # Sprawdź błędy I/O (z de-duplikacją)
     io_errors = storage_data.get("io_errors", [])
     if io_errors:
+        io_errors = deduplicate_events(io_errors)
         for error in io_errors:
             issues.append({
                 "type": "IO_ERROR",
@@ -74,16 +79,22 @@ def process(storage_data):
                 "component": "Storage"
             })
     
-    # Sprawdź ogólne błędy dysków - filtruj tylko istniejące dyski
+    # Sprawdź ogólne błędy dysków - filtruj ShadowCopy i nieistniejące dyski (z de-duplikacją)
     disk_errors = storage_data.get("disk_errors", [])
     if disk_errors:
+        disk_errors = deduplicate_events(disk_errors)
         # Pobierz listę istniejących dysków
         existing_drives = get_existing_drives()
         logger.debug(f"[STORAGE_HEALTH] Filtering {len(disk_errors)} disk errors against {len(existing_drives)} existing drives")
         
-        # Filtruj błędy dotyczące nieistniejących dysków
-        filtered_disk_errors = filter_disk_errors_by_existing_drives(disk_errors, existing_drives)
+        # Najpierw filtruj ShadowCopy errors
+        real_disk_errors, shadowcopy_errors = filter_shadowcopy_errors(disk_errors)
+        logger.info(f"[STORAGE_HEALTH] Filtered ShadowCopy: {len(real_disk_errors)} real, {len(shadowcopy_errors)} ShadowCopy")
         
+        # Następnie filtruj błędy dotyczące nieistniejących dysków
+        filtered_disk_errors = filter_disk_errors_by_existing_drives(real_disk_errors, existing_drives)
+        
+        # Dodaj rzeczywiste błędy dysków
         for error in filtered_disk_errors:
             warnings.append({
                 "type": "DISK_WARNING",
@@ -91,11 +102,25 @@ def process(storage_data):
                 "message": error.get("message", ""),
                 "event_id": error.get("event_id", ""),
                 "timestamp": error.get("timestamp", ""),
-                "component": "Storage"
+                "component": "Storage",
+                "category": "REAL_DISK_ERROR"
             })
         
-        if len(filtered_disk_errors) < len(disk_errors):
-            logger.info(f"[STORAGE_HEALTH] Filtered out {len(disk_errors) - len(filtered_disk_errors)} errors for non-existent drives")
+        # Dodaj błędy ShadowCopy jako osobna kategoria (nie wpływają na zdrowie dysku)
+        for error in shadowcopy_errors:
+            warnings.append({
+                "type": "SHADOWCOPY_ERROR",
+                "severity": "INFO",
+                "message": error.get("message", ""),
+                "event_id": error.get("event_id", ""),
+                "timestamp": error.get("timestamp", ""),
+                "component": "ShadowCopy",
+                "category": "SHADOWCOPY_ERROR",
+                "description": "ShadowCopy error - does not affect disk health"
+            })
+        
+        if len(filtered_disk_errors) < len(real_disk_errors):
+            logger.info(f"[STORAGE_HEALTH] Filtered out {len(real_disk_errors) - len(filtered_disk_errors)} errors for non-existent drives")
     
     return {
         "data": storage_data,

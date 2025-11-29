@@ -64,32 +64,45 @@ def process(hardware_data):
     # Sprawdź dyski - filtruj tylko istniejące dyski
     disks = hardware_data.get("disks", [])
     existing_drives = get_existing_drives()
-    logger.debug(f"[HARDWARE] Processing {len(disks)} disks, {len(existing_drives)} existing drives: {existing_drives}")
+    logger.info(f"[HARDWARE_PROCESSOR] Processing {len(disks)} disks from hardware data")
+    logger.debug(f"[HARDWARE_PROCESSOR] Existing drives: {existing_drives}")
     
     for disk in disks:
         device = disk.get('device', '')
+        mountpoint = disk.get('mountpoint', '')
+        
+        # Wyciągnij literę dysku z device (np. "E:\" -> "E:")
+        drive_letter = None
+        if device and len(device) >= 2:
+            if device[1] == ':':
+                drive_letter = device[:2].upper()
+            elif ':' in device:
+                drive_letter = device.split(':')[0] + ':'
+        
+        logger.debug(f"[HARDWARE_PROCESSOR] Processing disk: device={device}, mountpoint={mountpoint}, drive_letter={drive_letter}, has_error={'error' in disk}")
         
         # Sprawdź czy dysk faktycznie istnieje przed raportowaniem błędu
         if "error" in disk:
-            # Wyciągnij literę dysku z device (np. "E:\" -> "E:")
-            drive_letter = None
-            if device and len(device) >= 2:
-                if device[1] == ':':
-                    drive_letter = device[:2].upper()
-                elif ':' in device:
-                    drive_letter = device.split(':')[0] + ':'
+            error_msg = disk.get('error', 'Unknown error')
+            error_type = disk.get('error_type', 'Unknown')
             
-            # Sprawdź czy dysk istnieje
+            # Sprawdź czy dysk istnieje (jest dostępny)
             if drive_letter:
-                if not drive_exists(drive_letter):
-                    logger.debug(f"[HARDWARE] Skipping error for non-existent drive {drive_letter}: {disk.get('error')}")
-                    continue  # Pomiń błędy dla nieistniejących dysków
+                exists = drive_exists(drive_letter)
+                logger.debug(f"[HARDWARE_PROCESSOR] Drive {drive_letter} exists check: {exists}")
+                
+                if not exists:
+                    # Dysk jest wykryty przez psutil, ale nie jest dostępny (np. PermissionError)
+                    # Nie raportujemy tego jako problem, bo może to być normalne (CD-ROM bez płyty, itp.)
+                    logger.debug(f"[HARDWARE_PROCESSOR] Drive {drive_letter} detected but not accessible ({error_type}): {error_msg}. Not reporting as issue.")
+                    continue  # Pomiń raportowanie błędu dla niedostępnych dysków
             
-            # Jeśli dysk istnieje lub nie można określić litery, raportuj błąd
+            # Jeśli dysk istnieje (jest dostępny), ale ma błąd, raportuj jako problem
+            logger.info(f"[HARDWARE_PROCESSOR] Reporting DISK_ACCESS_ERROR for accessible drive {device}: {error_msg}")
             issues.append({
                 "type": "DISK_ACCESS_ERROR",
                 "severity": "ERROR",
-                "message": f"Disk {device} access error: {disk.get('error')}",
+                "message": f"Disk {device} access error: {error_msg}",
                 "component": "Storage"
             })
         else:
@@ -103,9 +116,12 @@ def process(hardware_data):
                     drive_letter = device.split(':')[0] + ':'
             
             # Jeśli można określić literę dysku, sprawdź czy istnieje
-            if drive_letter and not drive_exists(drive_letter):
-                logger.debug(f"[HARDWARE] Skipping warnings for non-existent drive {drive_letter}")
-                continue  # Pomiń ostrzeżenia dla nieistniejących dysków
+            if drive_letter:
+                exists = drive_exists(drive_letter)
+                logger.debug(f"[HARDWARE_PROCESSOR] Drive {drive_letter} exists check: {exists}")
+                if not exists:
+                    logger.debug(f"[HARDWARE_PROCESSOR] Skipping warnings for non-existent drive {drive_letter}")
+                    continue  # Pomiń ostrzeżenia dla nieistniejących dysków
             
             disk_percent = disk.get("percent", 0)
             if disk_percent > 90:

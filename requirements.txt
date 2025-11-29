@@ -7,3 +7,8 @@ WMI>=1.5.1; sys_platform == "win32"
 
 # Optional dependencies
 GPUtil>=1.4.0; sys_platform == "win32"
+
+# Testing and utilities
+pytest>=7.0.0
+chardet>=5.0.0
+python-dateutil>=2.8.0

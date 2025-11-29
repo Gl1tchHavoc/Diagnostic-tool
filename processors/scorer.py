@@ -29,11 +29,18 @@ PROBLEM_PATTERNS = {
     "REGISTRY_TXR_FAILURE": {
         "likely_causes": [
             "Disk corruption or bad sectors",
-            "ShadowCopy corruption",
             "Registry corruption",
             "Hardware failure (disk/controller)"
         ],
         "confidence": 0.95
+    },
+    "SHADOWCOPY_ERROR": {
+        "likely_causes": [
+            "ShadowCopy corruption (does not affect disk health)",
+            "VSS service issues",
+            "Old snapshot cleanup needed"
+        ],
+        "confidence": 0.0  # Nie wpływa na zdrowie dysku
     },
     "SMART_ERROR": {
         "likely_causes": [
@@ -163,6 +170,18 @@ def calculate_score(issue):
     """Oblicza wynik dla pojedynczego problemu."""
     score = 0
     
+    # ShadowCopy errors → 0 punktów (nie wpływają na zdrowie dysku)
+    issue_type = issue.get("type", "")
+    category = issue.get("category", "")
+    
+    if issue_type == "SHADOWCOPY_ERROR" or category == "SHADOWCOPY_ERROR":
+        return 0
+    
+    # Błędy z nieistniejących wolumenów → 0 punktów
+    if "non-existent" in issue.get("message", "").lower() or "not accessible" in issue.get("message", "").lower():
+        if category and "REAL_DISK_ERROR" not in category:
+            return 0
+    
     # Podstawowy wynik na podstawie severity
     severity = issue.get("severity", "INFO")
     score += SEVERITY_WEIGHTS.get(severity, 5)
@@ -172,7 +191,6 @@ def calculate_score(issue):
     score += COMPONENT_WEIGHTS.get(component, 10)
     
     # Bonus za znany wzorzec problemu
-    issue_type = issue.get("type", "")
     if issue_type in PROBLEM_PATTERNS:
         pattern = PROBLEM_PATTERNS[issue_type]
         score += pattern["confidence"] * 50

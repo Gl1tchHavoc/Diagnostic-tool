@@ -1,13 +1,25 @@
 """
 BSOD Analyzer - analizuje ostatni BSOD i identyfikuje najbardziej prawdopodobne przyczyny.
+Używa nowego modułu correlation/bsod_correlation.py dla ulepszonej korelacji.
 """
 from datetime import datetime, timedelta
 from collections import defaultdict
 import re
 from utils.logger import get_logger
 
-# Konfiguracja
+# Import nowego modułu korelacji
+try:
+    from correlation.bsod_correlation import BSODCorrelator
+    NEW_CORRELATION_AVAILABLE = True
+except ImportError:
+    NEW_CORRELATION_AVAILABLE = False
+    logger = get_logger()
+    logger.warning("[BSOD_ANALYZER] New correlation module not available, using legacy method")
+
+# Konfiguracja - BSOD Analysis 2.0
 DEFAULT_TIME_WINDOW_MINUTES = 15
+PRIMARY_TIME_WINDOW_MINUTES = 3  # Primary window dla krytycznych zdarzeń
+EXTENDED_TIME_WINDOW_MINUTES = 15  # Extended window dla szerszej analizy
 MAX_TIME_WINDOW_MINUTES = 60
 
 # Wagi kategorii eventów
@@ -60,8 +72,115 @@ EXCLUDE_KEYWORDS = [
 ]
 
 
+def extract_bugcheck_from_event(event):
+    """Wyciąga bugcheck code z eventu (Event ID 1001 lub 41)."""
+    message = event.get("message", "")
+    event_id = str(event.get("event_id", ""))
+    
+    # Event ID 1001 zawiera bugcheck code
+    if event_id == "1001" or "bugcheck" in message.lower():
+        import re
+        patterns = [
+            r'BugCheck\s+([0-9A-Fa-f]+)',
+            r'0x([0-9A-Fa-f]{8})',
+            r'stop\s+code\s+([0-9A-Fa-f]+)',
+            r'BugCheckCode:\s*([0-9A-Fa-f]+)'
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, message, re.IGNORECASE)
+            if match:
+                code = match.group(1)
+                return f"0x{code.upper().zfill(8)}"
+    
+    # Event ID 41 może zawierać bugcheck code
+    if event_id == "41":
+        import re
+        patterns = [
+            r'BugCheckCode:\s*([0-9A-Fa-f]+)',
+            r'0x([0-9A-Fa-f]{8})'
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, message, re.IGNORECASE)
+            if match:
+                code = match.group(1)
+                return f"0x{code.upper().zfill(8)}"
+    
+    return None
+
+def extract_bugcheck_parameters(event):
+    """Wyciąga parametry bugcheck (Parameter1-4) z eventu."""
+    message = event.get("message", "")
+    params = {}
+    
+    import re
+    for i in range(1, 5):
+        pattern = rf'Parameter{i}:\s*([0-9A-Fa-f]+)'
+        match = re.search(pattern, message, re.IGNORECASE)
+        if match:
+            params[f"Parameter{i}"] = f"0x{match.group(1).upper()}"
+    
+    return params if params else None
+
+def extract_dump_file(event):
+    """Wyciąga ścieżkę do pliku dump z eventu."""
+    message = event.get("message", "")
+    
+    import re
+    patterns = [
+        r'DumpFile:\s*([^\s]+)',
+        r'C:\\Windows\\[^\\]+\.dmp',
+        r'C:\\Windows\\Minidump\\[^\\]+\.dmp'
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, message, re.IGNORECASE)
+        if match:
+            return match.group(1) if match.groups() else match.group(0)
+    
+    return None
+
+def analyze_minidumps(bsod_data):
+    """
+    Analizuje minidump files jeśli dostępne.
+    
+    Returns:
+        dict: Informacje o minidumpach
+    """
+    if not bsod_data or not isinstance(bsod_data, dict):
+        return None
+    
+    minidumps = bsod_data.get("minidumps", [])
+    if not minidumps:
+        return None
+    
+    # Znajdź najnowszy minidump
+    latest_dump = None
+    latest_time = None
+    
+    for dump in minidumps:
+        modified = dump.get("modified", "")
+        if modified:
+            try:
+                from datetime import datetime
+                dump_time = datetime.fromisoformat(modified.replace('Z', '+00:00'))
+                if latest_time is None or dump_time > latest_time:
+                    latest_time = dump_time
+                    latest_dump = dump
+            except:
+                pass
+    
+    if latest_dump:
+        return {
+            "path": latest_dump.get("path", ""),
+            "size": latest_dump.get("size", 0),
+            "modified": latest_dump.get("modified", ""),
+            "type": latest_dump.get("type", "MINIDUMP"),
+            "note": "Minidump file found - detailed analysis requires WinDbg or similar tools"
+        }
+    
+    return None
+
 def analyze_bsod(system_logs_data, hardware_data, drivers_data, bsod_data=None, 
-                 time_window_minutes=DEFAULT_TIME_WINDOW_MINUTES):
+                 time_window_minutes=DEFAULT_TIME_WINDOW_MINUTES, use_new_correlation=False):
     """
     Analizuje ostatni BSOD i identyfikuje najbardziej prawdopodobne przyczyny.
     
@@ -71,12 +190,36 @@ def analyze_bsod(system_logs_data, hardware_data, drivers_data, bsod_data=None,
         drivers_data (list): Lista driverów z informacjami
         bsod_data (dict, optional): Dane z bsod_dumps collector
         time_window_minutes (int): Okno czasowe do analizy przed BSOD (domyślnie 15 min)
+        use_new_correlation (bool): Jeśli True, używa nowego modułu correlation (domyślnie False)
     
     Returns:
         dict: Strukturyzowana analiza BSOD z confidence scores i rekomendacjami
     """
     logger = get_logger()
     logger.debug("[BSOD] Starting BSOD analysis")
+    
+    # Jeśli dostępny nowy moduł korelacji i użytkownik chce go użyć
+    if use_new_correlation and NEW_CORRELATION_AVAILABLE:
+        logger.info("[BSOD] Using new correlation module")
+        try:
+            correlator = BSODCorrelator(time_window_minutes=time_window_minutes)
+            new_result = correlator.analyze_bsod()
+            
+            if new_result.get('bsod_found'):
+                # Konwertuj wynik do formatu kompatybilnego z istniejącym kodem
+                return _convert_new_correlation_result(new_result, hardware_data, drivers_data)
+            else:
+                return {
+                    "bsod_found": False,
+                    "message": new_result.get('message', 'No BSOD found'),
+                    "related_events": [],
+                    "top_causes": [],
+                    "recommendations": []
+                }
+        except Exception as e:
+            logger.error(f"[BSOD] Error using new correlation module: {e}")
+            logger.info("[BSOD] Falling back to legacy method")
+            # Fallback do starej metody - kontynuuj poniżej
     
     result = {
         "bsod_found": False,
@@ -88,7 +231,7 @@ def analyze_bsod(system_logs_data, hardware_data, drivers_data, bsod_data=None,
         "driver_correlations": []
     }
     
-    # 1. Znajdź ostatni BSOD
+    # 1. Znajdź ostatni BSOD i wyciągnij bugcheck code
     last_bsod = find_last_bsod(system_logs_data, bsod_data)
     
     if not last_bsod:
@@ -98,12 +241,24 @@ def analyze_bsod(system_logs_data, hardware_data, drivers_data, bsod_data=None,
     
     logger.info(f"[BSOD] BSOD found: Event ID {last_bsod.get('event_id', 'N/A')}, Timestamp: {last_bsod.get('timestamp', 'N/A')}")
     
+    # Wyciągnij bugcheck code z Event 1001 lub 41
+    bugcheck_code = extract_bugcheck_from_event(last_bsod)
+    bugcheck_params = extract_bugcheck_parameters(last_bsod)
+    dump_file = extract_dump_file(last_bsod)
+    
+    # Analizuj minidump files jeśli dostępne
+    minidump_info = analyze_minidumps(bsod_data)
+    
     result["bsod_found"] = True
     result["last_bsod_timestamp"] = last_bsod["timestamp"]
     result["bsod_details"] = {
         "event_id": last_bsod.get("event_id", "N/A"),
-        "message": last_bsod.get("message", "")[:500],  # Skróć długie wiadomości
-        "level": last_bsod.get("level", "Critical")
+        "message": last_bsod.get("message", "")[:500],
+        "level": last_bsod.get("level", "Critical"),
+        "bugcheck_code": bugcheck_code,
+        "bugcheck_parameters": bugcheck_params,
+        "dump_file": dump_file,
+        "minidump_info": minidump_info
     }
     
     # 2. Parsuj timestamp BSOD
@@ -112,28 +267,32 @@ def analyze_bsod(system_logs_data, hardware_data, drivers_data, bsod_data=None,
         result["message"] = "Could not parse BSOD timestamp"
         return result
     
-    # 3. Znajdź candidate events w oknie czasowym
-    time_window = timedelta(minutes=min(time_window_minutes, MAX_TIME_WINDOW_MINUTES))
-    window_start = bsod_time - time_window
+    # 3. BSOD Analysis 2.0 - użyj primary i extended window
+    primary_window = timedelta(minutes=PRIMARY_TIME_WINDOW_MINUTES)
+    extended_window = timedelta(minutes=EXTENDED_TIME_WINDOW_MINUTES)
     
-    logger.debug(f"[BSOD] Analysis window: {window_start} to {bsod_time} ({time_window_minutes} minutes)")
+    primary_start = bsod_time - primary_window
+    extended_start = bsod_time - extended_window
+    
+    logger.debug(f"[BSOD] Primary window: {primary_start} to {bsod_time} ({PRIMARY_TIME_WINDOW_MINUTES} minutes)")
+    logger.debug(f"[BSOD] Extended window: {extended_start} to {bsod_time} ({EXTENDED_TIME_WINDOW_MINUTES} minutes)")
     
     # Zbierz wszystkie eventy z logów
     all_events = collect_all_events(system_logs_data)
     logger.debug(f"[BSOD] Collected {len(all_events)} total events from logs")
     
-    # Filtruj eventy w oknie czasowym
-    candidate_events = filter_events_by_time(all_events, window_start, bsod_time)
-    logger.info(f"[BSOD] Found {len(candidate_events)} events in time window before BSOD")
+    # Filtruj eventy w primary window (krytyczne)
+    primary_events = filter_events_by_time(all_events, primary_start, bsod_time)
+    logger.info(f"[BSOD] Found {len(primary_events)} events in primary window ({PRIMARY_TIME_WINDOW_MINUTES} min)")
     
-    # Jeśli brak eventów w oknie, spróbuj rozszerzyć okno lub użyć wszystkich eventów
-    if len(candidate_events) == 0 and len(all_events) > 0:
-        logger.warning(f"[BSOD] No events in {time_window_minutes}min window, trying extended window")
-        # Spróbuj z większym oknem (do 60 min)
-        extended_window = timedelta(minutes=60)
-        extended_start = bsod_time - extended_window
-        candidate_events = filter_events_by_time(all_events, extended_start, bsod_time)
-        logger.info(f"[BSOD] Found {len(candidate_events)} events in extended 60min window")
+    # Filtruj eventy w extended window
+    extended_events = filter_events_by_time(all_events, extended_start, bsod_time)
+    logger.info(f"[BSOD] Found {len(extended_events)} events in extended window ({EXTENDED_TIME_WINDOW_MINUTES} min)")
+    
+    # Użyj extended events do analizy, ale priorytetyzuj primary events
+    candidate_events = extended_events
+    for event in primary_events:
+        event['in_primary_window'] = True
     
     # 4. Kategoryzuj i oblicz confidence scores
     categorized_events = categorize_events(candidate_events)
@@ -217,9 +376,11 @@ def analyze_bsod(system_logs_data, hardware_data, drivers_data, bsod_data=None,
     result["hardware_correlations"] = hardware_correlations
     result["driver_correlations"] = driver_correlations
     result["analysis_window"] = {
-        "start": window_start.isoformat(),
+        "primary_start": primary_start.isoformat(),
+        "extended_start": extended_start.isoformat(),
         "end": bsod_time.isoformat(),
-        "minutes": time_window_minutes
+        "primary_minutes": PRIMARY_TIME_WINDOW_MINUTES,
+        "extended_minutes": EXTENDED_TIME_WINDOW_MINUTES
     }
     
     logger.info(f"[BSOD] Analysis complete: {len(result['related_events'])} related events, "
@@ -654,6 +815,104 @@ def get_cause_description(cause):
     return descriptions.get(cause, "Unknown issue")
 
 
+def _get_cause_description(cause):
+    """Zwraca opis przyczyny."""
+    descriptions = {
+        "GPU_DRIVER": "GPU driver issue - graphics driver crash or error",
+        "DISK_ERROR": "Disk I/O error - storage device failure or corruption",
+        "MEMORY_ERROR": "Memory management issue - RAM problems or page faults",
+        "DRIVER_ERROR": "Driver failure - device driver failed to load or crashed",
+        "TXR_FAILURE": "Registry transaction failure - system file corruption",
+        "SERVICE_FAILURE": "Service failure - critical Windows service failed",
+        "SYSTEM_CRITICAL": "Critical system error - fatal system error",
+        "KERNEL_CRASH": "Kernel crash - system kernel error",
+        "OTHER": "Other system issue"
+    }
+    return descriptions.get(cause, "Unknown issue")
+
+
+def _convert_new_correlation_result(new_result, hardware_data, drivers_data):
+    """
+    Konwertuje wynik z nowego modułu korelacji do formatu kompatybilnego z istniejącym kodem.
+    
+    Args:
+        new_result (dict): Wynik z BSODCorrelator.analyze_bsod()
+        hardware_data (dict): Dane sprzętowe
+        drivers_data (list): Dane driverów
+    
+    Returns:
+        dict: Wynik w formacie kompatybilnym z analyze_bsod()
+    """
+    logger = get_logger()
+    logger.debug("[BSOD] Converting new correlation result to legacy format")
+    
+    correlated_events = new_result.get('correlated_events', [])
+    
+    # Konwertuj correlated_events do formatu related_events
+    related_events = []
+    for event in correlated_events:
+        related_events.append({
+            'timestamp': event.get('timestamp'),
+            'level': event.get('level'),
+            'event_id': event.get('event_id'),
+            'message': event.get('message'),
+            'category': event.get('category'),
+            'confidence_score': event.get('correlation_score', 0),
+            'time_from_bsod_minutes': event.get('time_from_bsod_seconds', 0) / 60.0 if event.get('time_from_bsod_seconds') else None
+        })
+    
+    # Oblicz top causes na podstawie kategorii i scores
+    category_scores = defaultdict(float)
+    for event in correlated_events:
+        category = event.get('category', 'OTHER')
+        score = event.get('correlation_score', 0)
+        category_scores[category] += score
+    
+    # Sortuj kategorie po score
+    sorted_categories = sorted(category_scores.items(), key=lambda x: x[1], reverse=True)
+    
+    top_causes = []
+    for category, total_score in sorted_categories[:5]:  # Top 5
+        top_causes.append({
+            'cause': category,
+            'confidence': min(100.0, total_score),
+            'description': _get_cause_description(category)
+        })
+    
+    # Generuj rekomendacje
+    recommendations = generate_bsod_recommendations(
+        top_causes,
+        [],  # hardware_correlations
+        [],  # driver_correlations
+        related_events
+    )
+    
+    # Parsuj timestamp BSOD
+    bsod_timestamp_str = new_result.get('bsod_timestamp')
+    bsod_timestamp = None
+    if bsod_timestamp_str:
+        try:
+            # Próbuj parsować ISO format
+            bsod_timestamp = datetime.fromisoformat(bsod_timestamp_str.replace('Z', '+00:00'))
+        except:
+            try:
+                # Fallback - użyj istniejącej funkcji parse_timestamp
+                bsod_timestamp = parse_timestamp(bsod_timestamp_str)
+            except:
+                pass
+    
+    return {
+        "bsod_found": True,
+        "last_bsod_timestamp": bsod_timestamp.isoformat() if bsod_timestamp else bsod_timestamp_str,
+        "bsod_details": new_result.get('bsod_details', {}),
+        "related_events": related_events,
+        "top_causes": top_causes,
+        "recommendations": recommendations,
+        "hardware_correlations": [],
+        "driver_correlations": []
+    }
+
+
 def generate_bsod_recommendations(top_causes, hardware_correlations, driver_correlations, scored_events):
     """
     Generuje rekomendacje na podstawie analizy.
@@ -948,7 +1207,7 @@ def generate_bsod_event_timeline(related_events, top_causes, max_events=30):
 
 
 def analyze_bsod_with_timeline(system_logs_data, hardware_data, drivers_data, bsod_data=None, 
-                               time_window_minutes=DEFAULT_TIME_WINDOW_MINUTES, max_timeline_events=30):
+                               time_window_minutes=DEFAULT_TIME_WINDOW_MINUTES, max_timeline_events=30, use_new_correlation=False):
     """
     Analizuje ostatni BSOD i identyfikuje najbardziej prawdopodobne przyczyny.
     Dodatkowo generuje chronologiczną listę eventów poprzedzających BSOD.
@@ -971,9 +1230,9 @@ def analyze_bsod_with_timeline(system_logs_data, hardware_data, drivers_data, bs
     if time_window_minutes is None:
         time_window_minutes = DEFAULT_TIME_WINDOW_MINUTES
     
-    logger.info(f"[BSOD] Starting BSOD analysis with timeline (time_window={time_window_minutes}min)")
+    logger.info(f"[BSOD] Starting BSOD analysis with timeline (time_window={time_window_minutes}min, use_new_correlation={use_new_correlation})")
     
-    result = analyze_bsod(system_logs_data, hardware_data, drivers_data, bsod_data, time_window_minutes)
+    result = analyze_bsod(system_logs_data, hardware_data, drivers_data, bsod_data, time_window_minutes, use_new_correlation)
     
     if not result.get("bsod_found", False):
         return result  # brak BSOD
