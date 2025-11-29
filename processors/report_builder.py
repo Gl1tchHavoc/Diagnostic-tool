@@ -100,7 +100,13 @@ def build_report(processed_data):
     # 6. Pobierz informacje o ShadowCopy
     shadowcopy_info = get_shadowcopy_info()
     
-    # 7. Buduj raport z kategoryzacją błędów
+    # 7. Pobierz wykryte przyczyny (jeśli dostępne)
+    detected_causes = processed_data.get('detected_causes', {})
+    if not detected_causes:
+        # Spróbuj pobrać z głównego raportu
+        detected_causes = {}
+    
+    # 8. Buduj raport z kategoryzacją błędów
     report = {
         "status": {
             "value": status_info["status"],
@@ -154,6 +160,7 @@ def build_report(processed_data):
                 }
             ] if shadowcopy_errors else []
         },
+        "detected_causes": processed_data.get('detected_causes', {}),  # Wykryte przyczyny z cause_detector
         "recommendations": recommendations,
         "summary": {
             "total_critical": len(all_critical),

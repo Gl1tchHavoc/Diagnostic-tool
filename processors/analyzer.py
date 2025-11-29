@@ -8,6 +8,7 @@ from . import (
 )
 from .report_builder import build_report
 from .bsod_analyzer import analyze_bsod
+from .cause_detector import detect_all_causes
 from utils.logger import get_logger, log_processor_start, log_processor_end, log_performance, log_bsod_analysis
 
 def analyze_all(collected_data, progress_callback=None):
@@ -76,16 +77,31 @@ def analyze_all(collected_data, progress_callback=None):
                 logger.exception(f"Processor {name} raised exception")
                 processed_data[name] = {"error": error_msg}
     
+    # Wykryj przyczyny problemów (przed budowaniem raportu)
+    if progress_callback:
+        progress_callback(total_processors + 1, total_processors + 4, "Detecting root causes...")
+    else:
+        print("Detecting root causes...")
+    
+    logger.info("[ANALYSIS] Detecting root causes")
+    cause_detection_start = time.time()
+    detected_causes = detect_all_causes(processed_data, collected_data)
+    cause_detection_duration = time.time() - cause_detection_start
+    logger.info(f"[ANALYSIS] Cause detection completed in {cause_detection_duration:.2f}s, found {detected_causes['total_causes']} causes")
+    
+    # Dodaj wykryte przyczyny do processed_data, żeby były dostępne w report_builder
+    processed_data['detected_causes'] = detected_causes
+    
     # Buduj raport używając nowego systemu
     if progress_callback:
-        progress_callback(total_processors + 1, total_processors + 2, "Building report...")
+        progress_callback(total_processors + 2, total_processors + 4, "Building report...")
     else:
         print("Building report...")
     
     report = build_report(processed_data)
     
     if progress_callback:
-        progress_callback(total_processors + 2, total_processors + 2, "Analysis completed")
+        progress_callback(total_processors + 3, total_processors + 4, "Analysis completed")
     
     # 6. Analiza BSOD (jeśli dostępne dane)
     bsod_analysis = None
@@ -132,13 +148,15 @@ def analyze_all(collected_data, progress_callback=None):
                 "bsod_found": False
             }
     
+    
     # Dodaj metadane
     analysis_duration = time.time() - analysis_start_time
     final_report = {
         "timestamp": collected_data.get("timestamp"),
         "processed_data": processed_data,
         "report": report,
-        "bsod_analysis": bsod_analysis
+        "bsod_analysis": bsod_analysis,
+        "detected_causes": detected_causes
     }
     
     logger.info(f"[ANALYSIS] Analysis completed in {analysis_duration:.2f}s")

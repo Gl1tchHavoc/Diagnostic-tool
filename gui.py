@@ -18,6 +18,8 @@ from collectors import (
 )
 from collectors.collector_master import collect_all
 from processors.analyzer import analyze_all
+# Nowy system skanów
+from scans.scan_manager import QuickScan, FullScan
 # bsod_analyzer importowany lokalnie w funkcji, żeby nie blokować uruchomienia
 
 class DiagnosticsGUI:
@@ -51,13 +53,25 @@ class DiagnosticsGUI:
         messagebox.showwarning("Uprawnienia administratora", warning_text)
 
     def setup_widgets(self):
+        # Frame dla przycisków skanów
+        scan_frame = tk.Frame(self.root, bg="#2e2e2e")
+        scan_frame.pack(pady=10)
+        
+        # Przycisk - Quick Scan
+        self.quick_scan_btn = tk.Button(
+            scan_frame, text="⚡ QUICK SCAN", command=self.start_quick_scan,
+            bg="#00cc66", fg="white", activebackground="#00aa55", activeforeground="white",
+            font=("Arial", 12, "bold"), pady=8, width=25
+        )
+        self.quick_scan_btn.pack(side=tk.LEFT, padx=5)
+        
         # Główny przycisk - Full System Scan
         self.full_scan_btn = tk.Button(
-            self.root, text="🔍 FULL SYSTEM SCAN", command=self.start_full_scan,
+            scan_frame, text="🔍 FULL SYSTEM SCAN", command=self.start_full_scan,
             bg="#0066cc", fg="white", activebackground="#0055aa", activeforeground="white",
-            font=("Arial", 14, "bold"), pady=10, width=30
+            font=("Arial", 14, "bold"), pady=10, width=25
         )
-        self.full_scan_btn.pack(pady=10)
+        self.full_scan_btn.pack(side=tk.LEFT, padx=5)
         
         # Przycisk - BSOD Analysis
         self.bsod_analysis_btn = tk.Button(
@@ -161,6 +175,11 @@ class DiagnosticsGUI:
 
 #-----------------------------------------
 # Full System Scan
+    def start_quick_scan(self):
+        """Uruchamia Quick Scan w osobnym wątku."""
+        thread = Thread(target=self.run_quick_scan, daemon=True)
+        thread.start()
+    
     def start_full_scan(self):
         thread = Thread(target=self.run_full_scan, daemon=True)
         thread.start()
@@ -174,6 +193,71 @@ class DiagnosticsGUI:
         self.status.config(text=f"{message} ({step}/{total})")
         self.root.update()
     
+    def run_quick_scan(self):
+        """Uruchamia Quick Scan używając nowego systemu ScanManager."""
+        logger = get_logger()
+        logger.info("[GUI] Starting quick scan")
+        scan_start_time = time.time()
+        
+        self.status.config(text="Starting Quick Scan...")
+        self.progress_bar['value'] = 0
+        self.progress_percent.config(text="0%")
+        self.progress_label.config(text="Initializing...")
+        self.quick_scan_btn.config(state=tk.DISABLED)
+        self.full_scan_btn.config(state=tk.DISABLED)
+        for btn in self.collector_buttons.values():
+            btn.config(state=tk.DISABLED)
+        
+        self.output_text.delete("1.0", tk.END)
+        self.output_text.insert(tk.END, "=" * 70 + "\n")
+        self.output_text.insert(tk.END, "QUICK SYSTEM SCAN\n")
+        self.output_text.insert(tk.END, "=" * 70 + "\n\n")
+        self.root.update()
+        
+        try:
+            # Callback do aktualizacji postępu
+            def progress_callback(progress, message):
+                self.progress_bar['value'] = progress
+                self.progress_percent.config(text=f"{progress:.1f}%")
+                self.progress_label.config(text=message)
+                self.status.config(text=message)
+                self.output_text.insert(tk.END, f"  [{progress:.1f}%] {message}\n")
+                self.output_text.see(tk.END)
+                self.root.update()
+            
+            # Uruchom Quick Scan
+            quick_scan = QuickScan(progress_callback=progress_callback)
+            scan_results = quick_scan.run()
+            
+            # Konwertuj wyniki do formatu oczekiwanego przez analyzer
+            collected_data = {
+                "timestamp": scan_results['timestamp'],
+                "collectors": scan_results['results']['collectors']
+            }
+            
+            self.output_text.insert(tk.END, f"✓ Quick scan completed ({scan_results['progress_info']['global_progress']:.1f}%)\n\n")
+            self.root.update()
+            
+            # Analizuj wyniki
+            analysis_report = analyze_all(collected_data)
+            self.display_analysis_results(analysis_report)
+            
+            scan_duration = time.time() - scan_start_time
+            logger.info(f"[GUI] Quick scan completed in {scan_duration:.2f}s")
+            self.status.config(text="Quick Scan Completed")
+            self.progress_label.config(text="Quick scan completed successfully")
+            
+        except Exception as e:
+            error_msg = f"Quick scan failed: {type(e).__name__}: {str(e)}"
+            logger.exception("[GUI] Quick scan failed")
+            messagebox.showerror("Error", error_msg)
+            self.output_text.insert(tk.END, f"\n❌ ERROR: {error_msg}\n")
+        finally:
+            self.quick_scan_btn.config(state=tk.NORMAL)
+            self.full_scan_btn.config(state=tk.NORMAL)
+            for btn in self.collector_buttons.values():
+                btn.config(state=tk.NORMAL)
+    
     def run_full_scan(self):
         logger = get_logger()
         logger.info("[GUI] Starting full system scan")
@@ -183,6 +267,7 @@ class DiagnosticsGUI:
         self.progress_bar['value'] = 0
         self.progress_percent.config(text="0%")
         self.progress_label.config(text="Initializing...")
+        self.quick_scan_btn.config(state=tk.DISABLED)
         self.full_scan_btn.config(state=tk.DISABLED)
         for btn in self.collector_buttons.values():
             btn.config(state=tk.DISABLED)
@@ -194,28 +279,48 @@ class DiagnosticsGUI:
         self.root.update()
         
         try:
-            # Krok 1: Zbierz dane
-            self.output_text.insert(tk.END, "Step 1: Collecting system data...\n")
+            # Callback do aktualizacji postępu
+            def progress_callback(progress, message):
+                # Progress jest już 0-100% z ProgressCalculator
+                self.progress_bar['value'] = progress
+                self.progress_percent.config(text=f"{progress:.1f}%")
+                self.progress_label.config(text=message)
+                self.status.config(text=message)
+                self.output_text.insert(tk.END, f"  [{progress:.1f}%] {message}\n")
+                self.output_text.see(tk.END)
+                self.root.update()
+            
+            # Uruchom Full Scan używając nowego systemu
+            full_scan = FullScan(progress_callback=progress_callback)
+            scan_results = full_scan.run()
+            
+            # Konwertuj wyniki do formatu oczekiwanego przez analyzer
+            collected_data = {
+                "timestamp": scan_results['timestamp'],
+                "collectors": scan_results['results']['collectors']
+            }
+            
+            self.output_text.insert(tk.END, f"✓ Data collection completed ({scan_results['progress_info']['global_progress']:.1f}%)\n\n")
+            self.root.update()
+            
+            # Krok 2: Analizuj
+            self.output_text.insert(tk.END, "Step 2: Processing and analyzing data...\n")
             self.output_text.insert(tk.END, "-" * 70 + "\n")
             self.root.update()
             
-            # Callback do aktualizacji postępu
-            def progress_callback(step, total, message):
-                # Oblicz procent dla kroku zbierania (0-50%)
-                collection_percent = int((step / total) * 50)
-                self.progress_bar['value'] = collection_percent
-                self.progress_percent.config(text=f"{collection_percent}%")
+            # Callback do aktualizacji postępu analizy (50-100%)
+            def analysis_callback(step, total, message):
+                # Oblicz procent dla kroku analizy (50-100%)
+                analysis_percent = 50 + int((step / total) * 50)
+                self.progress_bar['value'] = analysis_percent
+                self.progress_percent.config(text=f"{analysis_percent}%")
                 self.progress_label.config(text=message)
                 self.status.config(text=f"{message} ({step}/{total})")
                 self.output_text.insert(tk.END, f"  [{step}/{total}] {message}\n")
                 self.output_text.see(tk.END)
                 self.root.update()
             
-            collected_data = collect_all(
-                save_raw=True, 
-                output_dir="output/raw",
-                progress_callback=progress_callback
-            )
+            analysis_report = analyze_all(collected_data, progress_callback=analysis_callback)
             
             self.output_text.insert(tk.END, "✓ Data collection completed\n\n")
             self.root.update()
@@ -675,12 +780,59 @@ class DiagnosticsGUI:
         self.output_text.insert(tk.END, f"Total Warnings: {summary.get('total_warnings', 0)}\n")
         self.output_text.insert(tk.END, f"Total Issues: {summary.get('total_issues', 0)}\n\n")
         
-        # Top przyczyny z poprawionym confidence
+        # Wykryte przyczyny (z cause_detector)
+        detected_causes = report_data.get("detected_causes", {})
+        if detected_causes and detected_causes.get('causes'):
+            causes_list = detected_causes.get('causes', [])
+            if causes_list:
+                self.output_text.insert(tk.END, "=" * 70 + "\n")
+                self.output_text.insert(tk.END, "DETECTED ROOT CAUSES\n")
+                self.output_text.insert(tk.END, "=" * 70 + "\n\n")
+                
+                # Sortuj według confidence
+                high_confidence = [c for c in causes_list if c.get('confidence', 0) >= 70]
+                medium_confidence = [c for c in causes_list if 40 <= c.get('confidence', 0) < 70]
+                
+                if high_confidence:
+                    self.output_text.insert(tk.END, "HIGH CONFIDENCE CAUSES:\n")
+                    self.output_text.insert(tk.END, "-" * 70 + "\n")
+                    for i, cause in enumerate(high_confidence[:10], 1):
+                        category = cause.get('category', 'Unknown')
+                        cause_name = cause.get('cause', 'Unknown')
+                        confidence = cause.get('confidence', 0)
+                        description = cause.get('description', '')
+                        recommendation = cause.get('recommendation', '')
+                        evidence = cause.get('evidence', {})
+                        
+                        self.output_text.insert(tk.END, f"{i}. [{category}] {cause_name}\n")
+                        self.output_text.insert(tk.END, f"   Confidence: {confidence:.1f}%\n")
+                        self.output_text.insert(tk.END, f"   Description: {description}\n")
+                        if evidence:
+                            evidence_str = ', '.join([f"{k}: {v}" for k, v in evidence.items()])
+                            self.output_text.insert(tk.END, f"   Evidence: {evidence_str}\n")
+                        if recommendation:
+                            self.output_text.insert(tk.END, f"   Recommendation: {recommendation}\n")
+                        self.output_text.insert(tk.END, "\n")
+                
+                if medium_confidence:
+                    self.output_text.insert(tk.END, "\nMEDIUM CONFIDENCE CAUSES:\n")
+                    self.output_text.insert(tk.END, "-" * 70 + "\n")
+                    for i, cause in enumerate(medium_confidence[:5], 1):
+                        category = cause.get('category', 'Unknown')
+                        cause_name = cause.get('cause', 'Unknown')
+                        confidence = cause.get('confidence', 0)
+                        description = cause.get('description', '')
+                        
+                        self.output_text.insert(tk.END, f"{i}. [{category}] {cause_name} ({confidence:.1f}%)\n")
+                        self.output_text.insert(tk.END, f"   {description}\n\n")
+        
+        # Top przyczyny z poprawionym confidence (z confidence_engine)
         confidence_info = report_data.get("confidence", {})
         top_causes = confidence_info.get("top_causes", [])
         if top_causes:
-            self.output_text.insert(tk.END, "Top Likely Causes:\n")
-            self.output_text.insert(tk.END, "-" * 70 + "\n")
+            self.output_text.insert(tk.END, "=" * 70 + "\n")
+            self.output_text.insert(tk.END, "TOP LIKELY CAUSES (from correlation)\n")
+            self.output_text.insert(tk.END, "=" * 70 + "\n")
             for i, cause in enumerate(top_causes[:5], 1):
                 cause_name = cause.get("cause", "Unknown")
                 confidence = cause.get("confidence", 0)  # Już w procentach (0-100)
