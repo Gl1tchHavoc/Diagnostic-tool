@@ -93,5 +93,8 @@ def build_report(processed_data):
         }
     }
     
+    # Dodaj analizę BSOD jeśli dostępna (będzie dodana w analyzer.py)
+    # BSOD analysis jest już w final_report, więc nie trzeba jej tutaj dodawać
+    
     return report
 

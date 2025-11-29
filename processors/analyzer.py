@@ -6,6 +6,7 @@ from . import (
     registry_txr_processor, storage_health_processor, system_info_processor
 )
 from .report_builder import build_report
+from .bsod_analyzer import analyze_bsod
 
 def analyze_all(collected_data, progress_callback=None):
     """
@@ -54,11 +55,44 @@ def analyze_all(collected_data, progress_callback=None):
     if progress_callback:
         progress_callback(total_processors + 2, total_processors + 2, "Analysis completed")
     
+    # 6. Analiza BSOD (jeśli dostępne dane)
+    bsod_analysis = None
+    if "system_logs" in collectors_data and "hardware" in collectors_data and "drivers" in collectors_data:
+        try:
+            # Pobierz przetworzone logi systemowe
+            system_logs_processed = processed_data.get("system_logs", {})
+            system_logs_raw = system_logs_processed.get("data", {})
+            
+            # Pobierz dane hardware i drivers
+            hardware_processed = processed_data.get("hardware", {})
+            hardware_raw = hardware_processed.get("data", {})
+            
+            drivers_processed = processed_data.get("drivers", {})
+            drivers_raw = drivers_processed.get("data", [])
+            
+            # Pobierz dane BSOD jeśli dostępne
+            bsod_raw = collectors_data.get("bsod_dumps", {})
+            
+            # Uruchom analizę BSOD
+            bsod_analysis = analyze_bsod(
+                system_logs_raw,
+                hardware_raw,
+                drivers_raw,
+                bsod_raw
+            )
+        except Exception as e:
+            # Nie przerywaj jeśli analiza BSOD się nie powiedzie
+            bsod_analysis = {
+                "error": f"BSOD analysis failed: {type(e).__name__}: {e}",
+                "bsod_found": False
+            }
+    
     # Dodaj metadane
     final_report = {
         "timestamp": collected_data.get("timestamp"),
         "processed_data": processed_data,
-        "report": report
+        "report": report,
+        "bsod_analysis": bsod_analysis
     }
     
     return final_report

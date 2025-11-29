@@ -26,16 +26,8 @@ def collect():
         # Sprawdź Event ID 1001 (Bugcheck) i 41 (Unexpected shutdown) - ukryte okno
         cmd = "Get-WinEvent -LogName System -MaxEvents 200 | Where-Object {$_.Id -in @(41,1001,6008,1074,1076) -or $_.Message -like '*bugcheck*' -or $_.Message -like '*blue screen*' -or $_.Message -like '*stop error*'} | ConvertTo-Xml -As String -Depth 3"
         
-        from utils.subprocess_helper import get_hidden_startupinfo
-        startupinfo = get_hidden_startupinfo()
-        
-        output = subprocess.check_output(
-            ["powershell", "-Command", cmd],
-            text=True,
-            encoding="utf-8",
-            stderr=subprocess.DEVNULL,
-            startupinfo=startupinfo
-        )
+        from utils.subprocess_helper import run_powershell_hidden
+        output = run_powershell_hidden(cmd)
         
         import xml.etree.ElementTree as ET
         try:

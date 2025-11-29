@@ -14,6 +14,7 @@ from collectors import (
 )
 from collectors.collector_master import collect_all
 from processors.analyzer import analyze_all
+# bsod_analyzer importowany lokalnie w funkcji, żeby nie blokować uruchomienia
 
 class DiagnosticsGUI:
     def __init__(self, root):
@@ -52,7 +53,15 @@ class DiagnosticsGUI:
             bg="#0066cc", fg="white", activebackground="#0055aa", activeforeground="white",
             font=("Arial", 14, "bold"), pady=10, width=30
         )
-        self.full_scan_btn.pack(pady=15)
+        self.full_scan_btn.pack(pady=10)
+        
+        # Przycisk - BSOD Analysis
+        self.bsod_analysis_btn = tk.Button(
+            self.root, text="💥 BSOD ANALYSIS", command=self.start_bsod_analysis,
+            bg="#cc6600", fg="white", activebackground="#aa5500", activeforeground="white",
+            font=("Arial", 12, "bold"), pady=8, width=30
+        )
+        self.bsod_analysis_btn.pack(pady=5)
 
         # Separator
         separator1 = tk.Frame(self.root, height=2, bg="#555555")
@@ -229,6 +238,14 @@ class DiagnosticsGUI:
             
             # Wyświetl wyniki
             self.display_analysis_results(analysis_report)
+            
+            # Wyświetl analizę BSOD jeśli dostępna
+            bsod_analysis = analysis_report.get("bsod_analysis")
+            if bsod_analysis and bsod_analysis.get("bsod_found", False):
+                self.output_text.insert(tk.END, "\n" + "=" * 70 + "\n")
+                self.output_text.insert(tk.END, "BSOD ANALYSIS (from full scan)\n")
+                self.output_text.insert(tk.END, "=" * 70 + "\n\n")
+                self.display_bsod_analysis(bsod_analysis)
             
             self.status.config(text="Full System Scan Completed")
             self.progress_label.config(text="Scan completed successfully")
@@ -570,39 +587,261 @@ class DiagnosticsGUI:
         self.output_text.see(tk.END)
 
 #-----------------------------------------
+# BSOD Analysis Functions
+    def start_bsod_analysis(self):
+        """Uruchamia analizę BSOD w osobnym wątku."""
+        thread = Thread(target=self.run_bsod_analysis, daemon=True)
+        thread.start()
+
+    def run_bsod_analysis(self):
+        """Wykonuje analizę BSOD."""
+        self.status.config(text="Starting BSOD Analysis...")
+        self.bsod_analysis_btn.config(state=tk.DISABLED)
+        self.full_scan_btn.config(state=tk.DISABLED)
+        for btn in self.collector_buttons.values():
+            btn.config(state=tk.DISABLED)
+        
+        self.output_text.delete("1.0", tk.END)
+        self.output_text.insert(tk.END, "=" * 70 + "\n")
+        self.output_text.insert(tk.END, "BSOD ANALYSIS\n")
+        self.output_text.insert(tk.END, "=" * 70 + "\n\n")
+        self.progress_bar['value'] = 0
+        self.progress_percent.config(text="0%")
+        self.progress_label.config(text="Collecting data for BSOD analysis...")
+        self.root.update()
+        
+        try:
+            # Zbierz potrzebne dane
+            self.output_text.insert(tk.END, "Collecting required data...\n")
+            self.output_text.insert(tk.END, "-" * 70 + "\n")
+            
+            collected_data = {}
+            
+            # System logs
+            self.output_text.insert(tk.END, "  [1/4] Collecting system logs...\n")
+            self.root.update()
+            collected_data["system_logs"] = system_logs.collect(max_events=500, filter_levels=['Error', 'Warning', 'Critical'])
+            
+            # Hardware
+            self.output_text.insert(tk.END, "  [2/4] Collecting hardware data...\n")
+            self.root.update()
+            collected_data["hardware"] = hardware.collect()
+            
+            # Drivers
+            self.output_text.insert(tk.END, "  [3/4] Collecting drivers data...\n")
+            self.root.update()
+            collected_data["drivers"] = drivers.collect()
+            
+            # BSOD dumps
+            self.output_text.insert(tk.END, "  [4/4] Collecting BSOD data...\n")
+            self.root.update()
+            collected_data["bsod_dumps"] = bsod_dumps.collect()
+            
+            self.output_text.insert(tk.END, "✓ Data collection completed\n\n")
+            self.progress_bar['value'] = 50
+            self.progress_percent.config(text="50%")
+            self.root.update()
+            
+            # Przetwórz dane
+            self.output_text.insert(tk.END, "Processing data...\n")
+            self.output_text.insert(tk.END, "-" * 70 + "\n")
+            self.root.update()
+            
+            from processors import system_logs_processor, hardware_processor, driver_processor
+            
+            system_logs_processed = system_logs_processor.process(collected_data["system_logs"])
+            hardware_processed = hardware_processor.process(collected_data["hardware"])
+            drivers_processed = driver_processor.process(collected_data["drivers"])
+            
+            self.progress_bar['value'] = 75
+            self.progress_percent.config(text="75%")
+            self.root.update()
+            
+            # Uruchom analizę BSOD
+            self.output_text.insert(tk.END, "Analyzing BSOD...\n")
+            self.output_text.insert(tk.END, "-" * 70 + "\n")
+            self.root.update()
+            
+            # Import lokalnie, żeby nie blokować uruchomienia GUI
+            from processors.bsod_analyzer import analyze_bsod
+            bsod_analysis = analyze_bsod(
+                system_logs_processed.get("data", {}),
+                hardware_processed.get("data", {}),
+                drivers_processed.get("data", []),
+                collected_data.get("bsod_dumps", {})
+            )
+            
+            self.progress_bar['value'] = 100
+            self.progress_percent.config(text="100%")
+            self.root.update()
+            
+            # Wyświetl wyniki
+            self.display_bsod_analysis(bsod_analysis)
+            
+            self.status.config(text="BSOD Analysis Completed")
+            self.progress_label.config(text="BSOD analysis completed")
+        except Exception as e:
+            error_msg = f"BSOD analysis failed: {type(e).__name__}: {str(e)}"
+            messagebox.showerror("Error", error_msg)
+            self.output_text.insert(tk.END, f"\n❌ ERROR: {error_msg}\n")
+            self.status.config(text="BSOD Analysis Failed")
+            self.progress_label.config(text="BSOD analysis failed")
+        finally:
+            self.bsod_analysis_btn.config(state=tk.NORMAL)
+            self.full_scan_btn.config(state=tk.NORMAL)
+            for btn in self.collector_buttons.values():
+                btn.config(state=tk.NORMAL)
+
+    def display_bsod_analysis(self, bsod_analysis):
+        """Wyświetla wyniki analizy BSOD."""
+        if not bsod_analysis:
+            self.output_text.insert(tk.END, "No BSOD analysis data available.\n")
+            return
+        
+        if not bsod_analysis.get("bsod_found", False):
+            self.output_text.insert(tk.END, "=" * 70 + "\n")
+            self.output_text.insert(tk.END, "BSOD ANALYSIS RESULTS\n")
+            self.output_text.insert(tk.END, "=" * 70 + "\n\n")
+            self.output_text.insert(tk.END, "❌ No BSOD events found in system logs.\n")
+            self.output_text.insert(tk.END, f"Message: {bsod_analysis.get('message', 'N/A')}\n\n")
+            return
+        
+        self.output_text.insert(tk.END, "=" * 70 + "\n")
+        self.output_text.insert(tk.END, "BSOD ANALYSIS RESULTS\n")
+        self.output_text.insert(tk.END, "=" * 70 + "\n\n")
+        
+        # Ostatni BSOD
+        bsod_timestamp = bsod_analysis.get("last_bsod_timestamp", "N/A")
+        bsod_details = bsod_analysis.get("bsod_details", {})
+        
+        self.output_text.insert(tk.END, "🔴 LAST BSOD DETECTED\n")
+        self.output_text.insert(tk.END, "-" * 70 + "\n")
+        self.output_text.insert(tk.END, f"Timestamp: {bsod_timestamp}\n")
+        self.output_text.insert(tk.END, f"Event ID: {bsod_details.get('event_id', 'N/A')}\n")
+        self.output_text.insert(tk.END, f"Level: {bsod_details.get('level', 'N/A')}\n")
+        message = bsod_details.get("message", "")[:200]
+        if message:
+            self.output_text.insert(tk.END, f"Message: {message}\n")
+        self.output_text.insert(tk.END, "\n")
+        
+        # Top causes
+        top_causes = bsod_analysis.get("top_causes", [])
+        if top_causes:
+            self.output_text.insert(tk.END, "TOP LIKELY CAUSES\n")
+            self.output_text.insert(tk.END, "-" * 70 + "\n")
+            for i, cause in enumerate(top_causes[:5], 1):
+                cause_name = cause.get("cause", "Unknown")
+                confidence = cause.get("confidence", 0)
+                description = cause.get("description", "")
+                events_count = cause.get("related_events_count", 0)
+                
+                self.output_text.insert(tk.END, f"{i}. {cause_name}\n")
+                self.output_text.insert(tk.END, f"   Confidence: {confidence:.1f}%\n")
+                self.output_text.insert(tk.END, f"   Description: {description}\n")
+                self.output_text.insert(tk.END, f"   Related Events: {events_count}\n\n")
+        
+        # Related events
+        related_events = bsod_analysis.get("related_events", [])
+        if related_events:
+            self.output_text.insert(tk.END, "RELATED EVENTS (Top 10)\n")
+            self.output_text.insert(tk.END, "-" * 70 + "\n")
+            for i, event in enumerate(related_events[:10], 1):
+                timestamp = event.get("timestamp", "N/A")
+                category = event.get("detected_category", "OTHER")
+                confidence = event.get("confidence_score", 0)
+                event_id = event.get("event_id", "N/A")
+                message = event.get("message", "")[:100]
+                time_from_bsod = event.get("time_from_bsod_minutes")
+                
+                self.output_text.insert(tk.END, f"{i}. [{category}] Event ID: {event_id}\n")
+                self.output_text.insert(tk.END, f"   Confidence: {confidence:.1f}%\n")
+                if time_from_bsod is not None:
+                    self.output_text.insert(tk.END, f"   Time from BSOD: {time_from_bsod:.1f} minutes\n")
+                self.output_text.insert(tk.END, f"   Timestamp: {timestamp}\n")
+                if message:
+                    self.output_text.insert(tk.END, f"   Message: {message}\n")
+                self.output_text.insert(tk.END, "\n")
+        
+        # Hardware correlations
+        hardware_correlations = bsod_analysis.get("hardware_correlations", [])
+        if hardware_correlations:
+            self.output_text.insert(tk.END, "HARDWARE CORRELATIONS\n")
+            self.output_text.insert(tk.END, "-" * 70 + "\n")
+            for corr in hardware_correlations:
+                corr_type = corr.get("correlation_type", "N/A")
+                issue = corr.get("hardware_issue", "N/A")
+                event_id = corr.get("event", "N/A")
+                self.output_text.insert(tk.END, f"  [{corr_type}] Event {event_id}: {issue}\n")
+            self.output_text.insert(tk.END, "\n")
+        
+        # Driver correlations
+        driver_correlations = bsod_analysis.get("driver_correlations", [])
+        if driver_correlations:
+            self.output_text.insert(tk.END, "DRIVER CORRELATIONS\n")
+            self.output_text.insert(tk.END, "-" * 70 + "\n")
+            for corr in driver_correlations:
+                driver_name = corr.get("driver_name", "N/A")
+                driver_status = corr.get("driver_status", "N/A")
+                driver_version = corr.get("driver_version", "N/A")
+                is_problematic = corr.get("is_problematic", False)
+                event_id = corr.get("event", "N/A")
+                
+                status_icon = "⚠️" if is_problematic else "✓"
+                self.output_text.insert(tk.END, f"  {status_icon} Driver: {driver_name}\n")
+                self.output_text.insert(tk.END, f"     Version: {driver_version}\n")
+                self.output_text.insert(tk.END, f"     Status: {driver_status}\n")
+                self.output_text.insert(tk.END, f"     Related Event: {event_id}\n\n")
+        
+        # Recommendations
+        recommendations = bsod_analysis.get("recommendations", [])
+        if recommendations:
+            self.output_text.insert(tk.END, "RECOMMENDATIONS\n")
+            self.output_text.insert(tk.END, "-" * 70 + "\n")
+            for i, rec in enumerate(recommendations[:10], 1):
+                priority = rec.get("priority", "MEDIUM")
+                action = rec.get("action", "")
+                description = rec.get("description", "")
+                confidence = rec.get("confidence", 0)
+                
+                self.output_text.insert(tk.END, f"{i}. [{priority}] {action}\n")
+                self.output_text.insert(tk.END, f"   {description}\n")
+                if confidence > 0:
+                    self.output_text.insert(tk.END, f"   Confidence: {confidence:.1f}%\n")
+                self.output_text.insert(tk.END, "\n")
+        
+        # Analysis window
+        analysis_window = bsod_analysis.get("analysis_window", {})
+        if analysis_window:
+            self.output_text.insert(tk.END, "ANALYSIS WINDOW\n")
+            self.output_text.insert(tk.END, "-" * 70 + "\n")
+            self.output_text.insert(tk.END, f"Window: {analysis_window.get('minutes', 15)} minutes before BSOD\n")
+            self.output_text.insert(tk.END, f"Start: {analysis_window.get('start', 'N/A')}\n")
+            self.output_text.insert(tk.END, f"End: {analysis_window.get('end', 'N/A')}\n")
+        
+        self.output_text.see(tk.END)
+
+#-----------------------------------------
 if __name__ == "__main__":
-    # Sprawdź uprawnienia przed uruchomieniem GUI
+    # Sprawdź uprawnienia - jeśli brak, od razu próbuj uruchomić jako admin
     if not is_admin():
-        import tkinter.messagebox as msgbox
-        root_check = tk.Tk()
-        root_check.withdraw()  # Ukryj główne okno
-        
-        response = msgbox.askyesno(
-            "Uprawnienia administratora",
-            "Ten program wymaga uprawnień administratora.\n\n"
-            "Czy chcesz uruchomić program jako administrator?\n\n"
-            "(Zostaniesz poproszony o potwierdzenie w oknie UAC)"
-        )
-        
-        root_check.destroy()
-        
-        if response:
-            # Próbuj uruchomić jako admin (ukryj konsolę dla GUI)
-            if restart_as_admin(hide_console=True):
-                sys.exit(0)  # Zakończ obecną instancję, nowa zostanie uruchomiona jako admin
-            else:
-                msgbox.showerror(
-                    "Błąd",
-                    "Nie udało się uruchomić jako administrator.\n"
-                    "Uruchom program ręcznie jako administrator."
-                )
-                sys.exit(1)
+        # Próbuj automatycznie uruchomić jako admin (Windows zapyta przez UAC)
+        if restart_as_admin(hide_console=False):
+            # Daj chwilę na uruchomienie nowej instancji
+            import time
+            time.sleep(1)
+            sys.exit(0)  # Zakończ obecną instancję, nowa zostanie uruchomiona jako admin
         else:
+            # Jeśli nie udało się, pokaż ostrzeżenie i kontynuuj
+            import tkinter.messagebox as msgbox
+            root_warn = tk.Tk()
+            root_warn.withdraw()
             msgbox.showwarning(
                 "Ostrzeżenie",
-                "Program będzie działał z ograniczonymi funkcjami.\n"
-                "Niektóre funkcje mogą nie działać poprawnie."
+                "Nie udało się uruchomić jako administrator.\n"
+                "Program będzie działał z ograniczonymi funkcjami.\n\n"
+                "Uruchom program ręcznie jako administrator dla pełnej funkcjonalności."
             )
+            root_warn.destroy()
     
     root = tk.Tk()
     app = DiagnosticsGUI(root)

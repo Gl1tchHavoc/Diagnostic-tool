@@ -31,25 +31,20 @@ def collect():
     # Windows-specific info (ukryte okna)
     if sys.platform == "win32":
         try:
-            from utils.subprocess_helper import get_hidden_startupinfo
-            startupinfo = get_hidden_startupinfo()
+            from utils.subprocess_helper import run_powershell_hidden
             
             # Wersja Windows
-            cmd = ['powershell', '-Command', '(Get-CimInstance Win32_OperatingSystem).Version']
-            version = subprocess.check_output(cmd, text=True, encoding="utf-8", stderr=subprocess.DEVNULL, startupinfo=startupinfo).strip()
+            version = run_powershell_hidden('(Get-CimInstance Win32_OperatingSystem).Version').strip()
             system_data["windows_version"]["version"] = version
             
-            cmd = ['powershell', '-Command', '(Get-CimInstance Win32_OperatingSystem).Caption']
-            caption = subprocess.check_output(cmd, text=True, encoding="utf-8", stderr=subprocess.DEVNULL, startupinfo=startupinfo).strip()
+            caption = run_powershell_hidden('(Get-CimInstance Win32_OperatingSystem).Caption').strip()
             system_data["windows_version"]["caption"] = caption
             
-            cmd = ['powershell', '-Command', '(Get-CimInstance Win32_OperatingSystem).BuildNumber']
-            build = subprocess.check_output(cmd, text=True, encoding="utf-8", stderr=subprocess.DEVNULL, startupinfo=startupinfo).strip()
+            build = run_powershell_hidden('(Get-CimInstance Win32_OperatingSystem).BuildNumber').strip()
             system_data["windows_version"]["build"] = build
             
             # Boot time
-            cmd = ['powershell', '-Command', '(Get-CimInstance Win32_OperatingSystem).LastBootUpTime']
-            boot_str = subprocess.check_output(cmd, text=True, encoding="utf-8", stderr=subprocess.DEVNULL, startupinfo=startupinfo).strip()
+            boot_str = run_powershell_hidden('(Get-CimInstance Win32_OperatingSystem).LastBootUpTime').strip()
             if boot_str:
                 system_data["boot_time"] = boot_str
             

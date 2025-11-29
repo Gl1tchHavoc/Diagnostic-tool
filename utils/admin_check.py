@@ -41,6 +41,9 @@ def restart_as_admin(hide_console=False):
         if not os.path.isabs(script):
             script = os.path.abspath(script)
         
+        # Normalizuj ścieżkę (zamień backslashes na forward slashes dla lepszej kompatybilności)
+        script = os.path.normpath(script)
+        
         # Przygotuj argumenty (wszystkie oprócz nazwy skryptu)
         params = " ".join([f'"{arg}"' if " " in arg else arg for arg in sys.argv[1:]])
         if params:
@@ -48,18 +51,9 @@ def restart_as_admin(hide_console=False):
         else:
             cmd_line = f'"{script}"'
         
-        # Dla GUI używamy pythonw.exe zamiast python.exe (ukrywa konsolę)
-        if hide_console:
-            # Znajdź pythonw.exe w tym samym katalogu co python.exe
-            python_exe = sys.executable
-            pythonw_exe = python_exe.replace("python.exe", "pythonw.exe")
-            if not os.path.exists(pythonw_exe):
-                pythonw_exe = python_exe  # Fallback do python.exe
-            executable = pythonw_exe
-            show_cmd = 0  # SW_HIDE
-        else:
-            executable = sys.executable
-            show_cmd = 1  # SW_SHOWNORMAL
+        # Zawsze używamy python.exe (nie pythonw.exe), żeby GUI było widoczne
+        executable = sys.executable
+        show_cmd = 1  # SW_SHOWNORMAL - zawsze pokazuj okno
         
         # Próbuj uruchomić ponownie jako admin (to wyświetli UAC prompt)
         # ShellExecute z "runas" wyświetla UAC dialog
@@ -68,17 +62,20 @@ def restart_as_admin(hide_console=False):
             "runas",  # lpOperation - "runas" powoduje wyświetlenie UAC prompt
             executable,  # lpFile - Python interpreter
             cmd_line,  # lpParameters - argumenty (ścieżka do skryptu + parametry)
-            None,  # lpDirectory
-            show_cmd  # nShowCmd
+            None,  # lpDirectory - użyj bieżącego katalogu roboczego
+            show_cmd  # nShowCmd - SW_SHOWNORMAL
         )
         
         # Jeśli result > 32, to sukces (wartości < 32 to błędy)
+        # 42 = ERROR_ALREADY_EXISTS (może się zdarzyć, ale to też sukces)
         if result > 32:
             return True
         return False
     except Exception as e:
         if not hide_console:
             print(f"Błąd podczas próby uruchomienia jako administrator: {e}")
+            import traceback
+            traceback.print_exc()
         return False
 
 def require_admin(auto_restart=True):

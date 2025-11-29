@@ -19,19 +19,8 @@ def collect(max_events=200):
         # Szukamy błędów TxR w logach System (ukryte okno)
         cmd = f"Get-WinEvent -LogName System -MaxEvents {max_events} | Where-Object {{$_.Message -like '*TxR*' -or $_.Message -like '*0xc00000a2*' -or $_.Id -eq 8193}} | ConvertTo-Xml -As String -Depth 3"
         
-        startupinfo = None
-        if sys.platform == "win32":
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-        
-        output = subprocess.check_output(
-            ["powershell", "-Command", cmd],
-            text=True,
-            encoding="utf-8",
-            stderr=subprocess.DEVNULL,
-            startupinfo=startupinfo
-        )
+        from utils.subprocess_helper import run_powershell_hidden
+        output = run_powershell_hidden(cmd)
         
         # Parsowanie XML
         import xml.etree.ElementTree as ET
@@ -69,19 +58,8 @@ def collect(max_events=200):
     try:
         cmd = "Get-WinEvent -FilterHashtable @{LogName='System'; ID=8193} -MaxEvents 50 | ConvertTo-Xml -As String -Depth 3"
         
-        startupinfo = None
-        if sys.platform == "win32":
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-        
-        output = subprocess.check_output(
-            ["powershell", "-Command", cmd],
-            text=True,
-            encoding="utf-8",
-            stderr=subprocess.DEVNULL,
-            startupinfo=startupinfo
-        )
+        from utils.subprocess_helper import run_powershell_hidden
+        output = run_powershell_hidden(cmd)
         
         import xml.etree.ElementTree as ET
         try:
