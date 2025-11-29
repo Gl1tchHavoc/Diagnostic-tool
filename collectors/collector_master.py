@@ -4,11 +4,14 @@ Master collector - koordynuje zbieranie danych ze wszystkich collectors.
 import json
 from datetime import datetime
 from pathlib import Path
+import time
 
 from . import (
     hardware, drivers, system_logs, registry_txr, storage_health, system_info,
     services, bsod_dumps, performance_counters, wer, processes
 )
+
+from utils.logger import get_logger, log_collector_start, log_collector_end, log_performance
 
 def collect_all(save_raw=True, output_dir="output/raw", progress_callback=None):
     """
@@ -31,7 +34,7 @@ def collect_all(save_raw=True, output_dir="output/raw", progress_callback=None):
     collectors_list = [
         ("hardware", "Collecting hardware data...", lambda: hardware.collect()),
         ("drivers", "Collecting drivers data...", lambda: drivers.collect()),
-        ("system_logs", "Collecting system logs...", lambda: system_logs.collect(max_events=200, filter_levels=['Error', 'Warning', 'Critical'])),
+        ("system_logs", "Collecting system logs...", lambda: system_logs.collect(max_events=200, filter_levels=None)),  # None = wszystkie poziomy
         ("registry_txr", "Collecting Registry TxR errors...", lambda: registry_txr.collect(max_events=200)),
         ("storage_health", "Collecting storage health data...", lambda: storage_health.collect()),
         ("system_info", "Collecting system info...", lambda: system_info.collect()),
@@ -44,16 +47,39 @@ def collect_all(save_raw=True, output_dir="output/raw", progress_callback=None):
     
     total = len(collectors_list)
     
+    logger = get_logger()
+    logger.info(f"[COLLECTION] Starting collection of {total} collectors")
+    
     for step, (collector_name, message, collector_func) in enumerate(collectors_list, 1):
         if progress_callback:
             progress_callback(step, total, message)
         else:
             print(message)
         
+        log_collector_start(collector_name)
+        start_time = time.time()
+        
         try:
-            results["collectors"][collector_name] = collector_func()
+            collector_result = collector_func()
+            duration = time.time() - start_time
+            
+            # Policz elementy w wynikach
+            data_count = 0
+            if isinstance(collector_result, dict):
+                data_count = sum(len(v) if isinstance(v, (list, dict)) else 1 for v in collector_result.values())
+            elif isinstance(collector_result, list):
+                data_count = len(collector_result)
+            
+            results["collectors"][collector_name] = collector_result
+            log_collector_end(collector_name, success=True, data_count=data_count)
+            log_performance(f"Collector {collector_name}", duration, f"collected {data_count} items")
         except Exception as e:
-            results["collectors"][collector_name] = {"error": f"Collection failed: {type(e).__name__}: {e}"}
+            duration = time.time() - start_time
+            error_msg = f"{type(e).__name__}: {e}"
+            results["collectors"][collector_name] = {"error": f"Collection failed: {error_msg}"}
+            log_collector_end(collector_name, success=False, error=error_msg)
+            log_performance(f"Collector {collector_name}", duration, "FAILED")
+            logger.exception(f"Collector {collector_name} raised exception")
     
     # Zapisz surowe dane jeśli wymagane
     if save_raw:

@@ -3,6 +3,7 @@ Helper do uruchamiania subprocess z ukrytymi oknami PowerShell.
 """
 import subprocess
 import sys
+from utils.logger import get_logger
 
 def get_hidden_startupinfo():
     """
@@ -53,20 +54,25 @@ def run_powershell_safe(cmd_list, startupinfo=None):
         raise RuntimeError(f"PowerShell command failed: {e}")
     
     # Próbuj różne kodowania
+    logger = get_logger()
     for encoding in encodings:
         try:
             result = result_bytes.decode(encoding)
+            if encoding != 'utf-8':
+                logger.debug(f"[SUBPROCESS] Used encoding: {encoding}")
             return result
         except UnicodeDecodeError:
             continue
     
     # Jeśli wszystkie kodowania zawiodły, użyj errors='replace' z UTF-8
     # To zastąpi nieprawidłowe znaki znakiem zastępczym
+    logger.warning("[SUBPROCESS] All encodings failed, using UTF-8 with error replacement")
     try:
         result = result_bytes.decode('utf-8', errors='replace')
         return result
     except Exception as e:
         # Ostateczny fallback - użyj errors='ignore'
+        logger.error(f"[SUBPROCESS] UTF-8 decode failed: {e}, using ignore mode")
         result = result_bytes.decode('utf-8', errors='ignore')
         return result
 

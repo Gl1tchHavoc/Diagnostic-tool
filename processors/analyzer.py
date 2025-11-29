@@ -1,12 +1,14 @@
 """
 Główny analyzer - łączy wszystkie procesory i nowy system scoringu w kompleksową analizę.
 """
+import time
 from . import (
     hardware_processor, driver_processor, system_logs_processor,
     registry_txr_processor, storage_health_processor, system_info_processor
 )
 from .report_builder import build_report
 from .bsod_analyzer import analyze_bsod
+from utils.logger import get_logger, log_processor_start, log_processor_end, log_performance, log_bsod_analysis
 
 def analyze_all(collected_data, progress_callback=None):
     """
@@ -19,6 +21,10 @@ def analyze_all(collected_data, progress_callback=None):
     Returns:
         dict: Kompleksowy raport analizy
     """
+    logger = get_logger()
+    logger.info("[ANALYSIS] Starting full system analysis")
+    analysis_start_time = time.time()
+    
     collectors_data = collected_data.get("collectors", {})
     processed_data = {}
     
@@ -41,8 +47,34 @@ def analyze_all(collected_data, progress_callback=None):
         else:
             print(message)
         
+        log_processor_start(name)
+        processor_start_time = time.time()
+        
         if key in collectors_data:
-            processed_data[name] = processor_func(collectors_data[key])
+            try:
+                processor_result = processor_func(collectors_data[key])
+                duration = time.time() - processor_start_time
+                
+                # Policz znalezione problemy
+                issues_count = 0
+                if isinstance(processor_result, dict):
+                    issues_count = (
+                        len(processor_result.get("issues", [])) +
+                        len(processor_result.get("critical_issues", [])) +
+                        len(processor_result.get("critical_events", [])) +
+                        len(processor_result.get("warnings", []))
+                    )
+                
+                processed_data[name] = processor_result
+                log_processor_end(name, success=True, issues_found=issues_count)
+                log_performance(f"Processor {name}", duration, f"found {issues_count} issues")
+            except Exception as e:
+                duration = time.time() - processor_start_time
+                error_msg = f"{type(e).__name__}: {e}"
+                log_processor_end(name, success=False, error=error_msg)
+                log_performance(f"Processor {name}", duration, "FAILED")
+                logger.exception(f"Processor {name} raised exception")
+                processed_data[name] = {"error": error_msg}
     
     # Buduj raport używając nowego systemu
     if progress_callback:
@@ -73,26 +105,45 @@ def analyze_all(collected_data, progress_callback=None):
             # Pobierz dane BSOD jeśli dostępne
             bsod_raw = collectors_data.get("bsod_dumps", {})
             
-            # Uruchom analizę BSOD
-            bsod_analysis = analyze_bsod(
+            # Uruchom analizę BSOD z timeline
+            from .bsod_analyzer import analyze_bsod_with_timeline
+            bsod_start_time = time.time()
+            bsod_analysis = analyze_bsod_with_timeline(
                 system_logs_raw,
                 hardware_raw,
                 drivers_raw,
-                bsod_raw
+                bsod_raw,
+                time_window_minutes=15,
+                max_timeline_events=30
             )
+            bsod_duration = time.time() - bsod_start_time
+            log_bsod_analysis(
+                bsod_analysis.get("bsod_found", False),
+                len(bsod_analysis.get("related_events", [])),
+                len(bsod_analysis.get("top_causes", []))
+            )
+            log_performance("BSOD Analysis", bsod_duration)
         except Exception as e:
             # Nie przerywaj jeśli analiza BSOD się nie powiedzie
+            error_msg = f"BSOD analysis failed: {type(e).__name__}: {e}"
+            logger.exception("BSOD analysis raised exception")
             bsod_analysis = {
-                "error": f"BSOD analysis failed: {type(e).__name__}: {e}",
+                "error": error_msg,
                 "bsod_found": False
             }
     
     # Dodaj metadane
+    analysis_duration = time.time() - analysis_start_time
     final_report = {
         "timestamp": collected_data.get("timestamp"),
         "processed_data": processed_data,
         "report": report,
         "bsod_analysis": bsod_analysis
     }
+    
+    logger.info(f"[ANALYSIS] Analysis completed in {analysis_duration:.2f}s")
+    log_performance("Full Analysis", analysis_duration, 
+                   f"processed {len(processed_data)} processors, "
+                   f"found {report.get('summary', {}).get('total_issues', 0)} total issues")
     
     return final_report

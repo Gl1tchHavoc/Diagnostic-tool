@@ -15,6 +15,17 @@ Zaawansowane narzędzie diagnostyczne systemu Windows do identyfikacji problemó
 pip install -r requirements.txt
 ```
 
+## 📝 Logowanie
+
+Program automatycznie loguje wszystkie operacje do pliku `logs/diagnostic_tool_YYYYMMDD.log`:
+- Start/zakończenie collectors i processors
+- Błędy i wyjątki z pełnym tracebackiem
+- Metryki wydajności (czas wykonania operacji)
+- Informacje o analizie BSOD
+- Problemy z kodowaniem i subprocessami
+
+Logi są pomocne przy debugowaniu problemów i analizie wydajności.
+
 ## ⚠️ Wymagane uprawnienia
 
 **Program wymaga uprawnień administratora** do:

@@ -4,6 +4,7 @@ BSOD Analyzer - analizuje ostatni BSOD i identyfikuje najbardziej prawdopodobne 
 from datetime import datetime, timedelta
 from collections import defaultdict
 import re
+from utils.logger import get_logger
 
 # Konfiguracja
 DEFAULT_TIME_WINDOW_MINUTES = 15
@@ -74,6 +75,9 @@ def analyze_bsod(system_logs_data, hardware_data, drivers_data, bsod_data=None,
     Returns:
         dict: Strukturyzowana analiza BSOD z confidence scores i rekomendacjami
     """
+    logger = get_logger()
+    logger.debug("[BSOD] Starting BSOD analysis")
+    
     result = {
         "bsod_found": False,
         "last_bsod_timestamp": None,
@@ -88,8 +92,11 @@ def analyze_bsod(system_logs_data, hardware_data, drivers_data, bsod_data=None,
     last_bsod = find_last_bsod(system_logs_data, bsod_data)
     
     if not last_bsod:
+        logger.info("[BSOD] No BSOD events found in logs")
         result["message"] = "No BSOD events found in logs"
         return result
+    
+    logger.info(f"[BSOD] BSOD found: Event ID {last_bsod.get('event_id', 'N/A')}, Timestamp: {last_bsod.get('timestamp', 'N/A')}")
     
     result["bsod_found"] = True
     result["last_bsod_timestamp"] = last_bsod["timestamp"]
@@ -109,11 +116,24 @@ def analyze_bsod(system_logs_data, hardware_data, drivers_data, bsod_data=None,
     time_window = timedelta(minutes=min(time_window_minutes, MAX_TIME_WINDOW_MINUTES))
     window_start = bsod_time - time_window
     
+    logger.debug(f"[BSOD] Analysis window: {window_start} to {bsod_time} ({time_window_minutes} minutes)")
+    
     # Zbierz wszystkie eventy z logów
     all_events = collect_all_events(system_logs_data)
+    logger.debug(f"[BSOD] Collected {len(all_events)} total events from logs")
     
     # Filtruj eventy w oknie czasowym
     candidate_events = filter_events_by_time(all_events, window_start, bsod_time)
+    logger.info(f"[BSOD] Found {len(candidate_events)} events in time window before BSOD")
+    
+    # Jeśli brak eventów w oknie, spróbuj rozszerzyć okno lub użyć wszystkich eventów
+    if len(candidate_events) == 0 and len(all_events) > 0:
+        logger.warning(f"[BSOD] No events in {time_window_minutes}min window, trying extended window")
+        # Spróbuj z większym oknem (do 60 min)
+        extended_window = timedelta(minutes=60)
+        extended_start = bsod_time - extended_window
+        candidate_events = filter_events_by_time(all_events, extended_start, bsod_time)
+        logger.info(f"[BSOD] Found {len(candidate_events)} events in extended 60min window")
     
     # 4. Kategoryzuj i oblicz confidence scores
     categorized_events = categorize_events(candidate_events)
@@ -128,10 +148,65 @@ def analyze_bsod(system_logs_data, hardware_data, drivers_data, bsod_data=None,
     # 6. Oblicz top causes (kumulatywny confidence)
     top_causes = calculate_top_causes(scored_events, hardware_correlations, driver_correlations)
     
+    # Jeśli brak top_causes, dodaj ogólne przyczyny na podstawie samego BSOD
+    if not top_causes:
+        # Event ID 41 (Unexpected shutdown) może mieć różne przyczyny
+        bsod_event_id = result.get("bsod_details", {}).get("event_id", "")
+        if bsod_event_id == "41":
+            top_causes = [
+                {
+                    "cause": "SYSTEM_CRITICAL",
+                    "confidence": 60.0,
+                    "related_events_count": 1,
+                    "description": "Unexpected system shutdown - possible hardware failure, power loss, or critical system error"
+                },
+                {
+                    "cause": "HARDWARE_FAILURE",
+                    "confidence": 40.0,
+                    "related_events_count": 0,
+                    "description": "Hardware component failure (PSU, motherboard, RAM)"
+                },
+                {
+                    "cause": "DRIVER_ERROR",
+                    "confidence": 30.0,
+                    "related_events_count": 0,
+                    "description": "Driver crash or incompatibility"
+                }
+            ]
+    
     # 7. Generuj rekomendacje
     recommendations = generate_bsod_recommendations(
         top_causes, hardware_correlations, driver_correlations, scored_events
     )
+    
+    # Jeśli brak rekomendacji, dodaj ogólne
+    if not recommendations:
+        recommendations = [
+            {
+                "priority": "CRITICAL",
+                "action": "Check minidump files in C:\\Windows\\Minidump",
+                "description": "Analyze crash dumps for specific error codes",
+                "confidence": 50
+            },
+            {
+                "priority": "HIGH",
+                "action": "Run Windows Memory Diagnostic",
+                "description": "Check for RAM issues",
+                "confidence": 40
+            },
+            {
+                "priority": "HIGH",
+                "action": "Check Event Viewer for errors before shutdown",
+                "description": "Review system logs for clues",
+                "confidence": 40
+            },
+            {
+                "priority": "MEDIUM",
+                "action": "Check power supply and connections",
+                "description": "Unexpected shutdowns can indicate power issues",
+                "confidence": 30
+            }
+        ]
     
     # Sortuj eventy według confidence (najwyższe pierwsze)
     scored_events.sort(key=lambda x: x.get("confidence_score", 0), reverse=True)
@@ -146,6 +221,9 @@ def analyze_bsod(system_logs_data, hardware_data, drivers_data, bsod_data=None,
         "end": bsod_time.isoformat(),
         "minutes": time_window_minutes
     }
+    
+    logger.info(f"[BSOD] Analysis complete: {len(result['related_events'])} related events, "
+                f"{len(result['top_causes'])} top causes, {len(result['recommendations'])} recommendations")
     
     return result
 
@@ -216,18 +294,28 @@ def collect_all_events(system_logs_data):
     Returns:
         list: Lista wszystkich eventów
     """
+    logger = get_logger()
     all_events = []
     
     if isinstance(system_logs_data, dict):
         for category, logs in system_logs_data.items():
             if isinstance(logs, list):
+                category_events = 0
                 for log in logs:
                     if isinstance(log, dict):
                         # Pomiń błędy parsowania
                         if "error" in log:
+                            logger.debug(f"[BSOD] Skipping error entry in {category}: {log.get('error', 'N/A')}")
                             continue
                         all_events.append(log)
+                        category_events += 1
+                logger.debug(f"[BSOD] Collected {category_events} events from {category} log")
+            else:
+                logger.warning(f"[BSOD] {category} logs is not a list: {type(logs)}")
+    else:
+        logger.warning(f"[BSOD] system_logs_data is not a dict: {type(system_logs_data)}")
     
+    logger.debug(f"[BSOD] Total events collected: {len(all_events)}")
     return all_events
 
 
@@ -264,16 +352,51 @@ def filter_events_by_time(events, window_start, window_end):
 def should_exclude_event(message):
     """
     Sprawdza czy event powinien być wykluczony (rutynowy/informacyjny).
+    Filtruje heartbeat, login/logout, Windows Update, backup, scheduled tasks, itp.
     
     Returns:
         bool: True jeśli wykluczyć, False jeśli uwzględnić
     """
     message_lower = message.lower()
     
+    # Rozszerzona lista słów kluczowych do wykluczenia
+    exclude_patterns = [
+        # Heartbeat i rutynowe operacje
+        "heartbeat", "health check", "status check",
+        # Logowanie użytkowników
+        "user logged on", "user logged off", "logon", "logoff", "login", "logout",
+        "account logged on", "account logged off", "session", "authentication",
+        # Windows Update
+        "windows update", "update installed", "update downloaded", "wuauclt",
+        # Backup i VSS
+        "backup completed", "backup started", "backup finished", "vss", "shadow copy",
+        # Scheduled tasks
+        "task scheduler", "scheduled task", "task completed", "task started",
+        # Rutynowe usługi
+        "service started", "service stopped", "service is running", "service control",
+        # Network rutynowe
+        "dhcp", "dns query", "network adapter", "ip address assigned",
+        # System rutynowe
+        "system time", "time synchronization", "ntp", "time service",
+        # Informacyjne
+        "information", "informacje", "successful", "completed successfully",
+        # Rutynowe operacje dysku
+        "disk cleanup", "defrag", "disk check completed", "chkdsk completed",
+    ]
+    
     # Sprawdź czy zawiera słowa kluczowe do wykluczenia
-    for exclude_keyword in EXCLUDE_KEYWORDS:
-        if exclude_keyword in message_lower:
+    for pattern in exclude_patterns:
+        if pattern in message_lower:
             return True
+    
+    # Sprawdź czy to tylko informacyjny event bez błędów
+    if "error" not in message_lower and "fail" not in message_lower and "critical" not in message_lower:
+        # Jeśli nie zawiera słów kluczowych błędów, sprawdź czy to rutynowy event
+        routine_keywords = ["started", "stopped", "completed", "initialized", "loaded"]
+        if any(keyword in message_lower for keyword in routine_keywords):
+            # Jeśli zawiera tylko rutynowe słowa, wyklucz
+            if not any(keyword in message_lower for keyword in ["error", "fail", "warn", "critical", "crash", "bsod"]):
+                return True
     
     return False
 
@@ -647,14 +770,21 @@ def parse_timestamp(timestamp_str):
         "%Y-%m-%dT%H:%M:%S.%f",
         "%Y-%m-%dT%H:%M:%SZ",
         "%Y/%m/%d %H:%M:%S",
+        "%m/%d/%Y %I:%M:%S %p",  # 11/29/2025 10:04:12 AM
+        "%m/%d/%Y %H:%M:%S",     # 11/29/2025 10:04:12
+        "%d/%m/%Y %H:%M:%S",     # 29/11/2025 10:04:12
+        "%d.%m.%Y %H:%M:%S",     # 29.11.2025 10:04:12
     ]
     
     # Wyczyść timestamp
     timestamp_clean = timestamp_str.strip()
     
     # Usuń milisekundy jeśli są
-    if '.' in timestamp_clean:
-        timestamp_clean = timestamp_clean.split('.')[0]
+    if '.' in timestamp_clean and len(timestamp_clean.split('.')) > 2:
+        # Tylko jeśli to milisekundy, nie część daty
+        parts = timestamp_clean.split('.')
+        if len(parts[-1]) <= 3 and parts[-1].isdigit():
+            timestamp_clean = '.'.join(parts[:-1])
     
     # Usuń 'Z' jeśli jest
     timestamp_clean = timestamp_clean.replace('Z', '')
@@ -664,6 +794,35 @@ def parse_timestamp(timestamp_str):
             return datetime.strptime(timestamp_clean, fmt)
         except (ValueError, TypeError):
             continue
+    
+    # Próbuj parsować format z AM/PM (11/29/2025 10:04:12 AM)
+    try:
+        # Sprawdź czy zawiera AM/PM
+        has_ampm = " AM" in timestamp_str or " PM" in timestamp_str
+        if has_ampm:
+            # Format: MM/DD/YYYY HH:MM:SS AM/PM
+            # Próbuj bezpośrednio z AM/PM
+            try:
+                return datetime.strptime(timestamp_str.strip(), "%m/%d/%Y %I:%M:%S %p")
+            except ValueError:
+                # Spróbuj bez AM/PM i dodaj godzinę
+                timestamp_no_ampm = timestamp_str.replace(" AM", "").replace(" PM", "").strip()
+                parts = timestamp_no_ampm.split()
+                if len(parts) >= 2:
+                    date_part = parts[0]  # MM/DD/YYYY
+                    time_part = parts[1]  # HH:MM:SS
+                    # Konwertuj 12h na 24h jeśli potrzeba
+                    time_obj = datetime.strptime(time_part, "%H:%M:%S").time()
+                    # Jeśli było PM i godzina < 12, dodaj 12
+                    if " PM" in timestamp_str and time_obj.hour < 12:
+                        time_obj = time_obj.replace(hour=time_obj.hour + 12)
+                    elif " AM" in timestamp_str and time_obj.hour == 12:
+                        time_obj = time_obj.replace(hour=0)
+                    return datetime.strptime(f"{date_part} {time_obj.strftime('%H:%M:%S')}", "%m/%d/%Y %H:%M:%S")
+    except (ValueError, IndexError, AttributeError, TypeError) as e:
+        logger = get_logger()
+        logger.debug(f"[BSOD] Failed to parse AM/PM timestamp '{timestamp_str}': {e}")
+        pass
     
     # Ostateczny fallback - próbuj podstawowe parsowanie
     try:
@@ -678,4 +837,154 @@ def parse_timestamp(timestamp_str):
         pass
     
     return None
+
+
+def generate_bsod_event_timeline(related_events, top_causes, max_events=30):
+    """
+    Generuje chronologiczną oś czasu eventów poprzedzających BSOD.
+    Wyklucza eventy które nie miały wpływu na BSOD (niskie confidence, nieistotne kategorie).
+    
+    Args:
+        related_events (list): Lista powiązanych eventów z confidence scores
+        top_causes (list): Top przyczyny BSOD
+        max_events (int): Maksymalna liczba eventów do timeline
+    
+    Returns:
+        list: Chronologiczna lista eventów z opisami
+    """
+    if not related_events:
+        return []
+    
+    # Pobierz top kategorie z top_causes (najbardziej prawdopodobne przyczyny)
+    relevant_categories = set()
+    for cause in top_causes[:3]:  # Top 3 przyczyny
+        cause_name = cause.get("cause", "")
+        if cause_name:
+            relevant_categories.add(cause_name)
+    
+    # Filtruj eventy:
+    # 1. Wyklucz eventy z confidence < 10% (za niskie)
+    # 2. Priorytetyzuj eventy z kategorii które są w top_causes
+    # 3. Wyklucz eventy typu "OTHER" jeśli nie są w top_causes
+    filtered_events = []
+    
+    for event in related_events:
+        confidence = event.get("confidence_score", 0)
+        category = event.get("detected_category", "OTHER")
+        
+        # Wyklucz eventy z bardzo niskim confidence
+        if confidence < 10:
+            continue
+        
+        # Priorytetyzuj eventy z kategorii które są w top_causes
+        is_relevant_category = category in relevant_categories
+        
+        # Wyklucz "OTHER" jeśli nie ma wysokiego confidence
+        if category == "OTHER" and confidence < 30:
+            continue
+        
+        # Dodaj event z flagą czy jest w relevant categories
+        event_copy = event.copy()
+        event_copy["is_relevant_category"] = is_relevant_category
+        filtered_events.append(event_copy)
+    
+    # Sortuj chronologicznie (najstarsze pierwsze, do momentu BSOD)
+    # Priorytetyzuj eventy z wysokim confidence i relevant categories
+    
+    def sort_key(event):
+        timestamp = parse_timestamp(event.get("timestamp", ""))
+        timestamp_sort = timestamp if timestamp else datetime.min
+        
+        # Sortuj chronologicznie (najstarsze pierwsze)
+        # Negujemy confidence i is_relevant_category, żeby wyższe wartości były pierwsze
+        confidence = event.get("confidence_score", 0)
+        is_relevant = 1 if event.get("is_relevant_category", False) else 0
+        
+        # Sortuj: timestamp (rosnąco), potem confidence (malejąco), potem relevant (malejąco)
+        return (timestamp_sort, -confidence, -is_relevant)
+    
+    filtered_events.sort(key=sort_key)
+    
+    # Ogranicz do max_events
+    timeline_events = filtered_events[:max_events]
+    
+    # Formatuj dla timeline
+    timeline = []
+    for event in timeline_events:
+        timestamp = event.get("timestamp", "N/A")
+        category = event.get("detected_category", "OTHER")
+        confidence = event.get("confidence_score", 0)
+        event_id = event.get("event_id", "N/A")
+        message = event.get("message", "")
+        
+        # Skróć długie wiadomości
+        if len(message) > 150:
+            message = message[:150] + "..."
+        
+        # Opis kategorii
+        category_descriptions = {
+            "GPU_DRIVER": "GPU driver issue",
+            "DISK_ERROR": "Disk I/O error",
+            "MEMORY_ERROR": "Memory management issue",
+            "DRIVER_ERROR": "Driver failure",
+            "TXR_FAILURE": "Registry transaction failure",
+            "SERVICE_FAILURE": "Service failure",
+            "SYSTEM_CRITICAL": "Critical system error",
+            "OTHER": "Other system issue"
+        }
+        description = category_descriptions.get(category, "System event")
+        
+        timeline.append({
+            "timestamp": timestamp,
+            "category": category,
+            "description": description,
+            "confidence": round(confidence, 1),
+            "event_id": event_id,
+            "message": message,
+            "time_from_bsod_minutes": event.get("time_from_bsod_minutes")
+        })
+    
+    return timeline
+
+
+def analyze_bsod_with_timeline(system_logs_data, hardware_data, drivers_data, bsod_data=None, 
+                               time_window_minutes=DEFAULT_TIME_WINDOW_MINUTES, max_timeline_events=30):
+    """
+    Analizuje ostatni BSOD i identyfikuje najbardziej prawdopodobne przyczyny.
+    Dodatkowo generuje chronologiczną listę eventów poprzedzających BSOD.
+    
+    Args:
+        system_logs_data (dict): Przetworzone logi systemowe
+        hardware_data (dict): Dane sprzętowe (CPU, RAM, GPU, disks)
+        drivers_data (list): Lista driverów z informacjami
+        bsod_data (dict, optional): Dane z bsod_dumps collector
+        time_window_minutes (int, optional): Okno czasowe do analizy przed BSOD. 
+                                           Jeśli None, używa DEFAULT_TIME_WINDOW_MINUTES (15 min)
+        max_timeline_events (int): Maksymalna liczba eventów do timeline
+    
+    Returns:
+        dict: Strukturyzowana analiza BSOD z confidence scores, rekomendacjami i timeline
+    """
+    logger = get_logger()
+    
+    # Użyj domyślnego okna czasowego jeśli nie podano
+    if time_window_minutes is None:
+        time_window_minutes = DEFAULT_TIME_WINDOW_MINUTES
+    
+    logger.info(f"[BSOD] Starting BSOD analysis with timeline (time_window={time_window_minutes}min)")
+    
+    result = analyze_bsod(system_logs_data, hardware_data, drivers_data, bsod_data, time_window_minutes)
+    
+    if not result.get("bsod_found", False):
+        return result  # brak BSOD
+    
+    # Generowanie chronologicznej osi eventów
+    logger.debug(f"[BSOD] Generating timeline from {len(result.get('related_events', []))} related events")
+    timeline = generate_bsod_event_timeline(result["related_events"], result["top_causes"], max_events=max_timeline_events)
+    
+    # Dodaj do wyniku
+    result["event_timeline"] = timeline
+    logger.info(f"[BSOD] Generated timeline with {len(timeline)} events")
+    
+    return result
 

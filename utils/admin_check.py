@@ -4,6 +4,7 @@ Sprawdzanie uprawnień administratora i automatyczne podnoszenie uprawnień.
 import sys
 import ctypes
 import os
+from utils.logger import get_logger
 
 def is_admin():
     """
@@ -13,8 +14,13 @@ def is_admin():
         bool: True jeśli ma uprawnienia administratora, False w przeciwnym razie
     """
     try:
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except:
+        result = ctypes.windll.shell32.IsUserAnAdmin()
+        logger = get_logger()
+        logger.debug(f"[ADMIN] is_admin() = {result}")
+        return result
+    except Exception as e:
+        logger = get_logger()
+        logger.warning(f"[ADMIN] Failed to check admin status: {e}")
         return False
 
 def restart_as_admin(hide_console=False):
@@ -68,10 +74,15 @@ def restart_as_admin(hide_console=False):
         
         # Jeśli result > 32, to sukces (wartości < 32 to błędy)
         # 42 = ERROR_ALREADY_EXISTS (może się zdarzyć, ale to też sukces)
+        logger = get_logger()
         if result > 32:
+            logger.info(f"[ADMIN] Successfully requested admin elevation (result={result})")
             return True
+        logger.warning(f"[ADMIN] Failed to request admin elevation (result={result})")
         return False
     except Exception as e:
+        logger = get_logger()
+        logger.exception("[ADMIN] Exception during admin elevation attempt")
         if not hide_console:
             print(f"Błąd podczas próby uruchomienia jako administrator: {e}")
             import traceback

@@ -3,9 +3,13 @@ from tkinter import scrolledtext, messagebox, ttk
 from threading import Thread
 import json
 import sys
+import time
 
 # Sprawdź uprawnienia administratora
 from utils.admin_check import is_admin, require_admin, restart_as_admin
+
+# Logger
+from utils.logger import get_logger, log_performance, log_exception
 
 # Nowa struktura - wszystkie collectory
 from collectors import (
@@ -171,6 +175,10 @@ class DiagnosticsGUI:
         self.root.update()
     
     def run_full_scan(self):
+        logger = get_logger()
+        logger.info("[GUI] Starting full system scan")
+        scan_start_time = time.time()
+        
         self.status.config(text="Starting Full System Scan...")
         self.progress_bar['value'] = 0
         self.progress_percent.config(text="0%")
@@ -247,10 +255,16 @@ class DiagnosticsGUI:
                 self.output_text.insert(tk.END, "=" * 70 + "\n\n")
                 self.display_bsod_analysis(bsod_analysis)
             
+            scan_duration = time.time() - scan_start_time
+            logger.info(f"[GUI] Full system scan completed in {scan_duration:.2f}s")
+            log_performance("Full System Scan (GUI)", scan_duration)
+            
             self.status.config(text="Full System Scan Completed")
             self.progress_label.config(text="Scan completed successfully")
         except Exception as e:
             error_msg = f"Scan failed: {type(e).__name__}: {str(e)}"
+            logger.exception("[GUI] Full system scan failed")
+            log_exception(logger, f"[GUI] Scan error: {error_msg}")
             messagebox.showerror("Error", error_msg)
             self.output_text.insert(tk.END, f"\n❌ ERROR: {error_msg}\n")
             self.status.config(text="Scan Failed")
@@ -620,7 +634,7 @@ class DiagnosticsGUI:
             # System logs
             self.output_text.insert(tk.END, "  [1/4] Collecting system logs...\n")
             self.root.update()
-            collected_data["system_logs"] = system_logs.collect(max_events=500, filter_levels=['Error', 'Warning', 'Critical'])
+            collected_data["system_logs"] = system_logs.collect(max_events=1000, filter_levels=None)  # None = wszystkie poziomy
             
             # Hardware
             self.output_text.insert(tk.END, "  [2/4] Collecting hardware data...\n")
@@ -663,12 +677,14 @@ class DiagnosticsGUI:
             self.root.update()
             
             # Import lokalnie, żeby nie blokować uruchomienia GUI
-            from processors.bsod_analyzer import analyze_bsod
-            bsod_analysis = analyze_bsod(
+            from processors.bsod_analyzer import analyze_bsod_with_timeline
+            bsod_analysis = analyze_bsod_with_timeline(
                 system_logs_processed.get("data", {}),
                 hardware_processed.get("data", {}),
                 drivers_processed.get("data", []),
-                collected_data.get("bsod_dumps", {})
+                collected_data.get("bsod_dumps", {}),
+                time_window_minutes=15,
+                max_timeline_events=30
             )
             
             self.progress_bar['value'] = 100
@@ -739,6 +755,15 @@ class DiagnosticsGUI:
                 self.output_text.insert(tk.END, f"   Confidence: {confidence:.1f}%\n")
                 self.output_text.insert(tk.END, f"   Description: {description}\n")
                 self.output_text.insert(tk.END, f"   Related Events: {events_count}\n\n")
+        else:
+            # Jeśli brak top_causes, pokaż informację
+            self.output_text.insert(tk.END, "TOP LIKELY CAUSES\n")
+            self.output_text.insert(tk.END, "-" * 70 + "\n")
+            self.output_text.insert(tk.END, "No specific causes identified from event logs.\n")
+            self.output_text.insert(tk.END, "This may indicate:\n")
+            self.output_text.insert(tk.END, "- Power loss or hardware failure\n")
+            self.output_text.insert(tk.END, "- Event logs were cleared or rotated\n")
+            self.output_text.insert(tk.END, "- BSOD occurred too long ago (>15 min window)\n\n")
         
         # Related events
         related_events = bsod_analysis.get("related_events", [])
@@ -761,6 +786,15 @@ class DiagnosticsGUI:
                 if message:
                     self.output_text.insert(tk.END, f"   Message: {message}\n")
                 self.output_text.insert(tk.END, "\n")
+        else:
+            # Jeśli brak related events, pokaż informację
+            self.output_text.insert(tk.END, "RELATED EVENTS\n")
+            self.output_text.insert(tk.END, "-" * 70 + "\n")
+            self.output_text.insert(tk.END, "No related events found in the 15-minute window before BSOD.\n")
+            self.output_text.insert(tk.END, "This suggests:\n")
+            self.output_text.insert(tk.END, "- Sudden power loss or hardware failure\n")
+            self.output_text.insert(tk.END, "- BSOD occurred too quickly to log events\n")
+            self.output_text.insert(tk.END, "- Event logs may have been cleared\n\n")
         
         # Hardware correlations
         hardware_correlations = bsod_analysis.get("hardware_correlations", [])
@@ -792,7 +826,7 @@ class DiagnosticsGUI:
                 self.output_text.insert(tk.END, f"     Status: {driver_status}\n")
                 self.output_text.insert(tk.END, f"     Related Event: {event_id}\n\n")
         
-        # Recommendations
+        # Recommendations (zawsze pokazuj, nawet jeśli puste - fallback jest w bsod_analyzer)
         recommendations = bsod_analysis.get("recommendations", [])
         if recommendations:
             self.output_text.insert(tk.END, "RECOMMENDATIONS\n")
@@ -808,6 +842,47 @@ class DiagnosticsGUI:
                 if confidence > 0:
                     self.output_text.insert(tk.END, f"   Confidence: {confidence:.1f}%\n")
                 self.output_text.insert(tk.END, "\n")
+        else:
+            # Fallback recommendations jeśli brak
+            self.output_text.insert(tk.END, "RECOMMENDATIONS\n")
+            self.output_text.insert(tk.END, "-" * 70 + "\n")
+            self.output_text.insert(tk.END, "1. [CRITICAL] Check minidump files in C:\\Windows\\Minidump\n")
+            self.output_text.insert(tk.END, "   Analyze crash dumps for specific error codes\n\n")
+            self.output_text.insert(tk.END, "2. [HIGH] Run Windows Memory Diagnostic\n")
+            self.output_text.insert(tk.END, "   Check for RAM issues\n\n")
+            self.output_text.insert(tk.END, "3. [HIGH] Check Event Viewer for errors before shutdown\n")
+            self.output_text.insert(tk.END, "   Review system logs for clues\n\n")
+            self.output_text.insert(tk.END, "4. [MEDIUM] Check power supply and connections\n")
+            self.output_text.insert(tk.END, "   Unexpected shutdowns can indicate power issues\n\n")
+        
+        # Event Timeline (chronologiczna oś czasu)
+        event_timeline = bsod_analysis.get("event_timeline", [])
+        if event_timeline:
+            self.output_text.insert(tk.END, "CHRONOLOGICAL EVENT TIMELINE\n")
+            self.output_text.insert(tk.END, "-" * 70 + "\n")
+            self.output_text.insert(tk.END, "Events leading to BSOD (filtered by relevance):\n\n")
+            
+            for i, event in enumerate(event_timeline, 1):
+                timestamp = event.get("timestamp", "N/A")
+                category = event.get("category", "OTHER")
+                description = event.get("description", "")
+                confidence = event.get("confidence", 0)
+                event_id = event.get("event_id", "N/A")
+                message = event.get("message", "")
+                time_from_bsod = event.get("time_from_bsod_minutes")
+                
+                # Oznacz wysokie confidence
+                confidence_icon = "🔴" if confidence >= 50 else "🟠" if confidence >= 30 else "🟡"
+                
+                self.output_text.insert(tk.END, f"{i}. {confidence_icon} [{category}] {description}\n")
+                self.output_text.insert(tk.END, f"   Timestamp: {timestamp}\n")
+                if time_from_bsod is not None:
+                    self.output_text.insert(tk.END, f"   Time from BSOD: {time_from_bsod:.1f} minutes before\n")
+                self.output_text.insert(tk.END, f"   Confidence: {confidence:.1f}%\n")
+                self.output_text.insert(tk.END, f"   Event ID: {event_id}\n")
+                if message:
+                    self.output_text.insert(tk.END, f"   Message: {message}\n")
+                self.output_text.insert(tk.END, "\n")
         
         # Analysis window
         analysis_window = bsod_analysis.get("analysis_window", {})
@@ -822,15 +897,24 @@ class DiagnosticsGUI:
 
 #-----------------------------------------
 if __name__ == "__main__":
+    # Inicjalizuj logger na starcie
+    logger = get_logger()
+    logger.info("=" * 70)
+    logger.info("Diagnostic Tool - Application Started")
+    logger.info("=" * 70)
+    
     # Sprawdź uprawnienia - jeśli brak, od razu próbuj uruchomić jako admin
     if not is_admin():
+        logger.warning("Application started without administrator privileges")
         # Próbuj automatycznie uruchomić jako admin (Windows zapyta przez UAC)
         if restart_as_admin(hide_console=False):
+            logger.info("Attempting to restart as administrator")
             # Daj chwilę na uruchomienie nowej instancji
-            import time
             time.sleep(1)
+            logger.info("Exiting current instance, new instance will start as admin")
             sys.exit(0)  # Zakończ obecną instancję, nowa zostanie uruchomiona jako admin
         else:
+            logger.error("Failed to restart as administrator")
             # Jeśli nie udało się, pokaż ostrzeżenie i kontynuuj
             import tkinter.messagebox as msgbox
             root_warn = tk.Tk()
@@ -842,7 +926,12 @@ if __name__ == "__main__":
                 "Uruchom program ręcznie jako administrator dla pełnej funkcjonalności."
             )
             root_warn.destroy()
+    else:
+        logger.info("Application running with administrator privileges")
     
+    logger.info("Initializing GUI")
     root = tk.Tk()
     app = DiagnosticsGUI(root)
+    logger.info("Starting GUI main loop")
     root.mainloop()
+    logger.info("Application closed")

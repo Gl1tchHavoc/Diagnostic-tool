@@ -1,6 +1,11 @@
 """
 Procesor zdrowia dysków - analizuje stan dysków i wykrywa problemy.
 """
+from utils.disk_helper import filter_disk_errors_by_existing_drives, get_existing_drives
+from utils.logger import get_logger
+
+logger = get_logger()
+
 def process(storage_data):
     """
     Przetwarza dane o zdrowiu dysków i wykrywa problemy.
@@ -69,10 +74,17 @@ def process(storage_data):
                 "component": "Storage"
             })
     
-    # Sprawdź ogólne błędy dysków
+    # Sprawdź ogólne błędy dysków - filtruj tylko istniejące dyski
     disk_errors = storage_data.get("disk_errors", [])
     if disk_errors:
-        for error in disk_errors:
+        # Pobierz listę istniejących dysków
+        existing_drives = get_existing_drives()
+        logger.debug(f"[STORAGE_HEALTH] Filtering {len(disk_errors)} disk errors against {len(existing_drives)} existing drives")
+        
+        # Filtruj błędy dotyczące nieistniejących dysków
+        filtered_disk_errors = filter_disk_errors_by_existing_drives(disk_errors, existing_drives)
+        
+        for error in filtered_disk_errors:
             warnings.append({
                 "type": "DISK_WARNING",
                 "severity": "WARNING",
@@ -81,6 +93,9 @@ def process(storage_data):
                 "timestamp": error.get("timestamp", ""),
                 "component": "Storage"
             })
+        
+        if len(filtered_disk_errors) < len(disk_errors):
+            logger.info(f"[STORAGE_HEALTH] Filtered out {len(disk_errors) - len(filtered_disk_errors)} errors for non-existent drives")
     
     return {
         "data": storage_data,
