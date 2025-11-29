@@ -1,1 +1,9 @@
-psutil
+# Core dependencies
+psutil>=5.9.0
+
+# Windows-specific dependencies
+pywin32>=305; sys_platform == "win32"
+WMI>=1.5.1; sys_platform == "win32"
+
+# Optional dependencies
+GPUtil>=1.4.0; sys_platform == "win32"
