@@ -23,13 +23,19 @@ def collect():
         return bsod_data
     
     try:
-        # Sprawdź Event ID 1001 (Bugcheck) i 41 (Unexpected shutdown)
-        cmd = [
-            "powershell",
-            "-Command",
-            "Get-WinEvent -LogName System -MaxEvents 200 | Where-Object {$_.Id -in @(41,1001,6008,1074,1076) -or $_.Message -like '*bugcheck*' -or $_.Message -like '*blue screen*' -or $_.Message -like '*stop error*'} | ConvertTo-Xml -As String -Depth 3"
-        ]
-        output = subprocess.check_output(cmd, text=True, encoding="utf-8", stderr=subprocess.DEVNULL)
+        # Sprawdź Event ID 1001 (Bugcheck) i 41 (Unexpected shutdown) - ukryte okno
+        cmd = "Get-WinEvent -LogName System -MaxEvents 200 | Where-Object {$_.Id -in @(41,1001,6008,1074,1076) -or $_.Message -like '*bugcheck*' -or $_.Message -like '*blue screen*' -or $_.Message -like '*stop error*'} | ConvertTo-Xml -As String -Depth 3"
+        
+        from utils.subprocess_helper import get_hidden_startupinfo
+        startupinfo = get_hidden_startupinfo()
+        
+        output = subprocess.check_output(
+            ["powershell", "-Command", cmd],
+            text=True,
+            encoding="utf-8",
+            stderr=subprocess.DEVNULL,
+            startupinfo=startupinfo
+        )
         
         import xml.etree.ElementTree as ET
         try:

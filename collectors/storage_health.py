@@ -39,14 +39,20 @@ def collect():
             }
             storage_data["disks"].append(disk_info)
         
-        # Sprawdź błędy dysków w Event Logs
+        # Sprawdź błędy dysków w Event Logs (ukryte okno)
         try:
-            cmd = [
-                "powershell",
-                "-Command",
-                "Get-WinEvent -LogName System -MaxEvents 200 | Where-Object {$_.Id -in @(7,51,52,55,57,129) -or $_.Message -like '*disk*' -or $_.Message -like '*ntfs*' -or $_.Message -like '*bad block*'} | ConvertTo-Xml -As String -Depth 3"
-            ]
-            output = subprocess.check_output(cmd, text=True, encoding="utf-8", stderr=subprocess.DEVNULL)
+            cmd = "Get-WinEvent -LogName System -MaxEvents 200 | Where-Object {$_.Id -in @(7,51,52,55,57,129) -or $_.Message -like '*disk*' -or $_.Message -like '*ntfs*' -or $_.Message -like '*bad block*'} | ConvertTo-Xml -As String -Depth 3"
+            
+            from utils.subprocess_helper import get_hidden_startupinfo
+            startupinfo = get_hidden_startupinfo()
+            
+            output = subprocess.check_output(
+                ["powershell", "-Command", cmd],
+                text=True,
+                encoding="utf-8",
+                stderr=subprocess.DEVNULL,
+                startupinfo=startupinfo
+            )
             
             import xml.etree.ElementTree as ET
             try:

@@ -1,4 +1,5 @@
 import subprocess
+import sys
 from datetime import datetime
 
 def collect(max_events=200):
@@ -15,13 +16,22 @@ def collect(max_events=200):
     txr_errors = []
     
     try:
-        # Szukamy błędów TxR w logach System
-        cmd = [
-            "powershell",
-            "-Command",
-            f"Get-WinEvent -LogName System -MaxEvents {max_events} | Where-Object {{$_.Message -like '*TxR*' -or $_.Message -like '*0xc00000a2*' -or $_.Id -eq 8193}} | ConvertTo-Xml -As String -Depth 3"
-        ]
-        output = subprocess.check_output(cmd, text=True, encoding="utf-8", stderr=subprocess.DEVNULL)
+        # Szukamy błędów TxR w logach System (ukryte okno)
+        cmd = f"Get-WinEvent -LogName System -MaxEvents {max_events} | Where-Object {{$_.Message -like '*TxR*' -or $_.Message -like '*0xc00000a2*' -or $_.Id -eq 8193}} | ConvertTo-Xml -As String -Depth 3"
+        
+        startupinfo = None
+        if sys.platform == "win32":
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+        
+        output = subprocess.check_output(
+            ["powershell", "-Command", cmd],
+            text=True,
+            encoding="utf-8",
+            stderr=subprocess.DEVNULL,
+            startupinfo=startupinfo
+        )
         
         # Parsowanie XML
         import xml.etree.ElementTree as ET
@@ -57,12 +67,21 @@ def collect(max_events=200):
     
     # Dodatkowo sprawdzamy Event ID 8193 (Registry TxR failure)
     try:
-        cmd = [
-            "powershell",
-            "-Command",
-            "Get-WinEvent -FilterHashtable @{LogName='System'; ID=8193} -MaxEvents 50 | ConvertTo-Xml -As String -Depth 3"
-        ]
-        output = subprocess.check_output(cmd, text=True, encoding="utf-8", stderr=subprocess.DEVNULL)
+        cmd = "Get-WinEvent -FilterHashtable @{LogName='System'; ID=8193} -MaxEvents 50 | ConvertTo-Xml -As String -Depth 3"
+        
+        startupinfo = None
+        if sys.platform == "win32":
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+        
+        output = subprocess.check_output(
+            ["powershell", "-Command", cmd],
+            text=True,
+            encoding="utf-8",
+            stderr=subprocess.DEVNULL,
+            startupinfo=startupinfo
+        )
         
         import xml.etree.ElementTree as ET
         try:

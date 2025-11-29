@@ -1,7 +1,11 @@
 import tkinter as tk
-from tkinter import scrolledtext, messagebox
+from tkinter import scrolledtext, messagebox, ttk
 from threading import Thread
 import json
+import sys
+
+# Sprawdź uprawnienia administratora
+from utils.admin_check import is_admin, require_admin, restart_as_admin
 
 # Nowa struktura - wszystkie collectory
 from collectors import (
@@ -17,8 +21,29 @@ class DiagnosticsGUI:
         self.root.title("Super Diagnostics Tool")
         self.root.geometry("1800x1200")
         self.root.configure(bg="#2e2e2e")
-
+        
+        # Sprawdź uprawnienia administratora
+        if not is_admin():
+            self.show_admin_warning()
+        
         self.setup_widgets()
+    
+    def show_admin_warning(self):
+        """Wyświetla ostrzeżenie o braku uprawnień administratora."""
+        warning_text = (
+            "⚠️ WYMAGANE UPRAWNIENIA ADMINISTRATORA\n\n"
+            "Ten program wymaga uprawnień administratora do:\n"
+            "• Czytania logów systemowych Windows\n"
+            "• Dostępu do Registry TxR errors\n"
+            "• Sprawdzania statusu usług systemowych\n"
+            "• Analizy BSOD i memory dumps\n\n"
+            "Niektóre funkcje mogą nie działać poprawnie.\n\n"
+            "Uruchom program jako administrator:\n"
+            "1. Zamknij to okno\n"
+            "2. Kliknij prawym przyciskiem na plik\n"
+            "3. Wybierz 'Uruchom jako administrator'"
+        )
+        messagebox.showwarning("Uprawnienia administratora", warning_text)
 
     def setup_widgets(self):
         # Główny przycisk - Full System Scan
@@ -93,6 +118,27 @@ class DiagnosticsGUI:
         )
         self.output_text.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
 
+        # Progress bar
+        progress_frame = tk.Frame(self.root, bg="#2e2e2e")
+        progress_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=5)
+        
+        self.progress_label = tk.Label(
+            progress_frame, text="Ready", bg="#2e2e2e", fg="white", 
+            font=("Arial", 9), anchor=tk.W
+        )
+        self.progress_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        self.progress_percent = tk.Label(
+            progress_frame, text="0%", bg="#2e2e2e", fg="#00ff00", 
+            font=("Arial", 9, "bold"), width=5
+        )
+        self.progress_percent.pack(side=tk.RIGHT)
+        
+        self.progress_bar = tk.ttk.Progressbar(
+            self.root, mode='determinate', length=400, maximum=100
+        )
+        self.progress_bar.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=(0, 5))
+        
         # Status bar
         self.status = tk.Label(
             self.root, text="Ready", bd=1, relief=tk.SUNKEN, anchor=tk.W,
@@ -106,8 +152,20 @@ class DiagnosticsGUI:
         thread = Thread(target=self.run_full_scan, daemon=True)
         thread.start()
 
+    def update_progress(self, step, total, message):
+        """Aktualizuje pasek postępu i status."""
+        percent = int((step / total) * 100)
+        self.progress_bar['value'] = percent
+        self.progress_percent.config(text=f"{percent}%")
+        self.progress_label.config(text=message)
+        self.status.config(text=f"{message} ({step}/{total})")
+        self.root.update()
+    
     def run_full_scan(self):
         self.status.config(text="Starting Full System Scan...")
+        self.progress_bar['value'] = 0
+        self.progress_percent.config(text="0%")
+        self.progress_label.config(text="Initializing...")
         self.full_scan_btn.config(state=tk.DISABLED)
         for btn in self.collector_buttons.values():
             btn.config(state=tk.DISABLED)
@@ -120,36 +178,66 @@ class DiagnosticsGUI:
         
         try:
             # Krok 1: Zbierz dane
-            self.status.config(text="Collecting system data...")
             self.output_text.insert(tk.END, "Step 1: Collecting system data...\n")
             self.output_text.insert(tk.END, "-" * 70 + "\n")
             self.root.update()
             
-            collected_data = collect_all(save_raw=True, output_dir="output/raw")
+            # Callback do aktualizacji postępu
+            def progress_callback(step, total, message):
+                # Oblicz procent dla kroku zbierania (0-50%)
+                collection_percent = int((step / total) * 50)
+                self.progress_bar['value'] = collection_percent
+                self.progress_percent.config(text=f"{collection_percent}%")
+                self.progress_label.config(text=message)
+                self.status.config(text=f"{message} ({step}/{total})")
+                self.output_text.insert(tk.END, f"  [{step}/{total}] {message}\n")
+                self.output_text.see(tk.END)
+                self.root.update()
+            
+            collected_data = collect_all(
+                save_raw=True, 
+                output_dir="output/raw",
+                progress_callback=progress_callback
+            )
             
             self.output_text.insert(tk.END, "✓ Data collection completed\n\n")
             self.root.update()
             
             # Krok 2: Analizuj
-            self.status.config(text="Analyzing data...")
             self.output_text.insert(tk.END, "Step 2: Processing and analyzing data...\n")
             self.output_text.insert(tk.END, "-" * 70 + "\n")
             self.root.update()
             
-            analysis_report = analyze_all(collected_data)
+            # Callback do aktualizacji postępu analizy (50-100%)
+            def analysis_callback(step, total, message):
+                # Oblicz procent dla kroku analizy (50-100%)
+                analysis_percent = 50 + int((step / total) * 50)
+                self.progress_bar['value'] = analysis_percent
+                self.progress_percent.config(text=f"{analysis_percent}%")
+                self.progress_label.config(text=message)
+                self.status.config(text=f"{message} ({step}/{total})")
+                self.output_text.insert(tk.END, f"  [{step}/{total}] {message}\n")
+                self.output_text.see(tk.END)
+                self.root.update()
+            
+            analysis_report = analyze_all(collected_data, progress_callback=analysis_callback)
             
             self.output_text.insert(tk.END, "✓ Analysis completed\n\n")
+            self.progress_bar['value'] = 100
+            self.progress_percent.config(text="100%")
             self.root.update()
             
             # Wyświetl wyniki
             self.display_analysis_results(analysis_report)
             
             self.status.config(text="Full System Scan Completed")
+            self.progress_label.config(text="Scan completed successfully")
         except Exception as e:
             error_msg = f"Scan failed: {type(e).__name__}: {str(e)}"
             messagebox.showerror("Error", error_msg)
             self.output_text.insert(tk.END, f"\n❌ ERROR: {error_msg}\n")
             self.status.config(text="Scan Failed")
+            self.progress_label.config(text="Scan failed")
         finally:
             self.full_scan_btn.config(state=tk.NORMAL)
             for btn in self.collector_buttons.values():
@@ -389,17 +477,70 @@ class DiagnosticsGUI:
                 self.output_text.insert(tk.END, f"{i}. {cause_name}\n")
                 self.output_text.insert(tk.END, f"   Confidence: {confidence:.1f}% ({issues_count} related events)\n\n")
         
-        # Top problemy
+        # Top problemy - szczegółowe wyświetlanie
         issues_data = report_data.get("issues", {})
+        
+        # Critical Issues
         critical_issues = issues_data.get("critical", [])
         if critical_issues:
             self.output_text.insert(tk.END, "Critical Issues:\n")
             self.output_text.insert(tk.END, "-" * 70 + "\n")
             for i, issue in enumerate(critical_issues[:10], 1):
                 issue_type = issue.get("type", "Unknown")
-                message = issue.get("message", "")[:80]  # Skróć długie wiadomości
-                self.output_text.insert(tk.END, f"{i}. [{issue_type}]\n")
-                self.output_text.insert(tk.END, f"   {message}\n\n")
+                severity = issue.get("severity", "CRITICAL")
+                message = issue.get("message", "")
+                event_id = issue.get("event_id", "N/A")
+                timestamp = issue.get("timestamp", "N/A")
+                component = issue.get("component", "Unknown")
+                
+                self.output_text.insert(tk.END, f"{i}. [{severity}] {issue_type}\n")
+                self.output_text.insert(tk.END, f"   Component: {component}\n")
+                if event_id != "N/A":
+                    self.output_text.insert(tk.END, f"   Event ID: {event_id}\n")
+                if timestamp != "N/A":
+                    self.output_text.insert(tk.END, f"   Time: {timestamp}\n")
+                if message:
+                    # Wyświetl pełną wiadomość (może być długa)
+                    msg_lines = message.split('\n')[:5]  # Max 5 linii
+                    for line in msg_lines:
+                        self.output_text.insert(tk.END, f"   {line}\n")
+                self.output_text.insert(tk.END, "\n")
+        
+        # Error Issues
+        error_issues = issues_data.get("errors", [])
+        if error_issues:
+            self.output_text.insert(tk.END, "Error Issues:\n")
+            self.output_text.insert(tk.END, "-" * 70 + "\n")
+            for i, issue in enumerate(error_issues[:10], 1):
+                issue_type = issue.get("type", "Unknown")
+                severity = issue.get("severity", "ERROR")
+                message = issue.get("message", "")
+                event_id = issue.get("event_id", "N/A")
+                timestamp = issue.get("timestamp", "N/A")
+                component = issue.get("component", "Unknown")
+                
+                self.output_text.insert(tk.END, f"{i}. [{severity}] {issue_type}\n")
+                self.output_text.insert(tk.END, f"   Component: {component}\n")
+                if event_id != "N/A":
+                    self.output_text.insert(tk.END, f"   Event ID: {event_id}\n")
+                if timestamp != "N/A":
+                    self.output_text.insert(tk.END, f"   Time: {timestamp}\n")
+                if message:
+                    msg_lines = message.split('\n')[:5]  # Max 5 linii
+                    for line in msg_lines:
+                        self.output_text.insert(tk.END, f"   {line}\n")
+                self.output_text.insert(tk.END, "\n")
+        
+        # Warnings (jeśli są)
+        warning_issues = issues_data.get("warnings", [])
+        if warning_issues and len(warning_issues) > 0:
+            self.output_text.insert(tk.END, f"Warnings ({len(warning_issues)} total):\n")
+            self.output_text.insert(tk.END, "-" * 70 + "\n")
+            for i, warning in enumerate(warning_issues[:5], 1):  # Max 5 warnings
+                issue_type = warning.get("type", "Unknown")
+                message = warning.get("message", "")[:100]
+                self.output_text.insert(tk.END, f"{i}. {issue_type}: {message}\n")
+            self.output_text.insert(tk.END, "\n")
         
         # Rekomendacje
         recommendations = report_data.get("recommendations", [])
@@ -414,11 +555,55 @@ class DiagnosticsGUI:
                 if description:
                     self.output_text.insert(tk.END, f"   {description}\n")
                 self.output_text.insert(tk.END, "\n")
+        else:
+            # Jeśli brak rekomendacji, pokaż ogólne porady
+            if summary.get('total_errors', 0) > 0 or summary.get('total_critical', 0) > 0:
+                self.output_text.insert(tk.END, "Recommended Actions:\n")
+                self.output_text.insert(tk.END, "-" * 70 + "\n")
+                self.output_text.insert(tk.END, "1. [MEDIUM] Review error details above\n")
+                self.output_text.insert(tk.END, "   Check specific error messages for guidance\n\n")
+                self.output_text.insert(tk.END, "2. [MEDIUM] Run sfc /scannow\n")
+                self.output_text.insert(tk.END, "   Scan and repair system file corruption\n\n")
+                self.output_text.insert(tk.END, "3. [LOW] Check Windows Event Viewer\n")
+                self.output_text.insert(tk.END, "   Review detailed event logs for more information\n\n")
         
         self.output_text.see(tk.END)
 
 #-----------------------------------------
 if __name__ == "__main__":
+    # Sprawdź uprawnienia przed uruchomieniem GUI
+    if not is_admin():
+        import tkinter.messagebox as msgbox
+        root_check = tk.Tk()
+        root_check.withdraw()  # Ukryj główne okno
+        
+        response = msgbox.askyesno(
+            "Uprawnienia administratora",
+            "Ten program wymaga uprawnień administratora.\n\n"
+            "Czy chcesz uruchomić program jako administrator?\n\n"
+            "(Zostaniesz poproszony o potwierdzenie w oknie UAC)"
+        )
+        
+        root_check.destroy()
+        
+        if response:
+            # Próbuj uruchomić jako admin (ukryj konsolę dla GUI)
+            if restart_as_admin(hide_console=True):
+                sys.exit(0)  # Zakończ obecną instancję, nowa zostanie uruchomiona jako admin
+            else:
+                msgbox.showerror(
+                    "Błąd",
+                    "Nie udało się uruchomić jako administrator.\n"
+                    "Uruchom program ręcznie jako administrator."
+                )
+                sys.exit(1)
+        else:
+            msgbox.showwarning(
+                "Ostrzeżenie",
+                "Program będzie działał z ograniczonymi funkcjami.\n"
+                "Niektóre funkcje mogą nie działać poprawnie."
+            )
+    
     root = tk.Tk()
     app = DiagnosticsGUI(root)
     root.mainloop()

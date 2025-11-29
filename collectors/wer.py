@@ -20,15 +20,21 @@ def collect():
         wer_data["error"] = "Windows only"
         return wer_data
     
-    # Sprawdź Event Logs dla WER
+    # Sprawdź Event Logs dla WER (ukryte okno)
     try:
         # Event ID 1000, 1001 - Application crashes
-        cmd = [
-            "powershell",
-            "-Command",
-            "Get-WinEvent -LogName Application -MaxEvents 200 | Where-Object {$_.Id -in @(1000,1001,1002) -or $_.ProviderName -eq 'Application Error' -or $_.ProviderName -eq 'Windows Error Reporting'} | ConvertTo-Xml -As String -Depth 3"
-        ]
-        output = subprocess.check_output(cmd, text=True, encoding="utf-8", stderr=subprocess.DEVNULL)
+        cmd = "Get-WinEvent -LogName Application -MaxEvents 200 | Where-Object {$_.Id -in @(1000,1001,1002) -or $_.ProviderName -eq 'Application Error' -or $_.ProviderName -eq 'Windows Error Reporting'} | ConvertTo-Xml -As String -Depth 3"
+        
+        from utils.subprocess_helper import get_hidden_startupinfo
+        startupinfo = get_hidden_startupinfo()
+        
+        output = subprocess.check_output(
+            ["powershell", "-Command", cmd],
+            text=True,
+            encoding="utf-8",
+            stderr=subprocess.DEVNULL,
+            startupinfo=startupinfo
+        )
         
         import xml.etree.ElementTree as ET
         try:

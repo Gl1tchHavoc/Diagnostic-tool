@@ -61,14 +61,20 @@ def collect():
                     "issue": "Service has error status"
                 })
         
-        # Sprawdź błędy usług w Event Logs
+        # Sprawdź błędy usług w Event Logs (ukryte okno)
         try:
-            cmd = [
-                "powershell",
-                "-Command",
-                "Get-WinEvent -LogName System -MaxEvents 500 | Where-Object {$_.Id -in @(7000,7001,7009,7011,7022,7023,7024,7031,7032,7034) -or $_.Message -like '*service*' -and ($_.Message -like '*fail*' -or $_.Message -like '*error*' -or $_.Message -like '*timeout*')} | ConvertTo-Xml -As String -Depth 3"
-            ]
-            output = subprocess.check_output(cmd, text=True, encoding="utf-8", stderr=subprocess.DEVNULL)
+            cmd = "Get-WinEvent -LogName System -MaxEvents 500 | Where-Object {$_.Id -in @(7000,7001,7009,7011,7022,7023,7024,7031,7032,7034) -or $_.Message -like '*service*' -and ($_.Message -like '*fail*' -or $_.Message -like '*error*' -or $_.Message -like '*timeout*')} | ConvertTo-Xml -As String -Depth 3"
+            
+            from utils.subprocess_helper import get_hidden_startupinfo
+            startupinfo = get_hidden_startupinfo()
+            
+            output = subprocess.check_output(
+                ["powershell", "-Command", cmd],
+                text=True,
+                encoding="utf-8",
+                stderr=subprocess.DEVNULL,
+                startupinfo=startupinfo
+            )
             
             import xml.etree.ElementTree as ET
             try:

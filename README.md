@@ -15,6 +15,26 @@ Zaawansowane narzędzie diagnostyczne systemu Windows do identyfikacji problemó
 pip install -r requirements.txt
 ```
 
+## ⚠️ Wymagane uprawnienia
+
+**Program wymaga uprawnień administratora** do:
+- Czytania logów systemowych Windows
+- Dostępu do Registry TxR errors
+- Sprawdzania statusu usług systemowych
+- Analizy BSOD i memory dumps
+
+### Jak uruchomić jako administrator:
+
+**Windows:**
+1. Kliknij prawym przyciskiem na plik `.py` lub skrót
+2. Wybierz **"Uruchom jako administrator"**
+
+**Lub przez PowerShell (jako administrator):**
+```powershell
+python gui.py
+python main.py
+```
+
 ## Użycie
 
 ### GUI (Interfejs graficzny)

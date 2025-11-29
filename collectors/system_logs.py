@@ -1,4 +1,5 @@
 import subprocess
+import sys
 import xml.etree.ElementTree as ET
 from datetime import datetime
 import re
@@ -23,13 +24,20 @@ def collect(max_events=100, filter_levels=None):
 
     for category in log_categories:
         try:
-            # Wywołanie PowerShell do pobrania logów w formacie XML
-            cmd = [
-                "powershell",
-                "-Command",
-                f"Get-WinEvent -LogName {category} -MaxEvents {max_events} | ConvertTo-Xml -As String -Depth 3"
-            ]
-            output = subprocess.check_output(cmd, text=True, encoding="utf-8", stderr=subprocess.DEVNULL)
+            # Wywołanie PowerShell do pobrania logów w formacie XML (ukryte okno)
+            cmd = f"Get-WinEvent -LogName {category} -MaxEvents {max_events} | ConvertTo-Xml -As String -Depth 3"
+            
+            # Ukryj okno PowerShell
+            from utils.subprocess_helper import get_hidden_startupinfo
+            startupinfo = get_hidden_startupinfo()
+            
+            output = subprocess.check_output(
+                ["powershell", "-Command", cmd],
+                text=True,
+                encoding="utf-8",
+                stderr=subprocess.DEVNULL,
+                startupinfo=startupinfo
+            )
             logs = parse_xml_logs(output, filter_levels)
             all_logs[category] = logs
         except subprocess.CalledProcessError as e:

@@ -174,6 +174,45 @@ RECOMMENDATIONS = {
             "action": "Consider adding more RAM",
             "description": "If usage is consistently high, consider hardware upgrade"
         }
+    ],
+    # Ogólne rekomendacje dla ERROR issues
+    "LOGS_COLLECTION_ERROR": [
+        {
+            "priority": "MEDIUM",
+            "action": "Run as administrator",
+            "description": "Event logs require administrator privileges"
+        }
+    ],
+    "DRIVER_FAILED": [
+        {
+            "priority": "HIGH",
+            "action": "Update or reinstall problematic drivers",
+            "description": "Check Device Manager for driver errors"
+        },
+        {
+            "priority": "MEDIUM",
+            "action": "Run sfc /scannow",
+            "description": "Check for system file corruption"
+        }
+    ],
+    "SERVICE_FAILURE": [
+        {
+            "priority": "MEDIUM",
+            "action": "Check service status in Services.msc",
+            "description": "Review failed services and their dependencies"
+        },
+        {
+            "priority": "LOW",
+            "action": "Restart problematic services",
+            "description": "Try restarting failed services manually"
+        }
+    ],
+    "SYSTEM_WARNING": [
+        {
+            "priority": "LOW",
+            "action": "Monitor system for recurring warnings",
+            "description": "Keep track of warning patterns"
+        }
     ]
 }
 
@@ -206,10 +245,17 @@ def generate_recommendations(processed_data):
                 if issue_type:
                     detected_issue_types.add(issue_type)
             
-            # Issues
+            # Issues (wszystkie - critical, error, warning)
             issues = processor_data.get("issues", [])
             for issue in issues:
                 issue_type = issue.get("type", "")
+                if issue_type:
+                    detected_issue_types.add(issue_type)
+            
+            # Warnings też mogą mieć rekomendacje
+            warnings = processor_data.get("warnings", [])
+            for warning in warnings:
+                issue_type = warning.get("type", "")
                 if issue_type:
                     detected_issue_types.add(issue_type)
     

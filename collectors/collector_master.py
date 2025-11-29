@@ -10,13 +10,14 @@ from . import (
     services, bsod_dumps, performance_counters, wer, processes
 )
 
-def collect_all(save_raw=True, output_dir="output/raw"):
+def collect_all(save_raw=True, output_dir="output/raw", progress_callback=None):
     """
     Zbiera wszystkie dane diagnostyczne z wszystkich collectors.
     
     Args:
         save_raw (bool): Czy zapisać surowe dane do pliku JSON
         output_dir (str): Katalog do zapisu surowych danych
+        progress_callback (callable): Funkcja callback(step, total, message) do raportowania postępu
     
     Returns:
         dict: Słownik z wszystkimi zebranymi danymi
@@ -26,71 +27,33 @@ def collect_all(save_raw=True, output_dir="output/raw"):
         "collectors": {}
     }
     
-    print("Collecting hardware data...")
-    try:
-        results["collectors"]["hardware"] = hardware.collect()
-    except Exception as e:
-        results["collectors"]["hardware"] = {"error": f"Collection failed: {type(e).__name__}: {e}"}
+    # Lista wszystkich collectorów do wykonania
+    collectors_list = [
+        ("hardware", "Collecting hardware data...", lambda: hardware.collect()),
+        ("drivers", "Collecting drivers data...", lambda: drivers.collect()),
+        ("system_logs", "Collecting system logs...", lambda: system_logs.collect(max_events=200, filter_levels=['Error', 'Warning', 'Critical'])),
+        ("registry_txr", "Collecting Registry TxR errors...", lambda: registry_txr.collect(max_events=200)),
+        ("storage_health", "Collecting storage health data...", lambda: storage_health.collect()),
+        ("system_info", "Collecting system info...", lambda: system_info.collect()),
+        ("services", "Collecting services data...", lambda: services.collect()),
+        ("bsod_dumps", "Collecting BSOD/dumps data...", lambda: bsod_dumps.collect()),
+        ("performance_counters", "Collecting performance counters...", lambda: performance_counters.collect()),
+        ("wer", "Collecting Windows Error Reporting data...", lambda: wer.collect()),
+        ("processes", "Collecting processes data...", lambda: processes.collect()),
+    ]
     
-    print("Collecting drivers data...")
-    try:
-        results["collectors"]["drivers"] = drivers.collect()
-    except Exception as e:
-        results["collectors"]["drivers"] = {"error": f"Collection failed: {type(e).__name__}: {e}"}
+    total = len(collectors_list)
     
-    print("Collecting system logs...")
-    try:
-        results["collectors"]["system_logs"] = system_logs.collect(max_events=200, filter_levels=['Error', 'Warning', 'Critical'])
-    except Exception as e:
-        results["collectors"]["system_logs"] = {"error": f"Collection failed: {type(e).__name__}: {e}"}
-    
-    print("Collecting Registry TxR errors...")
-    try:
-        results["collectors"]["registry_txr"] = registry_txr.collect(max_events=200)
-    except Exception as e:
-        results["collectors"]["registry_txr"] = {"error": f"Collection failed: {type(e).__name__}: {e}"}
-    
-    print("Collecting storage health data...")
-    try:
-        results["collectors"]["storage_health"] = storage_health.collect()
-    except Exception as e:
-        results["collectors"]["storage_health"] = {"error": f"Collection failed: {type(e).__name__}: {e}"}
-    
-    print("Collecting system info...")
-    try:
-        results["collectors"]["system_info"] = system_info.collect()
-    except Exception as e:
-        results["collectors"]["system_info"] = {"error": f"Collection failed: {type(e).__name__}: {e}"}
-    
-    print("Collecting services data...")
-    try:
-        results["collectors"]["services"] = services.collect()
-    except Exception as e:
-        results["collectors"]["services"] = {"error": f"Collection failed: {type(e).__name__}: {e}"}
-    
-    print("Collecting BSOD/dumps data...")
-    try:
-        results["collectors"]["bsod_dumps"] = bsod_dumps.collect()
-    except Exception as e:
-        results["collectors"]["bsod_dumps"] = {"error": f"Collection failed: {type(e).__name__}: {e}"}
-    
-    print("Collecting performance counters...")
-    try:
-        results["collectors"]["performance_counters"] = performance_counters.collect()
-    except Exception as e:
-        results["collectors"]["performance_counters"] = {"error": f"Collection failed: {type(e).__name__}: {e}"}
-    
-    print("Collecting Windows Error Reporting data...")
-    try:
-        results["collectors"]["wer"] = wer.collect()
-    except Exception as e:
-        results["collectors"]["wer"] = {"error": f"Collection failed: {type(e).__name__}: {e}"}
-    
-    print("Collecting processes data...")
-    try:
-        results["collectors"]["processes"] = processes.collect()
-    except Exception as e:
-        results["collectors"]["processes"] = {"error": f"Collection failed: {type(e).__name__}: {e}"}
+    for step, (collector_name, message, collector_func) in enumerate(collectors_list, 1):
+        if progress_callback:
+            progress_callback(step, total, message)
+        else:
+            print(message)
+        
+        try:
+            results["collectors"][collector_name] = collector_func()
+        except Exception as e:
+            results["collectors"][collector_name] = {"error": f"Collection failed: {type(e).__name__}: {e}"}
     
     # Zapisz surowe dane jeśli wymagane
     if save_raw:

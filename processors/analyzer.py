@@ -7,12 +7,13 @@ from . import (
 )
 from .report_builder import build_report
 
-def analyze_all(collected_data):
+def analyze_all(collected_data, progress_callback=None):
     """
     Analizuje wszystkie zebrane dane i zwraca kompleksowy raport.
     
     Args:
         collected_data (dict): Dane z collectors.collector_master.collect_all()
+        progress_callback (callable): Funkcja callback(step, total, message) do raportowania postępu
     
     Returns:
         dict: Kompleksowy raport analizy
@@ -20,37 +21,38 @@ def analyze_all(collected_data):
     collectors_data = collected_data.get("collectors", {})
     processed_data = {}
     
+    # Lista procesorów do wykonania
+    processors_list = [
+        ("hardware", "Processing hardware data...", "hardware", hardware_processor.process),
+        ("drivers", "Processing drivers data...", "drivers", driver_processor.process),
+        ("system_logs", "Processing system logs...", "system_logs", system_logs_processor.process),
+        ("registry_txr", "Processing Registry TxR errors...", "registry_txr", registry_txr_processor.process),
+        ("storage_health", "Processing storage health...", "storage_health", storage_health_processor.process),
+        ("system_info", "Processing system info...", "system_info", system_info_processor.process),
+    ]
+    
+    total_processors = len(processors_list)
+    
     # Przetwórz wszystkie dane
-    print("Processing hardware data...")
-    if "hardware" in collectors_data:
-        processed_data["hardware"] = hardware_processor.process(collectors_data["hardware"])
-    
-    print("Processing drivers data...")
-    if "drivers" in collectors_data:
-        processed_data["drivers"] = driver_processor.process(collectors_data["drivers"])
-    
-    print("Processing system logs...")
-    if "system_logs" in collectors_data:
-        processed_data["system_logs"] = system_logs_processor.process(collectors_data["system_logs"])
-    
-    print("Processing Registry TxR errors...")
-    if "registry_txr" in collectors_data:
-        processed_data["registry_txr"] = registry_txr_processor.process(collectors_data["registry_txr"])
-    
-    print("Processing storage health...")
-    if "storage_health" in collectors_data:
-        processed_data["storage_health"] = storage_health_processor.process(collectors_data["storage_health"])
-    
-    print("Processing system info...")
-    if "system_info" in collectors_data:
-        processed_data["system_info"] = system_info_processor.process(collectors_data["system_info"])
-    
-    # Przetwórz nowe collectory jeśli są dostępne (dodaj procesory gdy będą gotowe)
-    # Na razie używamy surowych danych - procesory można dodać później
+    for step, (name, message, key, processor_func) in enumerate(processors_list, 1):
+        if progress_callback:
+            progress_callback(step, total_processors, message)
+        else:
+            print(message)
+        
+        if key in collectors_data:
+            processed_data[name] = processor_func(collectors_data[key])
     
     # Buduj raport używając nowego systemu
-    print("Building report...")
+    if progress_callback:
+        progress_callback(total_processors + 1, total_processors + 2, "Building report...")
+    else:
+        print("Building report...")
+    
     report = build_report(processed_data)
+    
+    if progress_callback:
+        progress_callback(total_processors + 2, total_processors + 2, "Analysis completed")
     
     # Dodaj metadane
     final_report = {

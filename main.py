@@ -2,14 +2,22 @@
 Główny plik diagnostyczny - uruchamia pełne skanowanie systemu.
 """
 import json
+import sys
 from pathlib import Path
 from datetime import datetime
 
+from utils.admin_check import require_admin
 from collectors.collector_master import collect_all
 from processors.analyzer import analyze_all
 
 def main():
     """Główna funkcja - wykonuje pełne skanowanie i analizę."""
+    # Sprawdź uprawnienia administratora (automatycznie próbuje uruchomić jako admin)
+    if not require_admin(auto_restart=True):
+        print("\nNaciśnij Enter aby zakończyć...")
+        input()
+        sys.exit(1)
+    
     print("=" * 60)
     print("Diagnostic Tool - Full System Scan")
     print("=" * 60)
