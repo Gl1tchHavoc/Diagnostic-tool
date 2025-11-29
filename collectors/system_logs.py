@@ -8,6 +8,8 @@ from utils.shadowcopy_helper import is_shadowcopy_path
 from utils.event_deduplicator import deduplicate_events
 from collections import defaultdict
 
+logger = get_logger()
+
 def collect(max_events=100, filter_levels=None):
     """
     Zbiera logi systemowe, aplikacyjne i bezpieczeństwa z Windows Event Logs.

@@ -2,6 +2,7 @@
 Cause Detector - wykrywa konkretne przyczyny problemów systemowych na podstawie wzorców.
 """
 from collections import defaultdict
+from datetime import datetime
 from utils.logger import get_logger
 from utils.shadowcopy_helper import is_shadowcopy_path
 
@@ -43,6 +44,9 @@ def detect_all_causes(processed_data, collected_data):
     
     # 8. Inne poważne problemy systemowe
     causes.extend(detect_other_critical_causes(processed_data, collected_data))
+    
+    # 9. WER (Windows Error Reporting) - golden rules
+    causes.extend(detect_wer_causes(processed_data, collected_data))
     
     # Sortuj według confidence
     causes.sort(key=lambda x: x.get('confidence', 0), reverse=True)
@@ -714,6 +718,7 @@ def detect_other_critical_causes(processed_data, collected_data):
             })
     
     # Unexpected shutdowns during disk-intensive operations → dysk lub kontroler prawdopodobnie uszkodzony
+    bsod_data = collected_data.get('collectors', {}).get('bsod_dumps', {})
     if bsod_data and storage_health:
         recent_crashes = bsod_data.get('recent_crashes', [])
         io_errors = storage_health.get('issues', [])
@@ -749,4 +754,180 @@ def detect_other_critical_causes(processed_data, collected_data):
                 })
     
     return causes
+
+def detect_wer_causes(processed_data, collected_data):
+    """
+    Wykrywa przyczyny na podstawie Windows Error Reporting (WER) - golden rules.
+    
+    Golden Rules:
+    1. FaultingModule = ntdll.dll + EventID=1000 → crash systemowy (≥95%)
+    2. Crash >=3 w 30 min dla tej samej aplikacji → prawdopodobny błąd aplikacji (≥95%)
+    3. Crash w tym samym czasie co BSOD EventID=41 → prawdopodobna awaria sprzętowa (≥95%)
+    """
+    causes = []
+    
+    wer_data = collected_data.get('collectors', {}).get('wer', {})
+    if not wer_data:
+        return causes
+    
+    recent_crashes = wer_data.get('recent_crashes', [])
+    grouped_crashes = wer_data.get('grouped_crashes', [])
+    bsod_data = collected_data.get('collectors', {}).get('bsod_dumps', {})
+    
+    # Golden Rule 1: FaultingModule = ntdll.dll + EventID=1000 → crash systemowy (≥95%)
+    for crash in recent_crashes:
+        event_id = str(crash.get('event_id', ''))
+        module_name = (crash.get('module_name', '') or '').lower()
+        app_name = (crash.get('application', '') or '').lower()
+        
+        if event_id == '1000' and 'ntdll.dll' in module_name:
+            causes.append({
+                'category': 'System',
+                'cause': 'SYSTEM_CRASH_NTDLL',
+                'confidence': 95.0,
+                'description': f'System crash detected: FaultingModule=ntdll.dll with EventID=1000. Application: {app_name}',
+                'evidence': {
+                    'event_id': event_id,
+                    'module_name': crash.get('module_name', ''),
+                    'application': crash.get('application', ''),
+                    'exception_code': crash.get('exception_code', ''),
+                    'timestamp': crash.get('timestamp', '')
+                },
+                'recommendation': 'System crash indicates serious system instability. Check for hardware failures, update drivers, run system file checker (sfc /scannow), check for malware'
+            })
+            break  # Tylko jeden raz
+    
+    # Golden Rule 2: Crash >=3 w 30 min dla tej samej aplikacji → prawdopodobny błąd aplikacji (≥95%)
+    for group in grouped_crashes:
+        if group.get('is_repeating', False) and group.get('occurrences_30min', 0) >= 3:
+            app = group.get('application', 'Unknown')
+            module = group.get('module_name', '')
+            exception = group.get('exception_code', '')
+            
+            causes.append({
+                'category': 'Application',
+                'cause': 'REPEATING_APPLICATION_CRASH',
+                'confidence': 95.0,
+                'description': f'Repeating application crash: {app} crashed {group.get("occurrences_30min")} times in last 30 minutes. Faulting module: {module}, Exception: {exception}',
+                'evidence': {
+                    'application': app,
+                    'module_name': module,
+                    'exception_code': exception,
+                    'occurrences_30min': group.get('occurrences_30min', 0),
+                    'occurrences_24h': group.get('occurrences_24h', 0),
+                    'first_occurrence': group.get('first_occurrence', ''),
+                    'last_occurrence': group.get('last_occurrence', '')
+                },
+                'recommendation': f'Application {app} is repeatedly crashing. Update the application, check for compatibility issues, reinstall if necessary, check for corrupted files or dependencies'
+            })
+    
+    # Golden Rule 3: Crash w tym samym czasie co BSOD EventID=41 → prawdopodobna awaria sprzętowa (≥95%)
+    if bsod_data:
+        recent_crashes_bsod = bsod_data.get('recent_crashes', [])
+        
+        # Znajdź BSOD EventID 41
+        bsod_41_times = []
+        for bsod in recent_crashes_bsod:
+            if str(bsod.get('event_id', '')) == '41':
+                bsod_time = parse_bsod_timestamp(bsod.get('timestamp', ''))
+                if bsod_time:
+                    bsod_41_times.append(bsod_time)
+        
+        # Sprawdź czy crashy systemowe wystąpiły w tym samym czasie (±5 minut)
+        if bsod_41_times:
+            for crash in recent_crashes:
+                crash_type = crash.get('type', '')
+                crash_time = parse_wer_timestamp(crash.get('timestamp', ''))
+                
+                if crash_type == 'SYSTEM_CRASH' and crash_time:
+                    # Sprawdź czy crash jest w oknie ±5 minut od BSOD
+                    for bsod_time in bsod_41_times:
+                        time_diff = abs((crash_time - bsod_time).total_seconds())
+                        if time_diff <= 300:  # 5 minut
+                            app = crash.get('application', 'Unknown')
+                            module = crash.get('module_name', '')
+                            
+                            causes.append({
+                                'category': 'Hardware',
+                                'cause': 'HARDWARE_FAILURE_WER_BSOD_CORRELATION',
+                                'confidence': 95.0,
+                                'description': f'System crash ({app}) occurred at the same time as BSOD EventID 41, indicating probable hardware failure',
+                                'evidence': {
+                                    'system_crash': {
+                                        'application': app,
+                                        'module_name': module,
+                                        'exception_code': crash.get('exception_code', ''),
+                                        'timestamp': crash.get('timestamp', '')
+                                    },
+                                    'bsod_timestamp': bsod_time.isoformat(),
+                                    'time_difference_seconds': time_diff
+                                },
+                                'recommendation': 'System crash correlated with BSOD indicates hardware failure. Check CPU, RAM, motherboard, power supply. Run hardware diagnostics, check temperatures, verify all connections'
+                            })
+                            break
+    
+    # Dodatkowa reguła: Systemowe procesy (winlogon.exe, csrss.exe) crashują + WHEA → hardware failure
+    if bsod_data:
+        whea_errors = bsod_data.get('whea_errors', [])
+        if whea_errors:
+            system_processes = ['winlogon.exe', 'csrss.exe', 'lsass.exe']
+            for crash in recent_crashes:
+                app = (crash.get('application', '') or '').lower()
+                if any(proc in app for proc in system_processes):
+                    crash_time = parse_wer_timestamp(crash.get('timestamp', ''))
+                    if crash_time:
+                        # Sprawdź czy WHEA error jest w oknie ±10 minut
+                        for whea in whea_errors:
+                            whea_time = parse_bsod_timestamp(whea.get('timestamp', ''))
+                            if whea_time:
+                                time_diff = abs((crash_time - whea_time).total_seconds())
+                                if time_diff <= 600:  # 10 minut
+                                    causes.append({
+                                        'category': 'Hardware',
+                                        'cause': 'HARDWARE_FAILURE_SYSTEM_CRASH_WHEA',
+                                        'confidence': 95.0,
+                                        'description': f'System process ({app}) crash correlated with WHEA hardware error, indicating hardware failure',
+                                        'evidence': {
+                                            'system_process': app,
+                                            'whea_error': whea.get('message', '')[:200],
+                                            'time_difference_seconds': time_diff
+                                        },
+                                        'recommendation': 'System process crash with WHEA error indicates severe hardware failure. Check CPU, RAM, motherboard, run hardware diagnostics immediately'
+                                    })
+                                    break
+    
+    logger.info(f"[CAUSE_DETECTOR] WER golden rules detected {len(causes)} causes")
+    return causes
+
+
+def parse_wer_timestamp(timestamp_str):
+    """Parsuje timestamp z WER do datetime."""
+    if not timestamp_str:
+        return None
+    
+    formats = [
+        "%Y-%m-%dT%H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%m/%d/%Y %I:%M:%S %p",
+        "%m/%d/%Y %H:%M:%S"
+    ]
+    
+    for fmt in formats:
+        try:
+            return datetime.strptime(timestamp_str[:19], fmt)
+        except (ValueError, IndexError):
+            continue
+    
+    try:
+        return datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+    except:
+        pass
+    
+    return None
+
+
+def parse_bsod_timestamp(timestamp_str):
+    """Parsuje timestamp z BSOD do datetime."""
+    return parse_wer_timestamp(timestamp_str)  # Użyj tej samej funkcji
 

@@ -132,14 +132,16 @@ def process(hardware_data):
                     "component": "Storage"
                 })
             
-            status = disk.get("status", "").lower()
-            if "error" in status or "fail" in status:
-                issues.append({
-                    "type": "DISK_STATUS_ERROR",
-                    "severity": "ERROR",
-                    "message": f"Disk {device} has status: {status}",
-                    "component": "Storage"
-                })
+            status = disk.get("status") or ""
+            if status and isinstance(status, str):
+                status = status.lower()
+                if "error" in status or "fail" in status:
+                    issues.append({
+                        "type": "DISK_STATUS_ERROR",
+                        "severity": "ERROR",
+                        "message": f"Disk {device} has status: {status}",
+                        "component": "Storage"
+                    })
     
     # Sprawdź temperaturę CPU
     sensors = hardware_data.get("sensors", {})

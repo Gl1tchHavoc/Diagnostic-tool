@@ -9,13 +9,15 @@ from utils.logger import get_logger
 from utils.confidence_normalizer import normalize_confidence, calculate_weighted_confidence
 from utils.event_deduplicator import deduplicate_events
 
+# Inicjalizacja loggera
+logger = get_logger()
+
 # Import nowego modułu korelacji
 try:
     from correlation.bsod_correlation import BSODCorrelator
     NEW_CORRELATION_AVAILABLE = True
 except ImportError:
     NEW_CORRELATION_AVAILABLE = False
-    logger = get_logger()
     logger.warning("[BSOD_ANALYZER] New correlation module not available, using legacy method")
 
 # Konfiguracja - BSOD Analysis 2.0
@@ -723,9 +725,11 @@ def correlate_with_hardware(scored_events, hardware_data):
     if disks_data:
         for disk in disks_data:
             if isinstance(disk, dict):
-                status = disk.get("status", "").lower()
-                if "fail" in status or "error" in status:
-                    disk_issues.append(f"Disk {disk.get('device', 'unknown')} status: {status}")
+                status = disk.get("status") or ""
+                if status and isinstance(status, str):
+                    status = status.lower()
+                    if "fail" in status or "error" in status:
+                        disk_issues.append(f"Disk {disk.get('device', 'unknown')} status: {status}")
     
     # Znajdź eventy związane z hardware
     for event in scored_events:
