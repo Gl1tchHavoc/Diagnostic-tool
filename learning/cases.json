@@ -1,0 +1,48 @@
+[
+    {
+        "hardware": {
+            "cpu": {
+                "count": 4,
+                "percent": 26.6
+            },
+            "ram": {
+                "total": 34320023552,
+                "used": 13623771136,
+                "percent": 39.7
+            },
+            "gpu": {
+                "info": "Not implemented yet"
+            }
+        },
+        "logs": {
+            "event_logs": "Parsing Event Logs not implemented yet",
+            "bsod": "BSOD parser not implemented yet"
+        },
+        "drivers": {
+            "drivers": "Driver check not implemented yet"
+        }
+    },
+    {
+        "hardware": {
+            "cpu": {
+                "count": 4,
+                "percent": 37.5
+            },
+            "ram": {
+                "total": 34320023552,
+                "used": 13645086720,
+                "percent": 39.8
+            },
+            "gpu": {
+                "info": "Not implemented yet"
+            }
+        },
+        "logs": {
+            "event_logs": "Parsing Event Logs not implemented yet",
+            "bsod": "BSOD parser not implemented yet"
+        },
+        "drivers": {
+            "drivers": "Driver check not implemented yet"
+        }
+    }
+]
