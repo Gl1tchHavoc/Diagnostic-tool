@@ -1,0 +1,1598 @@
+{
+  "timestamp": 1764425195.712017,
+  "drivers": [
+    {
+      "name": "Local Print Queue",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Local Print Queue",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Xvdd SCSI Miniport",
+      "provider": "Xbox",
+      "version": "10.0.22025.3",
+      "date": "20251014000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Generic software device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Generic software device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Generic software device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Voice Clarity",
+      "provider": "Microsoft Corporation",
+      "version": "10.0.26100.5074",
+      "date": "20250409000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Computer Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Oculus Virtual Audio Device",
+      "provider": "Oculus",
+      "version": "19.43.15.407",
+      "date": "20231129000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "VB-Audio Voicemeeter VAIO",
+      "provider": "VB-Audio Software",
+      "version": "3.3.1.9",
+      "date": "20241028000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Remote Desktop Device Redirector Bus",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Oculus Virtual Gamepad Emulation Bus",
+      "provider": "Facebook, Inc.",
+      "version": "1.5.8.0",
+      "date": "20170208000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Plug and Play Software Device Enumerator",
+      "provider": "Microsoft",
+      "version": "10.0.26100.4202",
+      "date": "20250523000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Microsoft System Management BIOS Driver",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "NDIS Virtual Network Adapter Enumerator",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "NVIDIA Virtual Audio Device (Wave Extensible) (WDM)",
+      "provider": "NVIDIA",
+      "version": "4.65.0.3",
+      "date": "20240228000000.******+***",
+      "status": "Unknown",
+      "latest_version": "531.68",
+      "update_available": true
+    },
+    {
+      "name": "Microsoft Basic Render Driver",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "System Firmware",
+      "provider": "Microsoft",
+      "version": "10.0.26100.4768",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Microsoft UEFI-Compliant System",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "ACPI Fixed Feature Button",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Motherboard resources",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "ACPI Thermal Zone",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "ACPI Thermal Zone",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "ACPI Fan",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "ACPI Fan",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "ACPI Fan",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "ACPI Fan",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "ACPI Fan",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Microsoft Windows Management Interface for ACPI",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Trusted Platform Module 2.0",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "ACPI Power Button",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Intel(R) Power Engine Plug-in",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Microsoft Windows Management Interface for ACPI",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "ACPI Sleep Button",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "ACPI Processor Aggregator",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Intel Processor",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20090421000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Intel Processor",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20090421000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Intel Processor",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20090421000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Intel Processor",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20090421000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Microsoft Windows Management Interface for ACPI",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Motherboard resources",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Motherboard resources",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Motherboard resources",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Motherboard resources",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Kontroler magistrali zarz\u0105dzania systemem",
+      "provider": "Unknown",
+      "version": "Unknown",
+      "date": "Unknown",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "High Definition Audio Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.3624",
+      "date": "20250322000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "High Definition Audio Controller",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20251024000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Kontroler pami\u0119ci PCI",
+      "provider": "Unknown",
+      "version": "Unknown",
+      "date": "Unknown",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Motherboard resources",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "System timer",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "System CMOS/real time clock",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Motherboard resources",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Motherboard resources",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Numeric data processor",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Programmable interrupt controller",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "High precision event timer",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Legacy device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Port komunikacyjny",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Printer Port Logical Interface",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Port drukarki",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Motherboard resources",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "PCI standard ISA bridge",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "PCI-to-PCI Bridge",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "PCI-to-PCI Bridge",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Realtek PCIe GbE Family Controller",
+      "provider": "Realtek",
+      "version": "1168.26.710.2025",
+      "date": "20251007000000.******+***",
+      "status": "Unknown",
+      "latest_version": "10.0.19041.1",
+      "update_available": true
+    },
+    {
+      "name": "PCI-to-PCI Bridge",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "USB Root Hub (USB 3.0)",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20251023000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "USB xHCI Compliant Host Controller",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20251023000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "PCI-to-PCI Bridge",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "PCI-to-PCI Bridge",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "PCI-to-PCI Bridge",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "StoreMI Config Device",
+      "provider": "Advanced Micro Devices, Inc.",
+      "version": "9.4.0.59",
+      "date": "20220501000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Disk drive",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "StoreMI Controller [storport]",
+      "provider": "Advanced Micro Devices, Inc.",
+      "version": "9.4.0.59",
+      "date": "20220501000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "StoreMI Bottom Device",
+      "provider": "Advanced Micro Devices, Inc.",
+      "version": "9.4.0.59",
+      "date": "20220501000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "PCI-to-PCI Bridge",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "CD-ROM Drive",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Disk drive",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Intel(R) C600+/C220+ series chipset SATA AHCI Controller",
+      "provider": "Intel Corporation",
+      "version": "6.2.0.1238",
+      "date": "20190918000000.******+***",
+      "status": "Unknown",
+      "latest_version": "30.0.101.1040",
+      "update_available": true
+    },
+    {
+      "name": "Intel(R) Management Engine WMI Provider",
+      "provider": "Intel",
+      "version": "2408.5.4.0",
+      "date": "20240221000000.******+***",
+      "status": "Unknown",
+      "latest_version": "30.0.101.1040",
+      "update_available": true
+    },
+    {
+      "name": "Intel(R) iCLS Client",
+      "provider": "Intel",
+      "version": "1.71.99.0",
+      "date": "20230612000000.******+***",
+      "status": "Unknown",
+      "latest_version": "30.0.101.1040",
+      "update_available": true
+    },
+    {
+      "name": "Intel(R) Dynamic Application Loader Host Interface",
+      "provider": "Intel",
+      "version": "1.44.2023.710",
+      "date": "20231107000000.******+***",
+      "status": "Unknown",
+      "latest_version": "30.0.101.1040",
+      "update_available": true
+    },
+    {
+      "name": "Intel(R) Management Engine Interface #1",
+      "provider": "Intel",
+      "version": "2406.5.5.0",
+      "date": "20240802000000.******+***",
+      "status": "Unknown",
+      "latest_version": "30.0.101.1040",
+      "update_available": true
+    },
+    {
+      "name": "Kontroler PCI gromadzenia danych i przetwarzania sygna\u0142\u00f3w",
+      "provider": "Unknown",
+      "version": "Unknown",
+      "date": "Unknown",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "HID-compliant headset",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20090421000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "HID-compliant consumer control device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "USB Input Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "USB Audio Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20251024000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "HID-compliant device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "USB Input Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "USB Composite Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Generic USB Hub",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20251023000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "HID-compliant vendor-defined device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "HID-compliant mouse",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "HID-compliant consumer control device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "HID-compliant vendor-defined device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "HID Keyboard Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1882",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "HID Keyboard Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1882",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "USB Input Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "HID Keyboard Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1882",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "USB Input Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "USB Composite Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "HID-compliant vendor-defined device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "USB Input Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "HID-compliant vendor-defined device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "USB Input Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "HID-compliant consumer control device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "USB Input Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "HID Keyboard Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1882",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "USB Input Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "HID-compliant consumer control device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "HID Keyboard Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1882",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "HID-compliant mouse",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "SteelSeries Aerox 3 Wireless",
+      "provider": "SteelSeries ApS",
+      "version": "2.8.0.0",
+      "date": "20220223000000.******+***",
+      "status": "Unknown",
+      "latest_version": "3.0.0.0",
+      "update_available": true
+    },
+    {
+      "name": "USB Composite Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "HID-compliant consumer control device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "USB Input Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "USB Audio Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20251024000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "USB Composite Device",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "USB Root Hub (USB 3.0)",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20251023000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "USB xHCI Compliant Host Controller",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20251023000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Intel(R) Gaussian Mixture Model - 1911",
+      "provider": "INTEL",
+      "version": "10.1.7.3",
+      "date": "20181218000000.******+***",
+      "status": "Unknown",
+      "latest_version": "30.0.101.1040",
+      "update_available": true
+    },
+    {
+      "name": "NVIDIA USB Type-C Port Policy Controller",
+      "provider": "NVIDIA",
+      "version": "1.52.831.832",
+      "date": "20240320000000.******+***",
+      "status": "Unknown",
+      "latest_version": "531.68",
+      "update_available": true
+    },
+    {
+      "name": "USB Root Hub (USB 3.0)",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20251023000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "USB xHCI Compliant Host Controller",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20251023000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Audio Endpoint",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20240331000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "NVIDIA High Definition Audio",
+      "provider": "NVIDIA Corporation",
+      "version": "1.4.5.0",
+      "date": "20250106000000.******+***",
+      "status": "Unknown",
+      "latest_version": "531.68",
+      "update_available": true
+    },
+    {
+      "name": "High Definition Audio Controller",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20251024000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Generic PnP Monitor",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Generic PnP Monitor",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "NVIDIA GeForce RTX 2060",
+      "provider": "NVIDIA",
+      "version": "32.0.15.8180",
+      "date": "20251029000000.******+***",
+      "status": "Unknown",
+      "latest_version": "531.68",
+      "update_available": true
+    },
+    {
+      "name": "Intel(R) PCIe Controller (x16) - 1901",
+      "provider": "INTEL",
+      "version": "10.1.7.3",
+      "date": "20181218000000.******+***",
+      "status": "Unknown",
+      "latest_version": "30.0.101.1040",
+      "update_available": true
+    },
+    {
+      "name": "Intel(R) Host Bridge/DRAM Registers - 191F",
+      "provider": "INTEL",
+      "version": "10.1.7.3",
+      "date": "20181218000000.******+***",
+      "status": "Unknown",
+      "latest_version": "30.0.101.1040",
+      "update_available": true
+    },
+    {
+      "name": "PCI Express Root Complex",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Microsoft ACPI-Compliant System",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "ACPI x64-based PC",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "UMBus Root Bus Enumerator",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Microsoft Kernel Debug Network Adapter",
+      "provider": "Microsoft",
+      "version": "10.0.26100.3624",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Microsoft Storage Spaces Controller",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7171",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Microsoft Virtual Drive Enumerator",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1591",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Composite Bus Enumerator",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1150",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Microsoft Hyper-V Virtualization Infrastructure Driver",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Microsoft Basic Display Driver",
+      "provider": "Microsoft",
+      "version": "10.0.26100.4202",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Generic volume shadow copy",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Generic volume shadow copy",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Generic volume shadow copy",
+      "provider": "Microsoft",
+      "version": "10.0.26100.1",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Volume",
+      "provider": "Microsoft",
+      "version": "10.0.26100.5074",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Volume",
+      "provider": "Microsoft",
+      "version": "10.0.26100.5074",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Volume",
+      "provider": "Microsoft",
+      "version": "10.0.26100.5074",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Volume",
+      "provider": "Microsoft",
+      "version": "10.0.26100.5074",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Volume",
+      "provider": "Microsoft",
+      "version": "10.0.26100.5074",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Volume Manager",
+      "provider": "Microsoft",
+      "version": "10.0.26100.7019",
+      "date": "20060621000000.******+***",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Unknown",
+      "provider": "Unknown",
+      "version": "Unknown",
+      "date": "Unknown",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    },
+    {
+      "name": "Unknown",
+      "provider": "Unknown",
+      "version": "2:10.0,2:6.3,2:6.2,2:6.1,2:6.0,2:5.2,2:5.1",
+      "date": "Unknown",
+      "status": "Unknown",
+      "latest_version": null,
+      "update_available": null
+    }
+  ]
+}

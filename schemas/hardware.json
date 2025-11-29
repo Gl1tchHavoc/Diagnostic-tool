@@ -1,0 +1,106 @@
+{
+  "schema_version": "1.0",
+  "description": "Schema for hardware data collection",
+  "fields": {
+    "cpu": {
+      "type": "object",
+      "required": ["physical_cores", "logical_cores", "usage_percent", "model"],
+      "properties": {
+        "physical_cores": {"type": "integer"},
+        "logical_cores": {"type": "integer"},
+        "usage_percent": {"type": "number"},
+        "model": {"type": "string"}
+      }
+    },
+    "ram": {
+      "type": "object",
+      "required": ["total", "used", "available", "percent"],
+      "properties": {
+        "total": {"type": "integer"},
+        "used": {"type": "integer"},
+        "available": {"type": "integer"},
+        "percent": {"type": "number"}
+      }
+    },
+    "ram_slots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "capacity": {"type": "integer"},
+          "manufacturer": {"type": "string"},
+          "speed": {"type": ["integer", "null"]},
+          "part_number": {"type": "string"},
+          "bank_label": {"type": "string"}
+        }
+      }
+    },
+    "disks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "device": {"type": "string"},
+          "mountpoint": {"type": "string"},
+          "fstype": {"type": "string"},
+          "total": {"type": "integer"},
+          "used": {"type": "integer"},
+          "free": {"type": "integer"},
+          "percent": {"type": "number"},
+          "model": {"type": "string"},
+          "serial": {"type": "string"},
+          "status": {"type": "string"}
+        }
+      }
+    },
+    "gpu": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string"},
+          "load": {"type": "number"},
+          "memoryTotal": {"type": "integer"},
+          "memoryUsed": {"type": "integer"},
+          "temperature": {"type": "number"},
+          "driver": {"type": "string"}
+        }
+      }
+    },
+    "network": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "interface": {"type": "string"},
+          "mac": {"type": "string"}
+        }
+      }
+    },
+    "motherboard": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "manufacturer": {"type": "string"},
+          "product": {"type": "string"},
+          "serial": {"type": "string"}
+        }
+      }
+    },
+    "sensors": {
+      "type": "object",
+      "properties": {
+        "cpu_temp": {"type": ["number", "string"]}
+      }
+    },
+    "battery": {
+      "type": "object",
+      "properties": {
+        "percent": {"type": "number"},
+        "plugged_in": {"type": "boolean"}
+      }
+    }
+  }
+}
+

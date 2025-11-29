@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0",
+  "description": "Schema for storage health data collection",
+  "fields": {
+    "disks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "model": {"type": "string"},
+          "serial": {"type": "string"},
+          "status": {"type": "string"},
+          "size": {"type": "integer"},
+          "interface": {"type": "string"},
+          "media_type": {"type": "string"}
+        }
+      }
+    },
+    "smart_errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "event_id": {"type": "string"},
+          "timestamp": {"type": "string"},
+          "message": {"type": "string"},
+          "type": {"type": "string"}
+        }
+      }
+    },
+    "io_errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "event_id": {"type": "string"},
+          "timestamp": {"type": "string"},
+          "message": {"type": "string"},
+          "type": {"type": "string"}
+        }
+      }
+    },
+    "disk_errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "event_id": {"type": "string"},
+          "timestamp": {"type": "string"},
+          "message": {"type": "string"},
+          "type": {"type": "string"}
+        }
+      }
+    }
+  }
+}
+
