@@ -8,6 +8,7 @@ from typing import List, Dict, Optional, Tuple
 from log_parsers.base_parser import BaseLogParser
 from utils.subprocess_helper import run_powershell_hidden
 from utils.logger import get_logger
+from utils.shadowcopy_helper import is_shadowcopy_path
 
 logger = get_logger()
 
@@ -107,6 +108,9 @@ class SystemLogParser(BaseLogParser):
                     logger.debug(f"[SYSTEM_LOG_PARSER] Skipping event with invalid timestamp: {timestamp_str}")
                     continue
                 
+                # Sprawdź czy to ShadowCopy event
+                is_shadowcopy = self._is_shadowcopy_event(message, event_id)
+                
                 # Utwórz ujednolicony format eventu
                 event = {
                     'timestamp': timestamp,
@@ -115,10 +119,21 @@ class SystemLogParser(BaseLogParser):
                     'message': message,
                     'source': self.log_source,
                     'category': self._categorize_event(message, event_id, level),
+                    'is_shadowcopy': is_shadowcopy,
                     'raw': f"[{timestamp}] [{level}] [ID:{event_id}] {message}"
                 }
                 
+                # Jeśli to ShadowCopy event, zmień kategorię
+                if is_shadowcopy:
+                    event['category'] = 'SHADOWCOPY_ERROR'
+                    logger.debug(f"[SYSTEM_LOG_PARSER] Detected ShadowCopy event: {event_id} - {message[:100]}")
+                
                 events.append(event)
+            
+            # De-duplikuj eventy
+            from utils.event_deduplicator import deduplicate_events
+            events = deduplicate_events(events)
+            logger.debug(f"[SYSTEM_LOG_PARSER] After deduplication: {len(events)} unique events")
             
             self.parsed_events = events
             self.parsed = True
@@ -151,10 +166,27 @@ class SystemLogParser(BaseLogParser):
         else:
             return level.capitalize()
     
+    def _is_shadowcopy_event(self, message: str, event_id: str) -> bool:
+        """
+        Sprawdza czy event dotyczy ShadowCopy.
+        
+        Args:
+            message (str): Wiadomość eventu
+            event_id (str): ID eventu
+        
+        Returns:
+            bool: True jeśli event dotyczy ShadowCopy
+        """
+        return is_shadowcopy_path(message)
+    
     def _categorize_event(self, message: str, event_id: str, level: str) -> str:
         """Kategoryzuje event na podstawie wiadomości i ID."""
         message_lower = message.lower()
         event_id_lower = str(event_id).lower()
+        
+        # Sprawdź czy to ShadowCopy (przed innymi kategoriami)
+        if self._is_shadowcopy_event(message, event_id):
+            return "SHADOWCOPY_ERROR"
         
         # Sprawdź różne kategorie
         if any(kw in message_lower for kw in ["gpu", "graphics", "display", "dxgkrnl", "nvlddmkm", "atikmpag"]):

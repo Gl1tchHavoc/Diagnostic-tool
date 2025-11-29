@@ -346,28 +346,208 @@ class DiagnosticsGUI:
         return output
 
     def format_hardware(self, data):
-        """Formatuje dane hardware."""
+        """Formatuje dane hardware z pełnymi szczegółami."""
         output = "=== HARDWARE INFORMATION ===\n\n"
         
+        # CPU - szczegółowe informacje
         if "cpu" in data:
             cpu = data["cpu"]
-            output += f"CPU: {cpu.get('model', 'N/A')}\n"
-            output += f"  Physical Cores: {cpu.get('physical_cores', 'N/A')}\n"
-            output += f"  Logical Cores: {cpu.get('logical_cores', 'N/A')}\n"
-            output += f"  Usage: {cpu.get('usage_percent', 0):.1f}%\n\n"
+            output += "CPU:\n"
+            # Użyj name z WMI jeśli dostępne, w przeciwnym razie model
+            cpu_name = cpu.get('name') or cpu.get('model', 'N/A')
+            output += f"  Model: {cpu_name}\n"
+            if cpu.get('manufacturer'):
+                output += f"  Manufacturer: {cpu.get('manufacturer')}\n"
+            output += f"  Physical Cores: {cpu.get('physical_cores', cpu.get('number_of_cores', 'N/A'))}\n"
+            output += f"  Logical Cores: {cpu.get('logical_cores', cpu.get('number_of_logical_processors', 'N/A'))}\n"
+            output += f"  Usage: {cpu.get('usage_percent', cpu.get('load_percentage', 0)):.1f}%\n"
+            
+            # Frequency
+            if cpu.get('frequency', {}).get('current'):
+                freq = cpu['frequency']
+                output += f"  Frequency: {freq.get('current', 0)/1000:.2f} GHz"
+                if freq.get('max'):
+                    output += f" (Max: {freq.get('max', 0)/1000:.2f} GHz)"
+                output += "\n"
+            elif cpu.get('current_clock_speed'):
+                output += f"  Current Clock: {cpu.get('current_clock_speed', 0)} MHz\n"
+            if cpu.get('max_clock_speed'):
+                output += f"  Max Clock: {cpu.get('max_clock_speed', 0)} MHz\n"
+            
+            # Cache
+            if cpu.get('l2_cache_size'):
+                output += f"  L2 Cache: {cpu.get('l2_cache_size')} KB\n"
+            if cpu.get('l3_cache_size'):
+                output += f"  L3 Cache: {cpu.get('l3_cache_size')} KB\n"
+            
+            # Architecture
+            if cpu.get('architecture'):
+                arch_map = {0: "x86", 1: "MIPS", 2: "Alpha", 3: "PowerPC", 5: "ARM", 6: "ia64", 9: "x64"}
+                arch = arch_map.get(cpu.get('architecture'), f"Unknown ({cpu.get('architecture')})")
+                output += f"  Architecture: {arch}\n"
+            
+            output += "\n"
         
+        # RAM - szczegółowe informacje
         if "ram" in data:
             ram = data["ram"]
-            output += f"RAM: {ram.get('total', 0)//(1024**3)} GB total\n"
-            output += f"  Used: {ram.get('used', 0)//(1024**3)} GB ({ram.get('percent', 0):.1f}%)\n\n"
+            output += "RAM:\n"
+            total_gb = ram.get('total', 0) // (1024**3)
+            used_gb = ram.get('used', 0) // (1024**3)
+            available_gb = ram.get('available', 0) // (1024**3)
+            output += f"  Total: {total_gb} GB\n"
+            output += f"  Used: {used_gb} GB ({ram.get('percent', 0):.1f}%)\n"
+            output += f"  Available: {available_gb} GB\n"
+            if ram.get('free'):
+                free_gb = ram.get('free', 0) // (1024**3)
+                output += f"  Free: {free_gb} GB\n"
+            
+            # Swap
+            if ram.get('swap', {}).get('total'):
+                swap = ram['swap']
+                swap_total_gb = swap.get('total', 0) // (1024**3)
+                swap_used_gb = swap.get('used', 0) // (1024**3)
+                output += f"  Swap: {swap_total_gb} GB total, {swap_used_gb} GB used ({swap.get('percent', 0):.1f}%)\n"
+            
+            # RAM slots
+            if "ram_slots" in data and data["ram_slots"]:
+                output += f"  RAM Slots: {len(data['ram_slots'])} module(s)\n"
+                for i, slot in enumerate(data["ram_slots"][:4], 1):  # Max 4 sloty
+                    capacity = slot.get('capacity', 0)
+                    if capacity:
+                        capacity_gb = capacity // (1024**3)
+                        output += f"    Slot {i}: {capacity_gb} GB"
+                        if slot.get('speed'):
+                            output += f" @ {slot.get('speed')} MHz"
+                        if slot.get('manufacturer'):
+                            output += f" ({slot.get('manufacturer')})"
+                        output += "\n"
+            
+            output += "\n"
         
+        # DISKS - szczegółowe informacje
         if "disks" in data:
             output += "DISKS:\n"
-            for disk in data["disks"][:5]:  # Max 5 dysków
-                output += f"  {disk.get('device', 'N/A')}: {disk.get('total', 0)//(1024**3)} GB\n"
-                if "status" in disk:
+            for disk in data["disks"][:10]:  # Max 10 dysków
+                device = disk.get('device', 'N/A')
+                total_gb = disk.get('total', 0) // (1024**3)
+                used_gb = disk.get('used', 0) // (1024**3) if disk.get('used') else None
+                free_gb = disk.get('free', 0) // (1024**3) if disk.get('free') else None
+                percent = disk.get('percent', 0)
+                
+                output += f"  {device}: {total_gb} GB"
+                if used_gb is not None:
+                    output += f" (Used: {used_gb} GB, Free: {free_gb} GB, {percent:.1f}%)"
+                output += "\n"
+                
+                # Volume name
+                if disk.get('volume_name'):
+                    output += f"    Volume: {disk.get('volume_name')}\n"
+                
+                # File system
+                if disk.get('fstype'):
+                    output += f"    File System: {disk.get('fstype')}\n"
+                
+                # Physical disk info
+                if disk.get('physical_disk_info'):
+                    phys = disk['physical_disk_info']
+                    if phys.get('model'):
+                        output += f"    Model: {phys.get('model')}\n"
+                    if phys.get('serial'):
+                        output += f"    Serial: {phys.get('serial')}\n"
+                    if phys.get('interface_type'):
+                        output += f"    Interface: {phys.get('interface_type')}\n"
+                    if phys.get('firmware_revision'):
+                        output += f"    Firmware: {phys.get('firmware_revision')}\n"
+                
+                # SMART data
+                if disk.get('smart'):
+                    smart = disk['smart']
+                    output += f"    SMART Status: {smart.get('HealthStatus', 'N/A')}\n"
+                    if smart.get('Temperature'):
+                        output += f"    Temperature: {smart.get('Temperature')}°C\n"
+                    if smart.get('Wear'):
+                        output += f"    Wear: {smart.get('Wear')}%\n"
+                
+                # NVMe health
+                if disk.get('nvme_health'):
+                    nvme = disk['nvme_health']
+                    output += f"    NVMe Health: {nvme.get('HealthStatus', 'N/A')}\n"
+                    if nvme.get('Temperature'):
+                        output += f"    NVMe Temp: {nvme.get('Temperature')}°C\n"
+                
+                # Status
+                if disk.get('status') and disk.get('status') != 'None':
                     output += f"    Status: {disk.get('status')}\n"
+                if disk.get('accessible') is False:
+                    output += f"    Accessible: No"
+                    if disk.get('error'):
+                        output += f" ({disk.get('error')})"
+                    output += "\n"
+                
+                output += "\n"
+        
+        # GPU
+        if "gpu" in data and data["gpu"]:
+            output += "GPU:\n"
+            for gpu in data["gpu"][:3]:  # Max 3 GPU
+                if gpu.get('name'):
+                    output += f"  {gpu.get('name')}\n"
+                if gpu.get('driver_version'):
+                    output += f"    Driver: {gpu.get('driver_version')}\n"
+                if gpu.get('memory_total'):
+                    mem_gb = gpu.get('memory_total', 0) // (1024**3)
+                    output += f"    Memory: {mem_gb} GB\n"
+                if gpu.get('temperature'):
+                    output += f"    Temperature: {gpu.get('temperature')}°C\n"
+                output += "\n"
+        
+        # Motherboard
+        if "motherboard" in data and data["motherboard"]:
+            mb = data["motherboard"][0] if isinstance(data["motherboard"], list) else data["motherboard"]
+            output += "MOTHERBOARD:\n"
+            if mb.get('manufacturer'):
+                output += f"  Manufacturer: {mb.get('manufacturer')}\n"
+            if mb.get('product'):
+                output += f"  Product: {mb.get('product')}\n"
+            if mb.get('version'):
+                output += f"  Version: {mb.get('version')}\n"
+            if mb.get('bios_version'):
+                output += f"  BIOS: {mb.get('bios_version')}\n"
             output += "\n"
+        
+        # Sensors (temperatury)
+        if "sensors" in data and data["sensors"]:
+            sensors = data["sensors"]
+            output += "SENSORS:\n"
+            if sensors.get('cpu_temp'):
+                output += f"  CPU Temperature: {sensors.get('cpu_temp')}\n"
+            if sensors.get('fans'):
+                output += f"  Fans: {len(sensors.get('fans', []))} detected\n"
+            output += "\n"
+        
+        # Battery
+        if "battery" in data and data["battery"]:
+            battery = data["battery"]
+            if battery.get('percent') is not None:
+                output += "BATTERY:\n"
+                output += f"  Charge: {battery.get('percent', 0):.1f}%\n"
+                output += f"  Plugged In: {battery.get('plugged_in', False)}\n"
+                if battery.get('name'):
+                    output += f"  Name: {battery.get('name')}\n"
+                output += "\n"
+        
+        # USB Devices count
+        if "usb_devices" in data and data["usb_devices"]:
+            output += f"USB DEVICES: {len(data['usb_devices'])} detected\n\n"
+        
+        # PCI Devices count
+        if "pci_devices" in data and data["pci_devices"]:
+            output += f"PCI DEVICES: {len(data['pci_devices'])} detected\n\n"
+        
+        # Memory SPD
+        if "memory_spd" in data and data["memory_spd"]:
+            output += f"MEMORY SPD: {len(data['memory_spd'])} module(s) detected\n\n"
         
         return output
 

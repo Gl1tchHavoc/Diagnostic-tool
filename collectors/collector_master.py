@@ -89,11 +89,13 @@ def collect_all(save_raw=True, output_dir="output/raw", progress_callback=None):
         filename = output_path / f"raw_data_{timestamp_str}.json"
         
         try:
+            # Użyj safe_read_text dla spójności (chociaż to zapis, nie odczyt)
+            # Ale dla zapisu używamy standardowego open z utf-8
             with open(filename, "w", encoding="utf-8") as f:
                 json.dump(results, f, indent=2, ensure_ascii=False, default=str)
-            print(f"Raw data saved to: {filename}")
+            logger.info(f"[COLLECTOR_MASTER] Raw data saved to: {filename}")
         except Exception as e:
-            print(f"Failed to save raw data: {e}")
+            logger.error(f"[COLLECTOR_MASTER] Failed to save raw data: {e}")
     
     return results
 

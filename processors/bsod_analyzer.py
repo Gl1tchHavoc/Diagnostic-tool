@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 import re
 from utils.logger import get_logger
+from utils.confidence_normalizer import normalize_confidence, calculate_weighted_confidence
+from utils.event_deduplicator import deduplicate_events
 
 # Import nowego modułu korelacji
 try:
@@ -17,9 +19,9 @@ except ImportError:
     logger.warning("[BSOD_ANALYZER] New correlation module not available, using legacy method")
 
 # Konfiguracja - BSOD Analysis 2.0
-DEFAULT_TIME_WINDOW_MINUTES = 15
+DEFAULT_TIME_WINDOW_MINUTES = 10  # Zmienione z 15 na 10 minut
 PRIMARY_TIME_WINDOW_MINUTES = 3  # Primary window dla krytycznych zdarzeń
-EXTENDED_TIME_WINDOW_MINUTES = 15  # Extended window dla szerszej analizy
+EXTENDED_TIME_WINDOW_MINUTES = 10  # Extended window (zmienione z 15 na 10)
 MAX_TIME_WINDOW_MINUTES = 60
 
 # Wagi kategorii eventów
@@ -249,6 +251,13 @@ def analyze_bsod(system_logs_data, hardware_data, drivers_data, bsod_data=None,
     # Analizuj minidump files jeśli dostępne
     minidump_info = analyze_minidumps(bsod_data)
     
+    # Sprawdź WHEA errors (hardware failures)
+    whea_errors = bsod_data.get("whea_errors", []) if bsod_data else []
+    has_whea_errors = len(whea_errors) > 0
+    
+    if has_whea_errors:
+        logger.warning(f"[BSOD] Found {len(whea_errors)} WHEA hardware errors - indicating HARDWARE_FAILURE")
+    
     result["bsod_found"] = True
     result["last_bsod_timestamp"] = last_bsod["timestamp"]
     result["bsod_details"] = {
@@ -258,7 +267,9 @@ def analyze_bsod(system_logs_data, hardware_data, drivers_data, bsod_data=None,
         "bugcheck_code": bugcheck_code,
         "bugcheck_parameters": bugcheck_params,
         "dump_file": dump_file,
-        "minidump_info": minidump_info
+        "minidump_info": minidump_info,
+        "whea_errors": whea_errors,
+        "has_hardware_failure": has_whea_errors
     }
     
     # 2. Parsuj timestamp BSOD
@@ -294,18 +305,45 @@ def analyze_bsod(system_logs_data, hardware_data, drivers_data, bsod_data=None,
     for event in primary_events:
         event['in_primary_window'] = True
     
-    # 4. Kategoryzuj i oblicz confidence scores
+    # 4. De-duplikuj eventy przed kategoryzacją
+    logger.debug(f"[BSOD] Deduplicating {len(candidate_events)} candidate events")
+    candidate_events = deduplicate_events(candidate_events)
+    logger.info(f"[BSOD] After deduplication: {len(candidate_events)} unique events")
+    
+    # 5. Kategoryzuj i oblicz confidence scores
     categorized_events = categorize_events(candidate_events)
     scored_events = calculate_confidence_scores(
         categorized_events, bsod_time, time_window_minutes
     )
     
-    # 5. Koreluj z hardware i driver info
+    # Normalizuj confidence scores do zakresu 0-100
+    logger.debug("[BSOD] Normalizing confidence scores")
+    for event in scored_events:
+        if 'confidence_score' in event:
+            original_score = event['confidence_score']
+            normalized = normalize_confidence(original_score)
+            event['confidence_score'] = normalized
+            event['confidence_score_original'] = original_score
+            logger.debug(f"[BSOD] Normalized confidence: {original_score} -> {normalized}")
+    
+    # 6. Koreluj z hardware i driver info
+    logger.debug("[BSOD] Correlating with hardware and drivers")
     hardware_correlations = correlate_with_hardware(scored_events, hardware_data)
     driver_correlations = correlate_with_drivers(scored_events, drivers_data)
+    logger.debug(f"[BSOD] Found {len(hardware_correlations)} hardware correlations, {len(driver_correlations)} driver correlations")
     
-    # 6. Oblicz top causes (kumulatywny confidence)
-    top_causes = calculate_top_causes(scored_events, hardware_correlations, driver_correlations)
+    # 7. Oblicz top causes (kumulatywny confidence) - z obsługą WHEA
+    logger.debug("[BSOD] Calculating top causes")
+    top_causes = calculate_top_causes(scored_events, hardware_correlations, driver_correlations, has_whea_errors, whea_errors)
+    
+    # Normalizuj confidence w top_causes
+    for cause in top_causes:
+        if 'confidence' in cause:
+            original_confidence = cause['confidence']
+            normalized = normalize_confidence(original_confidence)
+            cause['confidence'] = normalized
+            cause['confidence_original'] = original_confidence
+            logger.debug(f"[BSOD] Normalized cause confidence: {original_confidence} -> {normalized}")
     
     # Jeśli brak top_causes, dodaj ogólne przyczyny na podstawie samego BSOD
     if not top_causes:
@@ -333,10 +371,12 @@ def analyze_bsod(system_logs_data, hardware_data, drivers_data, bsod_data=None,
                 }
             ]
     
-    # 7. Generuj rekomendacje
+    # 8. Generuj rekomendacje
+    logger.debug("[BSOD] Generating recommendations")
     recommendations = generate_bsod_recommendations(
         top_causes, hardware_correlations, driver_correlations, scored_events
     )
+    logger.debug(f"[BSOD] Generated {len(recommendations)} recommendations")
     
     # Jeśli brak rekomendacji, dodaj ogólne
     if not recommendations:
@@ -753,20 +793,44 @@ def correlate_with_drivers(scored_events, drivers_data):
     return correlations
 
 
-def calculate_top_causes(scored_events, hardware_correlations, driver_correlations):
+def calculate_top_causes(scored_events, hardware_correlations, driver_correlations, has_whea_errors=False, whea_errors=None):
     """
     Oblicza top causes na podstawie kumulatywnego confidence.
+    Priorytety: WHEA > BugCheck > Kernel-Power > Disk > Driver
+    
+    Args:
+        scored_events (list): Eventy z confidence scores
+        hardware_correlations (list): Korelacje hardware
+        driver_correlations (list): Korelacje driverów
+        has_whea_errors (bool): Czy występują WHEA errors
+        whea_errors (list): Lista WHEA errors
     
     Returns:
         list: Top causes z kumulatywnym confidence
     """
+    logger = get_logger()  # Pobierz logger
     cause_scores = defaultdict(float)
     cause_details = defaultdict(list)
+    
+    # WHEA errors mają najwyższy priorytet - HARDWARE_FAILURE z high confidence
+    if has_whea_errors and whea_errors:
+        cause_scores["HARDWARE_FAILURE"] = 95.0  # Wysoki confidence dla WHEA
+        cause_details["HARDWARE_FAILURE"] = whea_errors
+        logger.warning("[BSOD] WHEA errors detected - marking as HARDWARE_FAILURE with high confidence")
     
     # Zbierz scores według kategorii
     for event in scored_events:
         category = event.get("detected_category", "OTHER")
         confidence = event.get("confidence_score", 0)
+        
+        # Priorytetyzacja kategorii
+        if category == "GPU_DRIVER":
+            confidence *= 1.1  # +10%
+        elif category == "DISK_ERROR":
+            confidence *= 1.05  # +5%
+        elif category == "DRIVER_ERROR":
+            confidence *= 1.0  # Bez zmian
+        
         cause_scores[category] += confidence
         cause_details[category].append(event)
     
@@ -795,7 +859,23 @@ def calculate_top_causes(scored_events, hardware_correlations, driver_correlatio
             "description": get_cause_description(cause)
         })
     
-    top_causes.sort(key=lambda x: x["confidence"], reverse=True)
+    # Sortuj według priorytetów: WHEA > BugCheck > Kernel-Power > Disk > Driver
+    priority_order = {
+        "HARDWARE_FAILURE": 0,
+        "GPU_DRIVER": 1,
+        "DISK_ERROR": 2,
+        "DRIVER_ERROR": 3,
+        "MEMORY_ERROR": 4,
+        "TXR_FAILURE": 5,
+        "SERVICE_FAILURE": 6,
+        "SYSTEM_CRITICAL": 7,
+        "OTHER": 8
+    }
+    
+    top_causes.sort(key=lambda x: (
+        priority_order.get(x["cause"], 99),
+        -x["confidence"]  # Wewnątrz tej samej kategorii sortuj po confidence
+    ))
     
     return top_causes
 
@@ -803,6 +883,7 @@ def calculate_top_causes(scored_events, hardware_correlations, driver_correlatio
 def get_cause_description(cause):
     """Zwraca opis przyczyny."""
     descriptions = {
+        "HARDWARE_FAILURE": "Hardware component failure detected by WHEA-Logger (EventID 18, 19, 20) - high confidence",
         "GPU_DRIVER": "Graphics driver issue or GPU hardware problem",
         "DISK_ERROR": "Disk I/O error, bad sectors, or storage controller issue",
         "MEMORY_ERROR": "RAM problem or memory management issue",

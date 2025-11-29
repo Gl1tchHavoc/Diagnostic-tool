@@ -95,6 +95,24 @@ def safe_read(file_path, encodings=None, fallback_encoding=None):
         logger.error(f"[SAFE_READ] {error_msg}")
         return None, None, error_msg
 
+def safe_read_text(file_path, default_encoding='utf-8'):
+    """
+    Bezpieczne wczytywanie pliku tekstowego z automatycznym wykrywaniem kodowania.
+    Prostsza wersja safe_read() zwracająca tylko zawartość lub None.
+    
+    Args:
+        file_path (str): Ścieżka do pliku
+        default_encoding (str): Domyślne kodowanie (używane jako fallback)
+    
+    Returns:
+        str or None: Zawartość pliku lub None w przypadku błędu
+    """
+    content, encoding, error = safe_read(file_path)
+    if error:
+        logger.warning(f"[SAFE_READ_TEXT] Failed to read {file_path}: {error}")
+        return None
+    return content
+
 def detect_encoding(file_path, sample_size=8192):
     """
     Wykrywa kodowanie pliku używając chardet (jeśli dostępny).

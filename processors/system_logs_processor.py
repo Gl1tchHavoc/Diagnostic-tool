@@ -1,7 +1,12 @@
 """
 Procesor logów systemowych - analizuje logi i wykrywa wzorce problemów.
+Z filtrowaniem fałszywych DISK_WARNING.
 """
 from datetime import datetime
+from utils.warning_classifier import classify_warning, is_false_disk_warning
+from utils.logger import get_logger
+
+logger = get_logger()
 
 def process(logs_data):
     """
@@ -63,13 +68,26 @@ def process(logs_data):
                             "category": category
                         })
                     elif any(keyword in message for keyword in ["disk", "ntfs", "bad block"]):
-                        issues.append({
-                            "type": "DISK_ERROR",
-                            "severity": "ERROR",
-                            "message": log_entry.get("raw", ""),
-                            "event_id": event_id,
-                            "category": category
-                        })
+                        # Sprawdź czy to nie jest fałszywy DISK_ERROR
+                        if not is_false_disk_warning(log_entry.get("message", "")):
+                            issues.append({
+                                "type": "DISK_ERROR",
+                                "severity": "ERROR",
+                                "message": log_entry.get("raw", ""),
+                                "event_id": event_id,
+                                "category": category
+                            })
+                        else:
+                            warning_type = classify_warning(log_entry.get("message", ""), event_id)
+                            if warning_type == "NETWORK_WARNING":
+                                warnings.append({
+                                    "type": "NETWORK_WARNING",
+                                    "severity": "WARNING",
+                                    "message": log_entry.get("raw", ""),
+                                    "event_id": event_id,
+                                    "category": category
+                                })
+                            # Jeśli IGNORE, pomiń
                     elif "service" in message and "fail" in message:
                         warnings.append({
                             "type": "SERVICE_FAILURE",
@@ -79,8 +97,14 @@ def process(logs_data):
                             "category": category
                         })
                 elif level == "WARNING":
+                    # Klasyfikuj warning
+                    warning_type = classify_warning(log_entry.get("message", ""), event_id)
+                    if warning_type == "IGNORE":
+                        logger.debug(f"[SYSTEM_LOGS_PROCESSOR] Ignoring warning: {log_entry.get('message', '')[:100]}")
+                        continue
+                    
                     warnings.append({
-                        "type": "SYSTEM_WARNING",
+                        "type": warning_type,
                         "severity": "WARNING",
                         "message": log_entry.get("raw", ""),
                         "event_id": event_id,

@@ -13,6 +13,8 @@ LOG_DIR.mkdir(exist_ok=True)
 
 # Nazwa pliku loga z timestampem
 LOG_FILE = LOG_DIR / f"diagnostic_tool_{datetime.now().strftime('%Y%m%d')}.log"
+# Plik logowania diagnostycznego (każdy krok diagnostyczny)
+DIAGNOSTIC_LOG_FILE = LOG_DIR / f"diagnostic_log_{datetime.now().strftime('%Y%m%d')}.txt"
 
 # Konfiguracja loggera
 def setup_logger(name="DiagnosticTool", level=logging.DEBUG):
@@ -55,9 +57,19 @@ def setup_logger(name="DiagnosticTool", level=logging.DEBUG):
     console_handler.setLevel(logging.INFO)  # Tylko INFO i wyżej do konsoli
     console_handler.setFormatter(simple_format)
     
+    # Handler do pliku diagnostycznego (każdy krok diagnostyczny)
+    diagnostic_file_handler = logging.FileHandler(DIAGNOSTIC_LOG_FILE, encoding='utf-8', mode='a')
+    diagnostic_file_handler.setLevel(logging.INFO)  # INFO i wyżej do pliku diagnostycznego
+    diagnostic_format = logging.Formatter(
+        '%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    diagnostic_file_handler.setFormatter(diagnostic_format)
+    
     # Dodaj handlery
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
+    logger.addHandler(diagnostic_file_handler)
     
     return logger
 

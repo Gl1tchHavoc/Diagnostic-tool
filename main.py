@@ -3,20 +3,32 @@ Główny plik diagnostyczny - uruchamia pełne skanowanie systemu.
 """
 import json
 import sys
+import logging
 from pathlib import Path
 from datetime import datetime
 
 from utils.admin_check import require_admin
+from utils.logger import setup_logger, get_logger
 from collectors.collector_master import collect_all
 from processors.analyzer import analyze_all
 
 def main():
     """Główna funkcja - wykonuje pełne skanowanie i analizę."""
+    # Inicjalizuj logger z poziomem DEBUG dla testów
+    logger = setup_logger(level=logging.DEBUG)
+    logger.info("=" * 60)
+    logger.info("Diagnostic Tool - Full System Scan")
+    logger.info("=" * 60)
+    logger.debug("Logger initialized with DEBUG level")
+    
     # Sprawdź uprawnienia administratora (automatycznie próbuje uruchomić jako admin)
     if not require_admin(auto_restart=True):
+        logger.error("Administrator privileges required")
         print("\nNaciśnij Enter aby zakończyć...")
         input()
         sys.exit(1)
+    
+    logger.info("Running with administrator privileges")
     
     print("=" * 60)
     print("Diagnostic Tool - Full System Scan")
@@ -24,15 +36,21 @@ def main():
     print()
     
     # Zbierz wszystkie dane
+    logger.info("Step 1: Collecting system data...")
+    logger.debug("Starting data collection with all collectors")
     print("Step 1: Collecting system data...")
     print("-" * 60)
     collected_data = collect_all(save_raw=True, output_dir="output/raw")
+    logger.info(f"Data collection completed. Collected {len(collected_data.get('collectors', {}))} collector results")
     print()
     
     # Przetwórz i przeanalizuj
+    logger.info("Step 2: Processing and analyzing data...")
+    logger.debug("Starting data analysis and processing")
     print("Step 2: Processing and analyzing data...")
     print("-" * 60)
     analysis_report = analyze_all(collected_data)
+    logger.info("Data analysis completed")
     print()
     
     # Zapisz przetworzone dane
@@ -44,8 +62,10 @@ def main():
     try:
         with open(report_file, "w", encoding="utf-8") as f:
             json.dump(analysis_report, f, indent=2, ensure_ascii=False, default=str)
+        logger.info(f"Analysis report saved to: {report_file}")
         print(f"Analysis report saved to: {report_file}")
     except Exception as e:
+        logger.error(f"Failed to save report: {e}")
         print(f"Failed to save report: {e}")
     
     # Wyświetl podsumowanie

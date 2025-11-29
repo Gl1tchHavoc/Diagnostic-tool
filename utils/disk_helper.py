@@ -176,6 +176,93 @@ def drive_exists(drive_letter):
         logger.debug(f"[DISK_HELPER] Error checking drive {drive_letter}: {e}")
         return False
 
+def get_logical_volumes():
+    """
+    Pobiera szczegółowe informacje o wszystkich wolumenach logicznych.
+    Używa WMI do pobrania pełnych informacji o dyskach.
+    
+    Returns:
+        list: Lista słowników z informacjami o wolumenach
+    """
+    logger.debug("[DISK_HELPER] Getting logical volumes information")
+    volumes = []
+    
+    if sys.platform != "win32":
+        logger.warning("[DISK_HELPER] get_logical_volumes() is Windows-only")
+        return volumes
+    
+    try:
+        import wmi
+        c = wmi.WMI()
+        
+        for logical_disk in c.Win32_LogicalDisk():
+            volume_info = {
+                'device_id': logical_disk.DeviceID,
+                'volume_name': logical_disk.VolumeName.strip() if logical_disk.VolumeName else None,
+                'volume_serial': logical_disk.VolumeSerialNumber.strip() if logical_disk.VolumeSerialNumber else None,
+                'file_system': logical_disk.FileSystem,
+                'drive_type': logical_disk.DriveType,
+                'drive_type_desc': {
+                    0: 'Unknown',
+                    1: 'No Root Directory',
+                    2: 'Removable Disk',
+                    3: 'Local Disk',
+                    4: 'Network Drive',
+                    5: 'Compact Disc',
+                    6: 'RAM Disk'
+                }.get(logical_disk.DriveType, 'Unknown'),
+                'size': int(logical_disk.Size) if logical_disk.Size else None,
+                'free_space': int(logical_disk.FreeSpace) if logical_disk.FreeSpace else None,
+                'compressed': logical_disk.Compressed,
+                'supports_disk_quota': logical_disk.SupportsDiskQuotas,
+                'quotas_incomplete': logical_disk.QuotasIncomplete,
+                'quotas_rebuild': logical_disk.QuotasRebuilding,
+                'description': logical_disk.Description.strip() if logical_disk.Description else None,
+                'status': logical_disk.Status,
+                'availability': logical_disk.Availability
+            }
+            
+            # Sprawdź czy to shadowcopy
+            from utils.shadowcopy_helper import is_shadowcopy_path
+            volume_info['is_shadowcopy'] = is_shadowcopy_path(volume_info['volume_name'] or volume_info['device_id'])
+            
+            # Sprawdź czy to wirtualny dysk
+            desc_upper = (volume_info['description'] or '').upper()
+            volume_info['is_virtual'] = any(keyword in desc_upper for keyword in ['VIRTUAL', 'RAMDISK', 'SUBST'])
+            
+            # Sprawdź dostępność przez psutil
+            try:
+                usage = psutil.disk_usage(logical_disk.DeviceID)
+                volume_info['psutil_usage'] = {
+                    'total': usage.total,
+                    'used': usage.used,
+                    'free': usage.free,
+                    'percent': usage.percent
+                }
+                volume_info['accessible'] = True
+            except (PermissionError, OSError) as e:
+                volume_info['accessible'] = False
+                volume_info['access_error'] = type(e).__name__
+                logger.debug(f"[DISK_HELPER] Volume {logical_disk.DeviceID} not accessible: {type(e).__name__}")
+            except Exception as e:
+                volume_info['accessible'] = False
+                volume_info['access_error'] = f"{type(e).__name__}: {e}"
+                logger.debug(f"[DISK_HELPER] Error checking volume {logical_disk.DeviceID}: {e}")
+            
+            volumes.append(volume_info)
+        
+        logger.info(f"[DISK_HELPER] Found {len(volumes)} logical volumes")
+        return volumes
+        
+    except ImportError:
+        logger.warning("[DISK_HELPER] WMI not available for get_logical_volumes()")
+        return volumes
+    except Exception as e:
+        logger.error(f"[DISK_HELPER] Error getting logical volumes: {type(e).__name__}: {e}")
+        import traceback
+        logger.debug(f"[DISK_HELPER] Traceback: {traceback.format_exc()}")
+        return volumes
+
 def filter_disk_errors_by_existing_drives(disk_errors, existing_drives=None):
     """
     Filtruje błędy dysków, pozostawiając tylko te dotyczące istniejących dysków.

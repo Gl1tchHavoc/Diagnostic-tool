@@ -110,10 +110,11 @@ def build_report(processed_data):
         },
         "score": {
             "normalized": score_info["normalized_score"],
-            "total_points": score_info["total_points"],
+            "raw_score": score_info.get("raw_score", 0),  # Użyj raw_score zamiast total_points
+            "total_points": score_info.get("raw_score", 0),  # Zachowaj kompatybilność wsteczną
             "category": score_info["category"],
             "breakdown": score_info["breakdown"],
-            "points_breakdown": score_info["points_breakdown"]
+            "points_breakdown": score_info.get("points_breakdown", {})
         },
         "confidence": {
             "top_causes": confidence_info["top_causes"],

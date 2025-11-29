@@ -5,6 +5,7 @@ Zaimplementowano filtrowanie ShadowCopy errors i de-duplikację zdarzeń.
 from utils.disk_helper import filter_disk_errors_by_existing_drives, get_existing_drives
 from utils.shadowcopy_helper import filter_shadowcopy_errors
 from utils.event_deduplicator import deduplicate_events
+from utils.warning_classifier import classify_warning, is_false_disk_warning
 from utils.logger import get_logger
 
 logger = get_logger()
@@ -94,12 +95,34 @@ def process(storage_data):
         # Następnie filtruj błędy dotyczące nieistniejących dysków
         filtered_disk_errors = filter_disk_errors_by_existing_drives(real_disk_errors, existing_drives)
         
-        # Dodaj rzeczywiste błędy dysków
+        # Dodaj rzeczywiste błędy dysków (z filtrowaniem fałszywych DISK_WARNING)
         for error in filtered_disk_errors:
+            message = error.get("message", "")
+            
+            # Sprawdź czy to nie jest fałszywy DISK_WARNING
+            if is_false_disk_warning(message):
+                warning_type = classify_warning(message, error.get("event_id"))
+                if warning_type == "IGNORE":
+                    logger.debug(f"[STORAGE_HEALTH] Ignoring false DISK_WARNING: {message[:100]}")
+                    continue
+                elif warning_type == "NETWORK_WARNING":
+                    logger.debug(f"[STORAGE_HEALTH] Reclassifying as NETWORK_WARNING: {message[:100]}")
+                    warnings.append({
+                        "type": "NETWORK_WARNING",
+                        "severity": "WARNING",
+                        "message": message,
+                        "event_id": error.get("event_id", ""),
+                        "timestamp": error.get("timestamp", ""),
+                        "component": "Network",
+                        "category": "NETWORK_WARNING"
+                    })
+                    continue
+            
+            # Rzeczywisty błąd dysku
             warnings.append({
                 "type": "DISK_WARNING",
                 "severity": "WARNING",
-                "message": error.get("message", ""),
+                "message": message,
                 "event_id": error.get("event_id", ""),
                 "timestamp": error.get("timestamp", ""),
                 "component": "Storage",
