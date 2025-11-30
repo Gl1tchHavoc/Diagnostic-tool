@@ -2,6 +2,105 @@
 
 Narzędzie diagnostyczne systemu Windows do zbierania i prezentacji danych diagnostycznych w sposób spójny, czytelny i łatwy do przetworzenia przez dalsze moduły analityczne.
 
+## 📊 Architecture Flow
+
+Aplikacja używa modularnej architektury z pełną asynchronicznością:
+
+```mermaid
+graph TB
+    User[👤 User]
+    GUIMVP[GUI MVP<br/>- Display collector status<br/>- View detailed data<br/>- Export JSON/HTML]
+    CLIMVP[CLI MVP<br/>- Trigger full scan<br/>- Show collector statuses<br/>- Export JSON]
+    CollectorMaster[Collector Master Async<br/>- Parallel async execution<br/>- Standardize format<br/>- Error handling]
+    ProcessorsMVP[Processors MVP<br/>- Validate data<br/>- Parse JSON<br/>- Prepare for reporting<br/>- Optional scoring]
+    Logger[Logger / Audit<br/>- Collector statuses<br/>- Errors<br/>- Timestamps<br/>- Performance metrics]
+    
+    Hardware[Collector: Hardware<br/>CPU, RAM, GPU, Temp]
+    System[Collector: System<br/>Windows version, uptime, patches]
+    Storage[Collector: Storage<br/>Disks, partitions, SMART]
+    Network[Collector: Network<br/>Adapters, IP, connections]
+    Processes[Collector: Processes & Services<br/>Running processes, autostart, services]
+    EventLogs[Collector: Event Logs<br/>System & Application]
+    Drivers[Collector: Drivers & Registry TxR]
+    
+    User -->|Initiates scan / views results| GUIMVP
+    User -->|Initiates scan / views results| CLIMVP
+    GUIMVP -->|Request full scan / single collector| CollectorMaster
+    CLIMVP -->|Request full scan| CollectorMaster
+    
+    CollectorMaster -->|Async request parallel| Hardware
+    CollectorMaster -->|Async request parallel| System
+    CollectorMaster -->|Async request parallel| Storage
+    CollectorMaster -->|Async request parallel| Network
+    CollectorMaster -->|Async request parallel| Processes
+    CollectorMaster -->|Async request parallel| EventLogs
+    CollectorMaster -->|Async request parallel| Drivers
+    
+    Hardware -->|JSON + status| CollectorMaster
+    System -->|JSON + status| CollectorMaster
+    Storage -->|JSON + status| CollectorMaster
+    Network -->|JSON + status| CollectorMaster
+    Processes -->|JSON + status| CollectorMaster
+    EventLogs -->|JSON + status| CollectorMaster
+    Drivers -->|JSON + status| CollectorMaster
+    
+    CollectorMaster -->|Aggregated data + summary| GUIMVP
+    CollectorMaster -->|Aggregated data + summary| CLIMVP
+    
+    GUIMVP -->|Request processing optional| ProcessorsMVP
+    CLIMVP -->|Request processing optional| ProcessorsMVP
+    ProcessorsMVP -->|Processed data + validation| GUIMVP
+    ProcessorsMVP -->|Processed data + validation| CLIMVP
+    
+    Hardware --> Logger
+    System --> Logger
+    Storage --> Logger
+    Network --> Logger
+    Processes --> Logger
+    EventLogs --> Logger
+    Drivers --> Logger
+    CollectorMaster --> Logger
+    ProcessorsMVP --> Logger
+    
+    classDef gui fill:#fff4a3,stroke:#333,stroke-width:2px
+    classDef orchestrator fill:#ffcccc,stroke:#333,stroke-width:2px
+    classDef processor fill:#ccffcc,stroke:#333,stroke-width:2px
+    classDef collector fill:#cce5ff,stroke:#333,stroke-width:2px
+    classDef logger fill:#f0f0f0,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5
+    
+    class GUIMVP,CLIMVP gui
+    class CollectorMaster orchestrator
+    class ProcessorsMVP processor
+    class Hardware,System,Storage,Network,Processes,EventLogs,Drivers collector
+    class Logger logger
+```
+
+**Więcej informacji:**
+- 📐 [PlantUML Diagram](docs/MVP_PIPELINE_FLOW.puml) - Dla edycji i zaawansowanych narzędzi
+- 📖 [Architecture Documentation](docs/MVP_ARCHITECTURE.md) - Pełna dokumentacja architektury
+- 🔄 [Async & Testing](docs/ASYNC_AND_TESTING.md) - Dokumentacja asynchroniczności i testów
+
+### 🔄 Aktualizacja Diagramu Flow
+
+Diagram flow jest automatycznie aktualizowany na podstawie struktury aplikacji.
+
+**Aktualizacja diagramu:**
+```bash
+python scripts/update_flow_diagram.py
+```
+
+Skrypt analizuje:
+- Collectory z `core/collector_registry.py`
+- Procesory z `core/processor_registry.py`
+- Konfigurację z `config.json`
+
+I automatycznie aktualizuje diagram PlantUML i dokumentację.
+
+**Jak wyświetlić diagram PlantUML:**
+1. Online: http://www.plantuml.com/plantuml/uml/ (wklej zawartość pliku `.puml`)
+2. VS Code: Zainstaluj rozszerzenie "PlantUML" i naciśnij `Alt+D`
+3. IntelliJ/PyCharm: Zainstaluj wtyczkę "PlantUML integration"
+
 ## Cel MVP
 
 Zebrać i zaprezentować dane diagnostyczne Windows w sposób spójny, czytelny i łatwy do przetworzenia przez dalsze moduły analityczne.

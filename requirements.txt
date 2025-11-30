@@ -10,6 +10,8 @@ GPUtil>=1.4.0; sys_platform == "win32"  # GPU monitoring
 
 # Testing and utilities
 pytest>=7.0.0  # Testing framework
+pytest-cov>=4.0.0  # Coverage dla testów (opcjonalnie)
+pytest-asyncio>=0.21.0  # Wsparcie dla testów async (opcjonalnie)
 chardet>=5.0.0  # Character encoding detection
 python-dateutil>=2.8.0  # Advanced date/time parsing
 

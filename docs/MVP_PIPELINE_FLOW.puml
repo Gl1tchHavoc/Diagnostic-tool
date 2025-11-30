@@ -1,6 +1,6 @@
 @startuml
 
-title Diagnostic-tool MVP - Pipeline Flow
+title Diagnostic-tool MVP - Asynchronous Pipeline Flow
 
 skinparam rectangle {
   BackgroundColor<<Collector>> LightBlue
@@ -16,15 +16,18 @@ actor User
 rectangle "GUI MVP\n- Display collector status\n- View detailed data\n- Export JSON/HTML" <<GUI>> {
 }
 
+rectangle "CLI MVP\n- Trigger full scan\n- Show collector statuses\n- Export JSON" <<GUI>> {
+}
+
 ' Orchestrator Layer
-rectangle "Collector Master\n- Parallel execution\n- Standardize format\n- Error handling" <<Orchestrator>> {
+rectangle "Collector Master (Async)\n- Parallel async execution\n- Standardize format\n- Error handling" <<Orchestrator>> {
 }
 
 ' Processors Layer
-rectangle "Processors MVP\n- Validate data\n- Parse JSON\n- Prepare for reporting" <<Processor>> {
+rectangle "Processors MVP\n- Validate data\n- Parse JSON\n- Prepare for reporting\n- Optional scoring & recommendations" <<Processor>> {
 }
 
-' Collectors Layer
+' Collectors Layer (Async)
 rectangle "Collector: Hardware\nCPU, RAM, GPU, Temp" <<Collector>> {
 }
 
@@ -47,31 +50,48 @@ rectangle "Collector: Drivers & Registry TxR" <<Collector>> {
 }
 
 ' Flow Connections
-User --> GUI MVP : Initiates scan / views results
+User --> "GUI MVP" : Initiates scan / views results
+User --> "CLI MVP" : Initiates scan / views results
 
-GUI MVP --> "Collector Master" : Request full scan / single collector
+"GUI MVP" --> "Collector Master (Async)" : Request full scan / single collector
+"CLI MVP" --> "Collector Master (Async)" : Request full scan
 
-"Collector Master" --> "Collector: Hardware" : Request data (parallel)
-"Collector Master" --> "Collector: System" : Request data (parallel)
-"Collector Master" --> "Collector: Storage" : Request data (parallel)
-"Collector Master" --> "Collector: Network" : Request data (parallel)
-"Collector Master" --> "Collector: Processes & Services" : Request data (parallel)
-"Collector Master" --> "Collector: Event Logs" : Request data (parallel)
-"Collector Master" --> "Collector: Drivers & Registry TxR" : Request data (parallel)
+"Collector Master (Async)" --> "Collector: Hardware" : Async request (parallel)
+"Collector Master (Async)" --> "Collector: System" : Async request (parallel)
+"Collector Master (Async)" --> "Collector: Storage" : Async request (parallel)
+"Collector Master (Async)" --> "Collector: Network" : Async request (parallel)
+"Collector Master (Async)" --> "Collector: Processes & Services" : Async request (parallel)
+"Collector Master (Async)" --> "Collector: Event Logs" : Async request (parallel)
+"Collector Master (Async)" --> "Collector: Drivers & Registry TxR" : Async request (parallel)
 
-"Collector: Hardware" --> "Collector Master" : Standardized JSON / status
-"Collector: System" --> "Collector Master" : Standardized JSON / status
-"Collector: Storage" --> "Collector Master" : Standardized JSON / status
-"Collector: Network" --> "Collector Master" : Standardized JSON / status
-"Collector: Processes & Services" --> "Collector Master" : Standardized JSON / status
-"Collector: Event Logs" --> "Collector Master" : Standardized JSON / status
-"Collector: Drivers & Registry TxR" --> "Collector Master" : Standardized JSON / status
+"Collector: Hardware" --> "Collector Master (Async)" : JSON + status
+"Collector: System" --> "Collector Master (Async)" : JSON + status
+"Collector: Storage" --> "Collector Master (Async)" : JSON + status
+"Collector: Network" --> "Collector Master (Async)" : JSON + status
+"Collector: Processes & Services" --> "Collector Master (Async)" : JSON + status
+"Collector: Event Logs" --> "Collector Master (Async)" : JSON + status
+"Collector: Drivers & Registry TxR" --> "Collector Master (Async)" : JSON + status
 
-"Collector Master" --> GUI MVP : Aggregated data + summary
+"Collector Master (Async)" --> "GUI MVP" : Aggregated data + summary
+"Collector Master (Async)" --> "CLI MVP" : Aggregated data + summary
 
-GUI MVP --> Processors MVP : Request processing (optional)
+"GUI MVP" --> "Processors MVP" : Request processing (optional)
+"CLI MVP" --> "Processors MVP" : Request processing (optional)
 
-Processors MVP --> GUI MVP : Processed data + validation results
+"Processors MVP" --> "GUI MVP" : Processed data + validation
+"Processors MVP" --> "CLI MVP" : Processed data + validation
+
+' Optional: Log & audit layer
+rectangle "Logger / Audit\n- Collector statuses\n- Errors\n- Timestamps\n- Performance metrics" as Logger
+
+"Collector: Hardware" --> Logger
+"Collector: System" --> Logger
+"Collector: Storage" --> Logger
+"Collector: Network" --> Logger
+"Collector: Processes & Services" --> Logger
+"Collector: Event Logs" --> Logger
+"Collector: Drivers & Registry TxR" --> Logger
+"Collector Master (Async)" --> Logger
+"Processors MVP" --> Logger
 
 @enduml
-

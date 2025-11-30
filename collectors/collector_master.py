@@ -194,7 +194,15 @@ def collect_all(save_raw=True, output_dir="output/raw", progress_callback=None):
     logger.info(f"[COLLECTION] Starting collection of {total} collectors")
     
     # MVP: Równoległe wykonanie jeśli włączone w config
+    # Uwaga: Dla pełnej asynchroniczności użyj collect_all_async_wrapper z collector_master_async
     parallel = config.get("collectors.parallel_execution", True)
+    use_async = config.get("collectors.use_async", False)
+    
+    if use_async:
+        # Użyj asynchronicznej wersji
+        logger.info("[COLLECTION] Using async execution")
+        from collectors.collector_master_async import collect_all_async_wrapper
+        return collect_all_async_wrapper(save_raw, output_dir, progress_callback)
     
     if parallel and total > 1:
         # Równoległe wykonanie
