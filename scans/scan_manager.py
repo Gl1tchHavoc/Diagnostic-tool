@@ -126,8 +126,16 @@ class ScanManager:
                         if 'data' in collector_result:
                             self._logger.debug(f"[SCAN_MANAGER] DEBUG: WER collector_result['data'] type: {type(collector_result['data'])}")
                             if isinstance(collector_result['data'], dict) and 'grouped_crashes' in collector_result['data']:
-                                self._logger.debug(f"[SCAN_MANAGER] DEBUG: WER grouped_crashes type: {type(collector_result['data']['grouped_crashes'])}")
-                                self._logger.debug(f"[SCAN_MANAGER] DEBUG: WER grouped_crashes is list: {isinstance(collector_result['data']['grouped_crashes'], list)}")
+                                self._logger.debug(
+                                    f"[SCAN_MANAGER] DEBUG: WER "
+                                    f"grouped_crashes type: "
+                                    f"{type(collector_result['data']['grouped_crashes'])}"
+                                )
+                                self._logger.debug(
+                                    f"[SCAN_MANAGER] DEBUG: WER "
+                                    f"grouped_crashes is list: "
+                                    f"{isinstance(collector_result['data']['grouped_crashes'], list)}"
+                                )
             except Exception as e:
                 self._logger.exception(f"[SCAN_MANAGER] Collector {collector.name} raised exception: {e}")
                 collector_result = {
@@ -144,7 +152,11 @@ class ScanManager:
                 
                 # KRYTYCZNE ZABEZPIECZENIE: collector_result może być listą zamiast dict!
                 if isinstance(collector_result, list):
-                    self._logger.error(f"[SCAN_MANAGER] CRITICAL: collector_result for {collector.name} is list (length: {len(collector_result)}) instead of dict!")
+                    self._logger.error(
+                        f"[SCAN_MANAGER] CRITICAL: collector_result for "
+                        f"{collector.name} is list (length: "
+                        f"{len(collector_result)}) instead of dict!"
+                    )
                     from utils.error_analyzer import log_error_with_analysis
                     log_error_with_analysis(
                         TypeError(f"collector_result is list instead of dict"),
@@ -163,7 +175,12 @@ class ScanManager:
                     # KRYTYCZNE ZABEZPIECZENIE: collector_data może być listą zamiast dict!
                     # Jeśli jest listą, to błąd - konwertuj na dict z błędem
                     if isinstance(collector_data, list):
-                        self._logger.error(f"[SCAN_MANAGER] CRITICAL: collector_data for {collector.name} is list (length: {len(collector_data)}) instead of dict! Converting...")
+                        self._logger.error(
+                            f"[SCAN_MANAGER] CRITICAL: collector_data for "
+                            f"{collector.name} is list (length: "
+                            f"{len(collector_data)}) instead of dict! "
+                            f"Converting..."
+                        )
                         # Użyj error_analyzer do kompleksowej analizy
                         from utils.error_analyzer import log_error_with_analysis
                         log_error_with_analysis(
@@ -193,7 +210,11 @@ class ScanManager:
                             self._logger.debug(f"[SCAN_MANAGER] DEBUG: WER collector_data keys: {list(collector_data.keys())}")
                             if 'grouped_crashes' in collector_data:
                                 gc = collector_data['grouped_crashes']
-                                self._logger.debug(f"[SCAN_MANAGER] DEBUG: WER grouped_crashes type: {type(gc)}, is_list: {isinstance(gc, list)}")
+                                self._logger.debug(
+                                    f"[SCAN_MANAGER] DEBUG: WER "
+                                    f"grouped_crashes type: {type(gc)}, "
+                                    f"is_list: {isinstance(gc, list)}"
+                                )
                                 if isinstance(gc, list):
                                     self._logger.debug(f"[SCAN_MANAGER] DEBUG: WER grouped_crashes length: {len(gc)}")
                     
@@ -205,7 +226,11 @@ class ScanManager:
                         saved_data = results["collectors"].get(collector.name, {})
                         self._logger.debug(f"[SCAN_MANAGER] DEBUG: WER saved_data type: {type(saved_data)}")
                         if isinstance(saved_data, dict) and 'grouped_crashes' in saved_data:
-                            self._logger.debug(f"[SCAN_MANAGER] DEBUG: WER saved_data['grouped_crashes'] type: {type(saved_data['grouped_crashes'])}")
+                            self._logger.debug(
+                                f"[SCAN_MANAGER] DEBUG: WER "
+                                f"saved_data['grouped_crashes'] type: "
+                                f"{type(saved_data['grouped_crashes'])}"
+                            )
                 else:
                     # Jeśli kolektor zwrócił listę lub coś innego, zapisz jako data
                     self._logger.warning(f"[SCAN_MANAGER] Collector {collector.name} returned non-dict: {type(collector_result)}")
@@ -223,10 +248,18 @@ class ScanManager:
                     self._logger.debug(f"[SCAN_MANAGER] DEBUG: progress_info is dict: {isinstance(progress_info, dict)}")
                     if isinstance(progress_info, dict):
                         self._logger.debug(f"[SCAN_MANAGER] DEBUG: progress_info keys: {list(progress_info.keys())}")
-                        self._logger.debug(f"[SCAN_MANAGER] DEBUG: progress_info has 'global_progress': {'global_progress' in progress_info}")
+                        self._logger.debug(
+                            f"[SCAN_MANAGER] DEBUG: progress_info has "
+                            f"'global_progress': "
+                            f"{'global_progress' in progress_info}"
+                        )
                     
                     if isinstance(progress_info, dict) and 'global_progress' in progress_info:
-                        self._logger.debug(f"[SCAN_MANAGER] DEBUG: Calling progress_callback with progress: {progress_info['global_progress']}")
+                        self._logger.debug(
+                            f"[SCAN_MANAGER] DEBUG: Calling progress_callback "
+                            f"with progress: "
+                            f"{progress_info['global_progress']}"
+                        )
                         self.progress_callback(progress_info['global_progress'], f"Completed {collector.name}")
                         self._logger.debug(f"[SCAN_MANAGER] DEBUG: progress_callback completed for {collector.name}")
                     else:
@@ -331,7 +364,11 @@ class ScanManager:
                     sanitized['grouped_crashes'] = validated_grouped
                 elif isinstance(grouped, dict):
                     # BŁĄD: grouped_crashes jest dict zamiast listy - konwertuj
-                    self._logger.error(f"[SCAN_MANAGER] CRITICAL: grouped_crashes is dict (keys: {list(grouped.keys())[:5]}) instead of list! Converting...")
+                    self._logger.error(
+                        f"[SCAN_MANAGER] CRITICAL: grouped_crashes is dict "
+                        f"(keys: {list(grouped.keys())[:5]}) instead of list! "
+                        f"Converting..."
+                    )
                     sanitized['grouped_crashes'] = [grouped] if grouped else []
                 else:
                     self._logger.warning(f"[SCAN_MANAGER] WER grouped_crashes is not a list: {type(grouped)}, converting to empty list")

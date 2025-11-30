@@ -161,7 +161,13 @@ def get_shadowcopy_info():
                 pass
 
         # Sprawdź błędy VSS w Event Log
-        cmd = "Get-WinEvent -LogName System -MaxEvents 50 | Where-Object {$_.Message -like '*VSS*' -or $_.Message -like '*ShadowCopy*' -or $_.Message -like '*volsnap*'} | Select-Object -First 10 | ConvertTo-Json"
+        cmd = (
+            "Get-WinEvent -LogName System -MaxEvents 50 | "
+            "Where-Object {$_.Message -like '*VSS*' -or "
+            "$_.Message -like '*ShadowCopy*' -or "
+            "$_.Message -like '*volsnap*'} | "
+            "Select-Object -First 10 | ConvertTo-Json"
+        )
         output = run_powershell_hidden(cmd)
 
         if output:

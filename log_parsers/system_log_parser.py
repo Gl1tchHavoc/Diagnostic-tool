@@ -37,7 +37,12 @@ class SystemLogParser(BaseLogParser):
             logger.info(f"[SYSTEM_LOG_PARSER] Loading {self.log_source} log (max_events={self.max_events})")
             
             # Pobierz logi przez PowerShell
-            cmd = f"Get-WinEvent -LogName {self.log_source} -MaxEvents {self.max_events} -ErrorAction SilentlyContinue | ConvertTo-Xml -As String -Depth 3"
+            cmd = (
+                f"Get-WinEvent -LogName {self.log_source} "
+                f"-MaxEvents {self.max_events} "
+                "-ErrorAction SilentlyContinue | "
+                "ConvertTo-Xml -As String -Depth 3"
+            )
             output = run_powershell_hidden(cmd)
             
             if not output or len(output.strip()) < 50:

@@ -109,7 +109,10 @@ def correlate_events(processed_data, time_window_minutes=10):
     root_causes = generate_root_causes(all_events, correlations, timeline)
 
     logger.info(
-        f"[EVENT_CORRELATION] Generated timeline with {len(timeline)} time windows, {len(correlations)} correlations, {len(root_causes)} root causes")
+        f"[EVENT_CORRELATION] Generated timeline with {len(timeline)} time "
+        f"windows, {len(correlations)} correlations, "
+        f"{len(root_causes)} root causes"
+    )
 
     return {
         'timeline': timeline,

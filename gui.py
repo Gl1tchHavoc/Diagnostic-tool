@@ -330,7 +330,11 @@ class DiagnosticsGUI:
                 if 'results' in scan_results:
                     logger.debug(f"[GUI] DEBUG: scan_results['results'] type: {type(scan_results['results'])}")
                     if isinstance(scan_results['results'], dict) and 'collectors' in scan_results['results']:
-                        logger.debug(f"[GUI] DEBUG: scan_results['results']['collectors'] type: {type(scan_results['results']['collectors'])}")
+                        logger.debug(
+                            f"[GUI] DEBUG: scan_results['results']"
+                            f"['collectors'] type: "
+                            f"{type(scan_results['results']['collectors'])}"
+                        )
                         if isinstance(scan_results['results']['collectors'], dict) and 'wer' in scan_results['results']['collectors']:
                             wer_data = scan_results['results']['collectors']['wer']
                             logger.debug(f"[GUI] DEBUG: WER data type: {type(wer_data)}")

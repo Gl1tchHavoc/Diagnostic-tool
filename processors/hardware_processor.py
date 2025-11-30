@@ -79,7 +79,11 @@ def process(hardware_data):
             elif ':' in device:
                 drive_letter = device.split(':')[0] + ':'
 
-        logger.debug(f"[HARDWARE_PROCESSOR] Processing disk: device={device}, mountpoint={mountpoint}, drive_letter={drive_letter}, has_error={'error' in disk}")
+        logger.debug(
+            f"[HARDWARE_PROCESSOR] Processing disk: device={device}, "
+            f"mountpoint={mountpoint}, drive_letter={drive_letter}, "
+            f"has_error={'error' in disk}"
+        )
 
         # Sprawdź czy dysk faktycznie istnieje przed raportowaniem błędu
         if "error" in disk:
@@ -94,7 +98,11 @@ def process(hardware_data):
                 if not exists:
                     # Dysk jest wykryty przez psutil, ale nie jest dostępny (np. PermissionError)
                     # Nie raportujemy tego jako problem, bo może to być normalne (CD-ROM bez płyty, itp.)
-                    logger.debug(f"[HARDWARE_PROCESSOR] Drive {drive_letter} detected but not accessible ({error_type}): {error_msg}. Not reporting as issue.")
+                    logger.debug(
+                        f"[HARDWARE_PROCESSOR] Drive {drive_letter} detected "
+                        f"but not accessible ({error_type}): {error_msg}. "
+                        f"Not reporting as issue."
+                    )
                     continue  # Pomiń raportowanie błędu dla niedostępnych dysków
 
             # Jeśli dysk istnieje (jest dostępny), ale ma błąd, raportuj jako problem

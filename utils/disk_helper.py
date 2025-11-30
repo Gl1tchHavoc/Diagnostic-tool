@@ -93,7 +93,10 @@ def get_existing_drives(force_refresh=False):
                     if drive_letter not in drives:
                         drives.append(drive_letter)
                         logger.debug(
-                            f"[DISK_HELPER] Added accessible drive {drive_letter} (total: {usage.total} bytes, model: {logical_disk.VolumeName or 'N/A'})")
+                            f"[DISK_HELPER] Added accessible drive "
+                            f"{drive_letter} (total: {usage.total} bytes, "
+                            f"model: {logical_disk.VolumeName or 'N/A'})"
+                        )
                 except (PermissionError, OSError) as e:
                     logger.debug(
                         f"[DISK_HELPER] Skipping inaccessible drive {drive_letter}: {type(e).__name__}")

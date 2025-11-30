@@ -69,7 +69,10 @@ def process(whea_data, bsod_data=None, hardware_data=None):
     # Generuj human-readable summary
     summary = generate_summary(top_cause, affected_components, confidence_score, whea_events)
 
-    logger.info(f"[WHEA_PROCESSOR] Detected {len(aggregated)} unique root causes, top: {top_cause.get('root_cause', 'None') if top_cause else 'None'}")
+    logger.info(
+        f"[WHEA_PROCESSOR] Detected {len(aggregated)} unique root causes, "
+        f"top: {top_cause.get('root_cause', 'None') if top_cause else 'None'}"
+    )
 
     return {
         "root_causes": aggregated,
@@ -216,7 +219,11 @@ def apply_golden_rule_6(whea_events):
                     "event_ids": [str(e.get("event_id", "")) for e in events_in_window]
                 },
                 "affected_component": "CPU Power Delivery / VRM",
-                "explanation": f"Event 19 (Correctable Error) occurred {len(events_in_window)} times in 10 minutes, indicating CPU instability or voltage drop"
+                "explanation": (
+                    f"Event 19 (Correctable Error) occurred "
+                    f"{len(events_in_window)} times in 10 minutes, "
+                    f"indicating CPU instability or voltage drop"
+                )
             })
             break  # Tylko jeden raz
 
@@ -270,7 +277,11 @@ def apply_golden_rule_7(whea_events, bsod_data):
                                 "time_difference_seconds": time_diff
                             },
                             "affected_component": "Power Delivery / Electrical System",
-                            "explanation": f"WHEA Event {event_id} occurred within ±1 minute of BSOD EventID 41, indicating hardware electrical failure"
+                            "explanation": (
+                                f"WHEA Event {event_id} occurred within ±1 "
+                                f"minute of BSOD EventID 41, indicating "
+                                f"hardware electrical failure"
+                            )
                         })
                         break
 
@@ -330,7 +341,11 @@ def apply_additional_rules(whea_events, hardware_data):
                         "percentage": (count / total_apic_events * 100) if total_apic_events > 0 else 0
                     },
                     "affected_component": f"CPU Core {apic_id}",
-                    "explanation": f"Over 80% of WHEA errors come from CPU core {apic_id}, indicating undervoltage or overclocking instability"
+                    "explanation": (
+                        f"Over 80% of WHEA errors come from CPU core "
+                        f"{apic_id}, indicating undervoltage or "
+                        f"overclocking instability"
+                    )
                 })
                 break
 

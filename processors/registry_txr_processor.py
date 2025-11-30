@@ -34,7 +34,10 @@ def process(txr_data):
         shadowcopy_errors = categorized['shadowcopy_errors']
         all_shadowcopy = categorized['all_shadowcopy']
 
-        logger.info(f"[TXR_PROCESSOR] Categorized {len(deduplicated_data)} errors: {len(real_errors)} real, {len(shadowcopy_errors)} ShadowCopy")
+        logger.info(
+            f"[TXR_PROCESSOR] Categorized {len(deduplicated_data)} errors: "
+            f"{len(real_errors)} real, {len(shadowcopy_errors)} ShadowCopy"
+        )
 
         # Błędy kolekcji
         for error in txr_data:

@@ -132,7 +132,11 @@ def detect_disk_filesystem_causes(processed_data, collected_data):
                     'confidence': 95.0,
                     'description': 'SFC cannot repair system files - indicates severe system corruption',
                     'evidence': {'message': issue.get('message', '')},
-                    'recommendation': 'Run DISM /Online /Cleanup-Image /RestoreHealth, then sfc /scannow again. Consider system restore or reinstall'
+                    'recommendation': (
+                        'Run DISM /Online /Cleanup-Image /RestoreHealth, '
+                        'then sfc /scannow again. Consider system restore '
+                        'or reinstall'
+                    )
                 })
                 break
 
@@ -170,7 +174,11 @@ def detect_disk_filesystem_causes(processed_data, collected_data):
                         'category': 'Disk/FileSystem',
                         'cause': 'CORRUPTED_DISK_OR_CONTROLLER',
                         'confidence': 90.0,
-                        'description': 'KERNEL_DATA_INPAGE_ERROR (0x7A) combined with IO errors indicates corrupted disk or SATA/NVMe controller',
+                        'description': (
+                            'KERNEL_DATA_INPAGE_ERROR (0x7A) combined with '
+                            'IO errors indicates corrupted disk or '
+                            'SATA/NVMe controller'
+                        ),
                         'evidence': {'bugcheck_code': code, 'io_errors': len(io_errors)},
                         'recommendation': 'Check disk health, update storage controller drivers, test with different SATA port/cable'
                     })
@@ -223,7 +231,11 @@ def detect_bsod_critical_causes(processed_data, collected_data):
                         'category': 'BSOD/Critical',
                         'cause': 'UNEXPECTED_SHUTDOWN_NO_LOGS',
                         'confidence': 70.0,
-                        'description': 'EventID 41 (Kernel-Power) with no logs before BSOD indicates unexpected shutdown, power loss or critical system error',
+                        'description': (
+                            'EventID 41 (Kernel-Power) with no logs before '
+                            'BSOD indicates unexpected shutdown, power loss '
+                            'or critical system error'
+                        ),
                         'evidence': {'event_id': event_id, 'has_logs_before': False},
                         'recommendation': 'Check power supply, verify system stability, check for hardware failures'
                     })
@@ -505,7 +517,10 @@ def detect_network_upnp_causes(processed_data, collected_data):
                 'category': 'Network/UPnP',
                 'cause': 'DNS_OR_NETWORK_DRIVER_ISSUE',
                 'confidence': 65.0,
-                'description': 'DNS resolution failures combined with network EventID errors indicate configuration or network driver problem',
+                'description': (
+                    'DNS resolution failures combined with network EventID '
+                    'errors indicate configuration or network driver problem'
+                ),
                 'evidence': {'dns_errors': len(dns_errors), 'network_errors': len(network_event_errors)},
                 'recommendation': 'Check DNS settings, update network adapter drivers, verify network configuration'
             })
@@ -944,13 +959,23 @@ def detect_wer_causes(processed_data, collected_data):
     logger.debug(
         f"[CAUSE_DETECTOR] DEBUG: recent_crashes type: {type(recent_crashes)}, is_list: {isinstance(recent_crashes, list)}")
     logger.debug(
-        f"[CAUSE_DETECTOR] DEBUG: grouped_crashes type: {type(grouped_crashes)}, is_list: {isinstance(grouped_crashes, list)}, length: {len(grouped_crashes) if isinstance(grouped_crashes, list) else 'N/A'}")
+        f"[CAUSE_DETECTOR] DEBUG: grouped_crashes type: "
+        f"{type(grouped_crashes)}, is_list: "
+        f"{isinstance(grouped_crashes, list)}, length: "
+        f"{len(grouped_crashes) if isinstance(grouped_crashes, list) else 'N/A'}"
+    )
 
     # DEBUG: Sprawdź typy po konwersji
     logger.debug(
-        f"[CAUSE_DETECTOR] DEBUG: After conversion - recent_crashes type: {type(recent_crashes)}, length: {len(recent_crashes) if isinstance(recent_crashes, list) else 'N/A'}")
+        f"[CAUSE_DETECTOR] DEBUG: After conversion - recent_crashes type: "
+        f"{type(recent_crashes)}, length: "
+        f"{len(recent_crashes) if isinstance(recent_crashes, list) else 'N/A'}"
+    )
     logger.debug(
-        f"[CAUSE_DETECTOR] DEBUG: After conversion - grouped_crashes type: {type(grouped_crashes)}, length: {len(grouped_crashes) if isinstance(grouped_crashes, list) else 'N/A'}")
+        f"[CAUSE_DETECTOR] DEBUG: After conversion - grouped_crashes type: "
+        f"{type(grouped_crashes)}, length: "
+        f"{len(grouped_crashes) if isinstance(grouped_crashes, list) else 'N/A'}"
+    )
 
     bsod_data = collected_data.get('collectors', {}).get('bsod_dumps', {})
 
@@ -1024,7 +1049,12 @@ def detect_wer_causes(processed_data, collected_data):
                                     'location': 'cause_detector.py:856'
                                 })
                             },
-                            'recommendation': 'System crash indicates serious system instability. Check for hardware failures, update drivers, run system file checker (sfc /scannow), check for malware'
+                            'recommendation': (
+                                'System crash indicates serious system '
+                                'instability. Check for hardware failures, '
+                                'update drivers, run system file checker '
+                                '(sfc /scannow), check for malware'
+                            )
                         })
                         break  # Tylko jeden raz
                 except Exception as e:
@@ -1084,7 +1114,11 @@ def detect_wer_causes(processed_data, collected_data):
                     'category': 'Application',
                     'cause': 'REPEATING_APPLICATION_CRASH',
                     'confidence': 95.0,
-                    'description': f'Repeating application crash: {app} crashed {occurrences_30min} times in last 30 minutes. Faulting module: {module}, Exception: {exception}',
+                    'description': (
+                        f'Repeating application crash: {app} crashed '
+                        f'{occurrences_30min} times in last 30 minutes. '
+                        f'Faulting module: {module}, Exception: {exception}'
+                    ),
                     'evidence': {
                         'application': app,
                         'module_name': module,
@@ -1094,7 +1128,12 @@ def detect_wer_causes(processed_data, collected_data):
                         'first_occurrence': str(group.get('first_occurrence', ''))[:100],
                         'last_occurrence': str(group.get('last_occurrence', ''))[:100]
                     },
-                    'recommendation': f'Application {app} is repeatedly crashing. Update the application, check for compatibility issues, reinstall if necessary, check for corrupted files or dependencies'
+                    'recommendation': (
+                        f'Application {app} is repeatedly crashing. Update '
+                        f'the application, check for compatibility issues, '
+                        f'reinstall if necessary, check for corrupted files '
+                        f'or dependencies'
+                    )
                 })
         except Exception as e:
             logger.warning(
@@ -1193,7 +1232,12 @@ def detect_wer_causes(processed_data, collected_data):
                                         'category': 'Hardware',
                                         'cause': 'HARDWARE_FAILURE_WER_BSOD_CORRELATION',
                                         'confidence': 95.0,
-                                        'description': f'System crash ({app}) occurred at the same time as BSOD EventID 41, indicating probable hardware failure',
+                                        'description': (
+                                            f'System crash ({app}) occurred '
+                                            f'at the same time as BSOD '
+                                            f'EventID 41, indicating probable '
+                                            f'hardware failure'
+                                        ),
                                         'evidence': {
                                             'system_crash': {
                                                 'application': app,
@@ -1210,7 +1254,14 @@ def detect_wer_causes(processed_data, collected_data):
                                             'bsod_timestamp': bsod_time.isoformat() if hasattr(bsod_time, 'isoformat') else str(bsod_time),
                                             'time_difference_seconds': time_diff
                                         },
-                                        'recommendation': 'System crash correlated with BSOD indicates hardware failure. Check CPU, RAM, motherboard, power supply. Run hardware diagnostics, check temperatures, verify all connections'
+                                        'recommendation': (
+                                            'System crash correlated with '
+                                            'BSOD indicates hardware failure. '
+                                            'Check CPU, RAM, motherboard, '
+                                            'power supply. Run hardware '
+                                            'diagnostics, check temperatures, '
+                                            'verify all connections'
+                                        )
                                     })
                                     break  # Tylko jeden raz
                     except Exception as e:
@@ -1305,13 +1356,29 @@ def detect_wer_causes(processed_data, collected_data):
                                                     'category': 'Hardware',
                                                     'cause': 'HARDWARE_FAILURE_SYSTEM_CRASH_WHEA',
                                                     'confidence': 95.0,
-                                                    'description': f'System process ({app}) crash correlated with WHEA hardware error, indicating hardware failure',
+                                                    'description': (
+                                                        f'System process '
+                                                        f'({app}) crash '
+                                                        f'correlated with WHEA '
+                                                        f'hardware error, '
+                                                        f'indicating hardware '
+                                                        f'failure'
+                                                    ),
                                                     'evidence': {
                                                         'system_process': app,
                                                         'whea_error': whea_message,
                                                         'time_difference_seconds': time_diff
                                                     },
-                                                    'recommendation': 'System process crash with WHEA error indicates severe hardware failure. Check CPU, RAM, motherboard, run hardware diagnostics immediately'
+                                                    'recommendation': (
+                                                        'System process crash '
+                                                        'with WHEA error '
+                                                        'indicates severe '
+                                                        'hardware failure. '
+                                                        'Check CPU, RAM, '
+                                                        'motherboard, run '
+                                                        'hardware diagnostics '
+                                                        'immediately'
+                                                    )
                                                 })
                                                 break  # Tylko jeden raz
                                     except Exception as e:
