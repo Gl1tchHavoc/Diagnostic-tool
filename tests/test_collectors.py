@@ -1,9 +1,11 @@
 """
 Testy dla wszystkich collectorów - rozszerzone coverage.
 """
+import os
 import unittest
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 # Dodaj główny katalog projektu do ścieżki
 project_root = Path(__file__).parent.parent
@@ -18,6 +20,15 @@ from collectors.collector_master import collect_all
 from collectors.collector_master_async import collect_all_async_wrapper
 from core.collector_registry import get_registry, register_all_collectors
 
+# Wykryj środowisko CI
+# Rozwiązuje problemy z WMI/SPD w CI (GitHub Actions, Azure DevOps)
+# gdzie niektóre funkcje hardware wymagają prawdziwego sprzętu
+IS_CI = (
+    os.environ.get("CI") in ("true", "1", "True") or
+    os.environ.get("GITHUB_ACTIONS") == "true" or
+    os.environ.get("TF_BUILD") == "True"  # Azure DevOps
+)
+
 
 class TestCollectors(unittest.TestCase):
     """Testy podstawowe dla wszystkich collectorów."""
@@ -29,7 +40,22 @@ class TestCollectors(unittest.TestCase):
     
     def test_hardware_collector(self):
         """Test collectora hardware."""
-        result = hardware.collect()
+        # W CI mockuj _collect_memory_spd - WMI może nie być dostępne
+        if IS_CI:
+            with patch('collectors.hardware._collect_memory_spd') as mock_spd:
+                mock_spd.return_value = [
+                    {
+                        'manufacturer': 'Test Manufacturer',
+                        'part_number': 'TEST-1234',
+                        'capacity': 8589934592,
+                        'speed': 3200
+                    }
+                ]
+                result = hardware.collect()
+        else:
+            # Lokalnie - użyj prawdziwej funkcji
+            result = hardware.collect()
+        
         self.assertIsNotNone(result)
         self.assertIsInstance(result, dict)
         # Sprawdź podstawowe pola
@@ -37,6 +63,9 @@ class TestCollectors(unittest.TestCase):
             self.assertIsInstance(result["cpu"], dict)
         if "ram" in result:
             self.assertIsInstance(result["ram"], dict)
+        # Sprawdź czy memory_spd jest w wynikach
+        if "memory_spd" in result:
+            self.assertIsInstance(result["memory_spd"], list)
     
     def test_drivers_collector(self):
         """Test collectora drivers."""
@@ -123,7 +152,21 @@ class TestCollectorMaster(unittest.TestCase):
     
     def test_collect_all_format(self):
         """Test czy collect_all zwraca poprawny format MVP."""
-        result = collect_all(save_raw=False, output_dir="output/raw")
+        # W CI mockuj _collect_memory_spd - WMI może nie być dostępne
+        if IS_CI:
+            with patch('collectors.hardware._collect_memory_spd') as mock_spd:
+                mock_spd.return_value = [
+                    {
+                        'manufacturer': 'Test Manufacturer',
+                        'part_number': 'TEST-1234',
+                        'capacity': 8589934592,
+                        'speed': 3200
+                    }
+                ]
+                result = collect_all(save_raw=False, output_dir="output/raw")
+        else:
+            # Lokalnie - użyj prawdziwej funkcji
+            result = collect_all(save_raw=False, output_dir="output/raw")
         
         # Sprawdź strukturę
         self.assertIsInstance(result, dict)
@@ -150,7 +193,25 @@ class TestCollectorMaster(unittest.TestCase):
     
     def test_collect_all_async_wrapper(self):
         """Test asynchronicznej wersji collect_all."""
-        result = collect_all_async_wrapper(save_raw=False, output_dir="output/raw")
+        # W CI mockuj _collect_memory_spd - WMI może nie być dostępne
+        if IS_CI:
+            with patch('collectors.hardware._collect_memory_spd') as mock_spd:
+                mock_spd.return_value = [
+                    {
+                        'manufacturer': 'Test Manufacturer',
+                        'part_number': 'TEST-1234',
+                        'capacity': 8589934592,
+                        'speed': 3200
+                    }
+                ]
+                result = collect_all_async_wrapper(
+                    save_raw=False, output_dir="output/raw"
+                )
+        else:
+            # Lokalnie - użyj prawdziwej funkcji
+            result = collect_all_async_wrapper(
+                save_raw=False, output_dir="output/raw"
+            )
         
         # Sprawdź strukturę (taka sama jak synchroniczna)
         self.assertIsInstance(result, dict)
