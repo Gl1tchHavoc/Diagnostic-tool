@@ -1565,14 +1565,15 @@ if __name__ == "__main__":
     logger.info("Diagnostic Tool - Application Started")
     logger.info("=" * 70)
     
-    # Sprawdź wymagane pakiety
-    logger.info("Checking requirements...")
-    requirements_status = check_all_requirements()
+    # Sprawdź i automatycznie zainstaluj brakujące pakiety
+    logger.info("Checking and installing requirements...")
+    from utils.requirements_check import install_missing_packages
+    requirements_status = install_missing_packages(auto_install=True)
     if not requirements_status['all_installed']:
-        logger.warning("Some required packages are missing or have version mismatches")
+        logger.warning("Some required packages are still missing after auto-installation")
         # Wyświetl ostrzeżenie w konsoli (przed uruchomieniem GUI)
         print_requirements_status(requirements_status)
-        print("\n⚠️  Some required packages are missing. The application may not work correctly.")
+        print("\n⚠️  Some required packages are still missing. The application may not work correctly.")
         print("Continuing anyway...\n")
     else:
         logger.info("All requirements are satisfied")

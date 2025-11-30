@@ -605,11 +605,13 @@ def main():
     logger.info("Diagnostic Tool MVP - Starting GUI")
     logger.info("=" * 60)
     
-    # Sprawdź wymagane pakiety
-    from utils.requirements_check import check_all_requirements
-    requirements_status = check_all_requirements()
+    # Sprawdź i automatycznie zainstaluj brakujące pakiety
+    from utils.requirements_check import install_missing_packages
+    logger.info("Checking and installing requirements...")
+    requirements_status = install_missing_packages(auto_install=True)
     if not requirements_status['all_installed']:
-        logger.warning("Some required packages are missing")
+        logger.warning("Some required packages are still missing after auto-installation")
+        # W GUI nie blokujemy - tylko logujemy
     
     # Sprawdź uprawnienia administratora
     if not require_admin(auto_restart=True):

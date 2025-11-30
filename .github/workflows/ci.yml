@@ -51,8 +51,9 @@ jobs:
     
     - name: Check code quality
       run: |
-        pip install flake8
-        flake8 collectors/ processors/ core/ --max-line-length=120 --ignore=E501,W503 || true
+        pip install flake8 flake8-bugbear flake8-comprehensions flake8-annotations
+        # Użyj konfiguracji z .flake8 (restrykcyjna konfiguracja)
+        flake8 collectors/ processors/ core/ || true
 
   validate-diagrams:
     runs-on: ubuntu-latest

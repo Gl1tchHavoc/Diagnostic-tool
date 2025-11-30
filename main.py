@@ -9,6 +9,7 @@ from datetime import datetime
 
 from utils.admin_check import require_admin
 from utils.logger import setup_logger, get_logger
+from utils.requirements_check import install_missing_packages, print_requirements_status
 from collectors.collector_master import collect_all
 from processors.analyzer import analyze_all
 
@@ -21,14 +22,14 @@ def main():
     logger.info("=" * 60)
     logger.debug("Logger initialized with DEBUG level")
     
-    # Sprawdź wymagane pakiety
-    logger.info("Checking requirements...")
-    requirements_status = check_all_requirements()
+    # Sprawdź i automatycznie zainstaluj brakujące pakiety
+    logger.info("Checking and installing requirements...")
+    requirements_status = install_missing_packages(auto_install=True)
     if not requirements_status['all_installed']:
-        logger.warning("Some required packages are missing or have version mismatches")
+        logger.warning("Some required packages are still missing after auto-installation")
         print_requirements_status(requirements_status)
-        print("\n⚠️  Some required packages are missing. The application may not work correctly.")
-        print("Press Enter to continue anyway, or Ctrl+C to exit and install missing packages...")
+        print("\n⚠️  Some required packages are still missing. The application may not work correctly.")
+        print("Press Enter to continue anyway, or Ctrl+C to exit...")
         try:
             input()
         except KeyboardInterrupt:

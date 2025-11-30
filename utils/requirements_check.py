@@ -210,7 +210,7 @@ def get_install_command(missing_packages):
     
     Args:
         missing_packages (list): Lista nazw pakietów do zainstalowania
-        
+    
     Returns:
         str: Komenda pip install
     """
@@ -218,6 +218,95 @@ def get_install_command(missing_packages):
         return None
     
     return f"pip install {' '.join(missing_packages)}"
+
+
+def install_missing_packages(requirements_path="requirements.txt", auto_install=True):
+    """
+    Sprawdza i automatycznie instaluje brakujące pakiety z requirements.txt.
+    
+    Args:
+        requirements_path (str): Ścieżka do pliku requirements.txt
+        auto_install (bool): Czy automatycznie instalować brakujące pakiety
+    
+    Returns:
+        dict: Wyniki instalacji z check_all_requirements() + informacje o instalacji
+    """
+    # Sprawdź wymagania
+    results = check_all_requirements(requirements_path, show_missing=True)
+    
+    if results['all_installed']:
+        logger.info("[REQUIREMENTS] All packages are already installed")
+        return results
+    
+    # Jeśli są brakujące pakiety i auto_install jest włączone
+    if results['missing_packages'] and auto_install:
+        logger.info(f"[REQUIREMENTS] Attempting to install {len(results['missing_packages'])} missing packages...")
+        
+        try:
+            # Pobierz pełne specyfikacje pakietów z requirements.txt
+            requirements = parse_requirements_file(requirements_path)
+            if requirements is None:
+                logger.error("[REQUIREMENTS] Cannot parse requirements file for installation")
+                return results
+            
+            # Znajdź pełne specyfikacje dla brakujących pakietów
+            packages_to_install = []
+            for package_name, version_spec in requirements:
+                if package_name in results['missing_packages']:
+                    if version_spec:
+                        packages_to_install.append(f"{package_name}{version_spec}")
+                    else:
+                        packages_to_install.append(package_name)
+            
+            if packages_to_install:
+                # Uruchom pip install
+                logger.info(f"[REQUIREMENTS] Installing: {', '.join(packages_to_install)}")
+                print(f"\n📦 Installing missing packages: {', '.join(results['missing_packages'])}")
+                
+                # Użyj subprocess do instalacji
+                install_cmd = [
+                    sys.executable, "-m", "pip", "install", "--upgrade"
+                ] + packages_to_install
+                
+                try:
+                    result = subprocess.run(
+                        install_cmd,
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=300  # 5 minut timeout
+                    )
+                    
+                    logger.info(f"[REQUIREMENTS] Installation successful")
+                    print("✅ Packages installed successfully!")
+                    
+                    # Sprawdź ponownie po instalacji
+                    results = check_all_requirements(requirements_path, show_missing=False)
+                    
+                    if results['all_installed']:
+                        logger.info("[REQUIREMENTS] All packages are now installed")
+                        print("✅ All requirements are now satisfied!")
+                    else:
+                        logger.warning("[REQUIREMENTS] Some packages still missing after installation")
+                        print("⚠️  Some packages may still be missing. Please check manually.")
+                    
+                except subprocess.TimeoutExpired:
+                    logger.error("[REQUIREMENTS] Installation timeout (exceeded 5 minutes)")
+                    print("❌ Installation timeout. Please install packages manually.")
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"[REQUIREMENTS] Installation failed: {e}")
+                    logger.error(f"[REQUIREMENTS] Error output: {e.stderr}")
+                    print(f"❌ Installation failed: {e.stderr}")
+                    print(f"\nPlease install manually: {get_install_command(results['missing_packages'])}")
+                except Exception as e:
+                    logger.exception(f"[REQUIREMENTS] Unexpected error during installation: {e}")
+                    print(f"❌ Unexpected error during installation: {e}")
+            
+        except Exception as e:
+            logger.exception(f"[REQUIREMENTS] Error preparing installation: {e}")
+            print(f"❌ Error preparing installation: {e}")
+    
+    return results
 
 
 def print_requirements_status(results):

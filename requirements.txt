@@ -15,6 +15,12 @@ pytest-asyncio>=0.21.0  # Wsparcie dla testów async (opcjonalnie)
 chardet>=5.0.0  # Character encoding detection
 python-dateutil>=2.8.0  # Advanced date/time parsing
 
+# Code quality - Flake8 extensions
+flake8>=7.0.0  # Code quality checker
+flake8-bugbear>=23.0.0  # Bxxx - wykrywa potencjalne błędy
+flake8-comprehensions>=3.14.0  # Cxxx - sprawdza list comprehensions i wydajność
+flake8-annotations>=3.0.0  # Ixxx - wymaga typowania funkcji
+
 # Note: The following are part of Python standard library and don't need to be installed:
 # - winreg (Windows registry access)
 # - configparser (INI file parsing)
