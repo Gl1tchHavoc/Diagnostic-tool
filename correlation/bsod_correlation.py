@@ -199,8 +199,8 @@ class BSODCorrelator:
         level = event.get('level', '').lower()
         event_id = str(event.get('event_id', '')).lower()
         
-        # Odrzuć Information level
-        if level == 'information':
+        # Odrzuć Information level (różne warianty)
+        if level in ('information', 'informational', 'info'):
             return True
         
         # Sprawdź regex patterns

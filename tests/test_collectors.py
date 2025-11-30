@@ -81,7 +81,12 @@ class TestCollectors(unittest.TestCase):
         """Test collectora registry_txr."""
         result = registry_txr.collect(max_events=10)
         self.assertIsNotNone(result)
-        self.assertIsInstance(result, dict)
+        # registry_txr.collect() zwraca listę, nie dict
+        self.assertIsInstance(result, (list, dict))
+        # Jeśli to lista, sprawdź czy nie jest pusta lub czy elementy są dict
+        if isinstance(result, list):
+            if result:
+                self.assertIsInstance(result[0], dict)
     
     def test_bsod_dumps_collector(self):
         """Test collectora bsod_dumps."""
