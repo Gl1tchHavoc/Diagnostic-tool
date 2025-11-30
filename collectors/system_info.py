@@ -4,6 +4,7 @@ import os
 import subprocess
 from datetime import datetime
 
+
 def collect():
     """
     Zbiera podstawowe informacje o systemie operacyjnym.
@@ -17,7 +18,7 @@ def collect():
         "system_paths": {},
         "environment": {}
     }
-    
+
     # Podstawowe informacje OS
     system_data["os"] = {
         "system": platform.system(),
@@ -27,33 +28,39 @@ def collect():
         "processor": platform.processor(),
         "architecture": platform.architecture()[0]
     }
-    
+
     # Windows-specific info (ukryte okna)
     if sys.platform == "win32":
         try:
             from utils.subprocess_helper import run_powershell_hidden
-            
+
             # Wersja Windows
-            version = run_powershell_hidden('(Get-CimInstance Win32_OperatingSystem).Version').strip()
+            version = run_powershell_hidden(
+                '(Get-CimInstance Win32_OperatingSystem).Version').strip()
             system_data["windows_version"]["version"] = version
-            
+
             try:
-                caption = run_powershell_hidden('(Get-CimInstance Win32_OperatingSystem).Caption').strip()
+                caption = run_powershell_hidden(
+                    '(Get-CimInstance Win32_OperatingSystem).Caption').strip()
                 if caption:
                     system_data["windows_version"]["caption"] = caption
             except Exception as e:
-                logger.warning(f"[SYSTEM_INFO] Failed to get Windows caption: {e}")
-            
+                logger.warning(
+                    f"[SYSTEM_INFO] Failed to get Windows caption: {e}")
+
             try:
-                build = run_powershell_hidden('(Get-CimInstance Win32_OperatingSystem).BuildNumber').strip()
+                build = run_powershell_hidden(
+                    '(Get-CimInstance Win32_OperatingSystem).BuildNumber').strip()
                 if build:
                     system_data["windows_version"]["build"] = build
             except Exception as e:
-                logger.warning(f"[SYSTEM_INFO] Failed to get Windows build: {e}")
-            
+                logger.warning(
+                    f"[SYSTEM_INFO] Failed to get Windows build: {e}")
+
             # Boot time
             try:
-                    boot_str = run_powershell_hidden('(Get-CimInstance Win32_OperatingSystem).LastBootUpTime').strip()
+                    boot_str = run_powershell_hidden(
+                        '(Get-CimInstance Win32_OperatingSystem).LastBootUpTime').strip()
                 if boot_str:
                     system_data["boot_time"] = boot_str
             except Exception as e:

@@ -9,10 +9,11 @@ from utils.logger import get_logger
 logger = get_logger()
 
 
-def process_collector_data(collector_result: Dict[str, Any], processor_name: str) -> Dict[str, Any]:
+def process_collector_data(
+        collector_result: Dict[str, Any], processor_name: str) -> Dict[str, Any]:
     """
     MVP: Minimalny processor - parsuje i waliduje dane z collectora.
-    
+
     Args:
         collector_result (dict): Wynik z collectora w formacie MVP:
             {
@@ -24,7 +25,7 @@ def process_collector_data(collector_result: Dict[str, Any], processor_name: str
                 "execution_time_ms": 1234
             }
         processor_name (str): Nazwa procesora
-    
+
     Returns:
         dict: Przetworzone dane w formacie MVP:
             {
@@ -38,7 +39,7 @@ def process_collector_data(collector_result: Dict[str, Any], processor_name: str
             }
     """
     processor_start_time = datetime.now()
-    
+
     # Jeśli collector zwrócił błąd, zwróć błąd w formacie procesora
     if collector_result.get("status") == "Error":
         return {
@@ -50,25 +51,26 @@ def process_collector_data(collector_result: Dict[str, Any], processor_name: str
             "timestamp": processor_start_time.isoformat(),
             "processor_name": processor_name
         }
-    
+
     # Pobierz dane z collectora
     collector_data = collector_result.get("data")
-    
+
     # Walidacja podstawowa
     errors = []
     warnings = []
     validation_passed = True
-    
+
     # Sprawdź czy dane są None
     if collector_data is None:
         errors.append("Collector data is None")
         validation_passed = False
-    
+
     # Sprawdź typ danych
     elif not isinstance(collector_data, (dict, list)):
-        errors.append(f"Invalid data type: {type(collector_data).__name__}, expected dict or list")
+        errors.append(
+            f"Invalid data type: {type(collector_data).__name__}, expected dict or list")
         validation_passed = False
-    
+
     # Jeśli są błędy walidacji, zwróć błąd
     if not validation_passed:
         return {
@@ -80,8 +82,9 @@ def process_collector_data(collector_result: Dict[str, Any], processor_name: str
             "timestamp": processor_start_time.isoformat(),
             "processor_name": processor_name
         }
-    
-    # Domyślnie zwróć dane bez zmian (parser może być rozszerzony w konkretnych procesorach)
+
+    # Domyślnie zwróć dane bez zmian (parser może być rozszerzony w
+    # konkretnych procesorach)
     return {
         "status": "Collected",
         "data": collector_data,
@@ -93,24 +96,24 @@ def process_collector_data(collector_result: Dict[str, Any], processor_name: str
     }
 
 
-def validate_data_structure(data: Any, required_fields: Optional[List[str]] = None) -> tuple[List[str], List[str]]:
+def validate_data_structure(
+        data: Any, required_fields: Optional[List[str]] = None) -> tuple[List[str], List[str]]:
     """
     Waliduje strukturę danych.
-    
+
     Args:
         data: Dane do walidacji
         required_fields: Lista wymaganych pól (dla dict)
-    
+
     Returns:
         tuple: (errors, warnings) - listy błędów i ostrzeżeń
     """
     errors = []
     warnings = []
-    
+
     if required_fields and isinstance(data, dict):
         for field in required_fields:
             if field not in data:
                 errors.append(f"Missing required field: {field}")
-    
-    return errors, warnings
 
+    return errors, warnings

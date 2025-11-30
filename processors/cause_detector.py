@@ -6,78 +6,86 @@ from datetime import datetime
 from utils.logger import get_logger
 from utils.shadowcopy_helper import is_shadowcopy_path
 from utils.error_analyzer import (
-    safe_get_with_analysis, 
-    log_error_with_analysis, 
+    safe_get_with_analysis,
+    log_error_with_analysis,
     analyze_data_structure,
     analyze_attribute_error
 )
 
 logger = get_logger()
 
+
 def detect_all_causes(processed_data, collected_data):
     """
     Wykrywa wszystkie możliwe przyczyny problemów na podstawie zebranych danych.
-    
+
     Args:
         processed_data (dict): Przetworzone dane z procesorów
         collected_data (dict): Surowe dane z kolektorów
-    
+
     Returns:
         dict: Wykryte przyczyny z confidence scores
     """
     causes = []
-    
+
     # 1. Dyski i system plików
-    causes.extend(detect_disk_filesystem_causes(processed_data, collected_data))
-    
+    causes.extend(
+        detect_disk_filesystem_causes(
+            processed_data,
+            collected_data))
+
     # 2. BSOD / krytyczne błędy systemowe
     causes.extend(detect_bsod_critical_causes(processed_data, collected_data))
-    
+
     # 3. Sterowniki i aplikacje
     causes.extend(detect_driver_app_causes(processed_data, collected_data))
-    
+
     # 4. Pamięć RAM
     causes.extend(detect_memory_causes(processed_data, collected_data))
-    
+
     # 5. Sieć i UPnP
     causes.extend(detect_network_upnp_causes(processed_data, collected_data))
-    
+
     # 6. Procesor i temperatura
     causes.extend(detect_cpu_thermal_causes(processed_data, collected_data))
-    
+
     # 7. Zasilanie
     causes.extend(detect_power_causes(processed_data, collected_data))
-    
+
     # 8. Inne poważne problemy systemowe
     causes.extend(detect_other_critical_causes(processed_data, collected_data))
-    
+
     # 9. WER (Windows Error Reporting) - golden rules
     causes.extend(detect_wer_causes(processed_data, collected_data))
-    
+
     # Sortuj według confidence
     causes.sort(key=lambda x: x.get('confidence', 0), reverse=True)
-    
+
     logger.info(f"[CAUSE_DETECTOR] Detected {len(causes)} potential causes")
-    
+
     return {
-        'causes': causes,
-        'total_causes': len(causes),
-        'high_confidence_causes': [c for c in causes if c.get('confidence', 0) >= 70],
-        'medium_confidence_causes': [c for c in causes if 40 <= c.get('confidence', 0) < 70],
-        'low_confidence_causes': [c for c in causes if c.get('confidence', 0) < 40]
-    }
+        'causes': causes, 'total_causes': len(causes), 'high_confidence_causes': [
+            c for c in causes if c.get(
+                'confidence', 0) >= 70], 'medium_confidence_causes': [
+            c for c in causes if 40 <= c.get(
+                'confidence', 0) < 70], 'low_confidence_causes': [
+            c for c in causes if c.get(
+                'confidence', 0) < 40]}
+
 
 def detect_disk_filesystem_causes(processed_data, collected_data):
     """Wykrywa przyczyny związane z dyskami i systemem plików."""
     causes = []
-    
-    # REGISTRY_TXR_FAILURE + ShadowCopy errors → uszkodzony dysk lub wolumin Shadow Copy
+
+    # REGISTRY_TXR_FAILURE + ShadowCopy errors → uszkodzony dysk lub wolumin
+    # Shadow Copy
     registry_txr = processed_data.get('registry_txr', {})
     if registry_txr:
         critical_issues = registry_txr.get('critical_issues', [])
         shadowcopy_issues = registry_txr.get('shadowcopy_issues', [])
-        
-        txr_failures = [i for i in critical_issues if i.get('type') == 'REGISTRY_TXR_FAILURE']
+
+        txr_failures = [i for i in critical_issues if i.get(
+            'type') == 'REGISTRY_TXR_FAILURE']
         if txr_failures and shadowcopy_issues:
             causes.append({
                 'category': 'Disk/FileSystem',
@@ -90,7 +98,7 @@ def detect_disk_filesystem_causes(processed_data, collected_data):
                 },
                 'recommendation': 'Check disk health with chkdsk, verify ShadowCopy integrity, consider removing old shadow copies'
             })
-    
+
     # Chkdsk wykrywa bad sectors → fizyczna awaria dysku
     storage_health = processed_data.get('storage_health', {})
     if storage_health:
@@ -107,14 +115,16 @@ def detect_disk_filesystem_causes(processed_data, collected_data):
                     'recommendation': 'Backup data immediately, replace disk, run chkdsk /f /r'
                 })
                 break
-    
-    # System nie może naprawić plików po sfc /scannow → poważna korupcja systemu
+
+    # System nie może naprawić plików po sfc /scannow → poważna korupcja
+    # systemu
     system_logs = processed_data.get('system_logs', {})
     if system_logs:
         issues = system_logs.get('issues', [])
         for issue in issues:
             message = issue.get('message', '').lower()
-            if 'sfc' in message and ('cannot repair' in message or 'failed to repair' in message or 'corruption' in message):
+            if 'sfc' in message and (
+                    'cannot repair' in message or 'failed to repair' in message or 'corruption' in message):
                 causes.append({
                     'category': 'Disk/FileSystem',
                     'cause': 'SEVERE_SYSTEM_CORRUPTION',
@@ -124,7 +134,7 @@ def detect_disk_filesystem_causes(processed_data, collected_data):
                     'recommendation': 'Run DISM /Online /Cleanup-Image /RestoreHealth, then sfc /scannow again. Consider system restore or reinstall'
                 })
                 break
-    
+
     # EventID 55 (NTFS file system error) → korupcja systemu plików
     if system_logs:
         issues = system_logs.get('issues', [])
@@ -140,8 +150,9 @@ def detect_disk_filesystem_causes(processed_data, collected_data):
                     'recommendation': 'Run chkdsk /f on affected volume, check disk for errors'
                 })
                 break
-    
-    # KERNEL_DATA_INPAGE_ERROR (0x7A) + IO error → uszkodzony dysk lub kontroler
+
+    # KERNEL_DATA_INPAGE_ERROR (0x7A) + IO error → uszkodzony dysk lub
+    # kontroler
     bsod_data = collected_data.get('collectors', {}).get('bsod_dumps', {})
     if bsod_data:
         bugchecks = bsod_data.get('bugchecks', [])
@@ -149,8 +160,10 @@ def detect_disk_filesystem_causes(processed_data, collected_data):
             code = bugcheck.get('bugcheck_code', '').upper()
             if '0x7A' in code or '0x0000007A' in code:
                 # Sprawdź czy są IO errors
-                storage_issues = storage_health.get('issues', []) if storage_health else []
-                io_errors = [i for i in storage_issues if 'io' in i.get('type', '').lower() or 'i/o' in i.get('message', '').lower()]
+                storage_issues = storage_health.get(
+                    'issues', []) if storage_health else []
+                io_errors = [i for i in storage_issues if 'io' in i.get(
+                    'type', '').lower() or 'i/o' in i.get('message', '').lower()]
                 if io_errors:
                     causes.append({
                         'category': 'Disk/FileSystem',
@@ -161,11 +174,16 @@ def detect_disk_filesystem_causes(processed_data, collected_data):
                         'recommendation': 'Check disk health, update storage controller drivers, test with different SATA port/cable'
                     })
                     break
-    
+
     # Disk read/write errors w logach → prawdopodobna awaria dysku fizycznego
     if storage_health:
         issues = storage_health.get('issues', [])
-        disk_errors = [i for i in issues if 'read error' in i.get('message', '').lower() or 'write error' in i.get('message', '').lower()]
+        disk_errors = [
+            i for i in issues if 'read error' in i.get(
+                'message',
+                '').lower() or 'write error' in i.get(
+                'message',
+                '').lower()]
         if disk_errors:
             causes.append({
                 'category': 'Disk/FileSystem',
@@ -175,17 +193,19 @@ def detect_disk_filesystem_causes(processed_data, collected_data):
                 'evidence': {'disk_errors': len(disk_errors)},
                 'recommendation': 'Backup data immediately, check SMART status, replace disk if necessary'
             })
-    
+
     return causes
+
 
 def detect_bsod_critical_causes(processed_data, collected_data):
     """Wykrywa przyczyny związane z BSOD i krytycznymi błędami systemowymi."""
     causes = []
-    
-    # EventID 41 (Kernel-Power) + brak logów przed BSOD → niespodziewane wyłączenie
+
+    # EventID 41 (Kernel-Power) + brak logów przed BSOD → niespodziewane
+    # wyłączenie
     bsod_data = collected_data.get('collectors', {}).get('bsod_dumps', {})
     system_logs = processed_data.get('system_logs', {})
-    
+
     if bsod_data:
         recent_crashes = bsod_data.get('recent_crashes', [])
         for crash in recent_crashes:
@@ -193,8 +213,10 @@ def detect_bsod_critical_causes(processed_data, collected_data):
             if event_id == '41':
                 # Sprawdź czy są logi przed BSOD
                 logs_before = system_logs.get('data', {})
-                has_logs_before = any(len(logs) > 0 for logs in logs_before.values() if isinstance(logs, list))
-                
+                has_logs_before = any(
+                    len(logs) > 0 for logs in logs_before.values() if isinstance(
+                        logs, list))
+
                 if not has_logs_before:
                     causes.append({
                         'category': 'BSOD/Critical',
@@ -204,7 +226,7 @@ def detect_bsod_critical_causes(processed_data, collected_data):
                         'evidence': {'event_id': event_id, 'has_logs_before': False},
                         'recommendation': 'Check power supply, verify system stability, check for hardware failures'
                     })
-    
+
     # WHEA-Logger EventID 18, 19, 20 → awaria sprzętowa
     if bsod_data:
         whea_errors = bsod_data.get('whea_errors', [])
@@ -219,7 +241,7 @@ def detect_bsod_critical_causes(processed_data, collected_data):
                     'evidence': {'whea_event_ids': whea_event_ids, 'count': len(whea_errors)},
                     'recommendation': 'Run hardware diagnostics, check CPU/RAM/motherboard, update BIOS, check for overheating'
                 })
-    
+
     # BugCheck 0x1E → krytyczny błąd sterownika lub pamięci
     if bsod_data:
         bugchecks = bsod_data.get('bugchecks', [])
@@ -235,7 +257,7 @@ def detect_bsod_critical_causes(processed_data, collected_data):
                     'recommendation': 'Update or reinstall problematic driver, test RAM with MemTest86, check for driver conflicts'
                 })
                 break
-    
+
     # BugCheck 0x50 → uszkodzona pamięć RAM lub niepoprawny sterownik
     if bsod_data:
         bugchecks = bsod_data.get('bugchecks', [])
@@ -251,7 +273,7 @@ def detect_bsod_critical_causes(processed_data, collected_data):
                     'recommendation': 'Test RAM with Windows Memory Diagnostic or MemTest86, update drivers, check for memory leaks'
                 })
                 break
-    
+
     # BugCheck 0x7F → awaria CPU lub RAM
     if bsod_data:
         bugchecks = bsod_data.get('bugchecks', [])
@@ -267,7 +289,7 @@ def detect_bsod_critical_causes(processed_data, collected_data):
                     'recommendation': 'Test CPU and RAM, check for overheating, update BIOS, run hardware diagnostics'
                 })
                 break
-    
+
     # BugCheck 0x124 → poważna awaria CPU, RAM lub chipsetu
     if bsod_data:
         bugchecks = bsod_data.get('bugchecks', [])
@@ -283,13 +305,14 @@ def detect_bsod_critical_causes(processed_data, collected_data):
                     'recommendation': 'Immediate hardware diagnostics required, check CPU/RAM/chipset, update BIOS, check for overheating'
                 })
                 break
-    
+
     # BSOD przy wysokim obciążeniu CPU/RAM → awaria sprzętowa
     hardware_data = collected_data.get('collectors', {}).get('hardware', {})
     if bsod_data and hardware_data:
         cpu_usage = hardware_data.get('cpu', {}).get('usage_percent', 0)
         ram_usage = hardware_data.get('ram', {}).get('percent', 0)
-        if (cpu_usage > 80 or ram_usage > 80) and (bsod_data.get('bugchecks') or bsod_data.get('recent_crashes')):
+        if (cpu_usage > 80 or ram_usage > 80) and (
+                bsod_data.get('bugchecks') or bsod_data.get('recent_crashes')):
             causes.append({
                 'category': 'BSOD/Critical',
                 'cause': 'HARDWARE_FAILURE_UNDER_LOAD',
@@ -298,13 +321,14 @@ def detect_bsod_critical_causes(processed_data, collected_data):
                 'evidence': {'cpu_usage': cpu_usage, 'ram_usage': ram_usage},
                 'recommendation': 'Stress test CPU and RAM, check for overheating, verify power supply capacity'
             })
-    
+
     return causes
+
 
 def detect_driver_app_causes(processed_data, collected_data):
     """Wykrywa przyczyny związane ze sterownikami i aplikacjami."""
     causes = []
-    
+
     # Driver failed to load → sterownik uszkodzony lub niekompatybilny
     drivers_data = processed_data.get('drivers', {})
     if drivers_data:
@@ -321,14 +345,15 @@ def detect_driver_app_causes(processed_data, collected_data):
                     'recommendation': 'Reinstall or update driver, check for driver conflicts, verify driver compatibility'
                 })
                 break
-    
+
     # .NET application fails → brak lub nieaktualna wersja .NET Framework
     system_logs = processed_data.get('system_logs', {})
     if system_logs:
         issues = system_logs.get('issues', [])
         for issue in issues:
             message = issue.get('message', '').lower()
-            if '.net' in message and ('fail' in message or 'error' in message or 'missing' in message):
+            if '.net' in message and (
+                    'fail' in message or 'error' in message or 'missing' in message):
                 causes.append({
                     'category': 'Drivers/Apps',
                     'cause': 'MISSING_OR_OUTDATED_NET_FRAMEWORK',
@@ -338,14 +363,15 @@ def detect_driver_app_causes(processed_data, collected_data):
                     'recommendation': 'Install or update .NET Framework, check application requirements'
                 })
                 break
-    
+
     # Sterownik powoduje BugCheck → awaria lub konflikt sterownika
     bsod_data = collected_data.get('collectors', {}).get('bsod_dumps', {})
     if bsod_data:
         bugchecks = bsod_data.get('bugchecks', [])
         for bugcheck in bugchecks:
             crashed_driver = bugcheck.get('crashed_driver')
-            if crashed_driver and crashed_driver.lower() not in ['ntoskrnl.exe', 'hal.dll', 'unknown']:
+            if crashed_driver and crashed_driver.lower() not in [
+                    'ntoskrnl.exe', 'hal.dll', 'unknown']:
                 causes.append({
                     'category': 'Drivers/Apps',
                     'cause': 'DRIVER_CAUSING_BUGCHECK',
@@ -355,13 +381,14 @@ def detect_driver_app_causes(processed_data, collected_data):
                     'recommendation': f'Update or reinstall {crashed_driver}, check for driver conflicts, rollback to previous version'
                 })
                 break
-    
+
     # Nieudana instalacja sterownika → konflikt lub brak zgodności
     if system_logs:
         issues = system_logs.get('issues', [])
         for issue in issues:
             message = issue.get('message', '').lower()
-            if 'driver' in message and 'install' in message and ('fail' in message or 'error' in message):
+            if 'driver' in message and 'install' in message and (
+                    'fail' in message or 'error' in message):
                 causes.append({
                     'category': 'Drivers/Apps',
                     'cause': 'DRIVER_INSTALLATION_FAILURE',
@@ -371,21 +398,30 @@ def detect_driver_app_causes(processed_data, collected_data):
                     'recommendation': 'Check driver compatibility, remove conflicting drivers, verify system requirements'
                 })
                 break
-    
+
     return causes
+
 
 def detect_memory_causes(processed_data, collected_data):
     """Wykrywa przyczyny związane z pamięcią RAM."""
     causes = []
-    
+
     # Memory parity/ECC errors + WHEA → uszkodzona pamięć RAM
     bsod_data = collected_data.get('collectors', {}).get('bsod_dumps', {})
     system_logs = processed_data.get('system_logs', {})
-    
+
     has_whea = bool(bsod_data.get('whea_errors', []))
     if system_logs:
         issues = system_logs.get('issues', [])
-        memory_errors = [i for i in issues if 'memory' in i.get('message', '').lower() and ('parity' in i.get('message', '').lower() or 'ecc' in i.get('message', '').lower())]
+        memory_errors = [
+            i for i in issues if 'memory' in i.get(
+                'message',
+                '').lower() and (
+                'parity' in i.get(
+                    'message',
+                    '').lower() or 'ecc' in i.get(
+                    'message',
+                    '').lower())]
         if memory_errors and has_whea:
             causes.append({
                 'category': 'Memory',
@@ -395,8 +431,9 @@ def detect_memory_causes(processed_data, collected_data):
                 'evidence': {'memory_errors': len(memory_errors), 'whea_errors': True},
                 'recommendation': 'Test RAM with MemTest86, replace faulty RAM modules, check RAM slots'
             })
-    
-    # BSOD z BugCheck 0x1E lub 0x50 przy testach pamięci → uszkodzona pamięć RAM
+
+    # BSOD z BugCheck 0x1E lub 0x50 przy testach pamięci → uszkodzona pamięć
+    # RAM
     if bsod_data:
         bugchecks = bsod_data.get('bugchecks', [])
         for bugcheck in bugchecks:
@@ -411,22 +448,30 @@ def detect_memory_causes(processed_data, collected_data):
                     'recommendation': 'Run Windows Memory Diagnostic or MemTest86, replace faulty RAM modules'
                 })
                 break
-    
+
     return causes
+
 
 def detect_network_upnp_causes(processed_data, collected_data):
     """Wykrywa przyczyny związane z siecią i UPnP."""
     causes = []
-    
+
     # Konflikty UPnP + network warnings → problem z usługą Windows Network/UPnP
     system_logs = processed_data.get('system_logs', {})
     if system_logs:
         issues = system_logs.get('issues', [])
         warnings = system_logs.get('warnings', [])
-        
-        upnp_errors = [i for i in issues + warnings if 'upnp' in i.get('message', '').lower()]
-        network_warnings = [i for i in warnings if 'network' in i.get('type', '').lower() or 'network' in i.get('message', '').lower()]
-        
+
+        upnp_errors = [
+            i for i in issues
+            + warnings if 'upnp' in i.get(
+                'message',
+                '').lower()]
+        network_warnings = [
+            i for i in warnings if 'network' in i.get(
+                'type', '').lower() or 'network' in i.get(
+                'message', '').lower()]
+
         if upnp_errors and network_warnings:
             causes.append({
                 'category': 'Network/UPnP',
@@ -436,13 +481,24 @@ def detect_network_upnp_causes(processed_data, collected_data):
                 'evidence': {'upnp_errors': len(upnp_errors), 'network_warnings': len(network_warnings)},
                 'recommendation': 'Restart UPnP service, check network adapter settings, update network drivers'
             })
-    
-    # DNS resolution fails + EventID network errors → problem konfiguracji lub sterownika sieciowego
+
+    # DNS resolution fails + EventID network errors → problem konfiguracji lub
+    # sterownika sieciowego
     if system_logs:
         issues = system_logs.get('issues', [])
-        dns_errors = [i for i in issues if 'dns' in i.get('message', '').lower() and ('fail' in i.get('message', '').lower() or 'error' in i.get('message', '').lower())]
-        network_event_errors = [i for i in issues if 'network' in i.get('message', '').lower() and i.get('event_id')]
-        
+        dns_errors = [
+            i for i in issues if 'dns' in i.get(
+                'message',
+                '').lower() and (
+                'fail' in i.get(
+                    'message',
+                    '').lower() or 'error' in i.get(
+                    'message',
+                    '').lower())]
+        network_event_errors = [
+            i for i in issues if 'network' in i.get(
+                'message', '').lower() and i.get('event_id')]
+
         if dns_errors and network_event_errors:
             causes.append({
                 'category': 'Network/UPnP',
@@ -452,8 +508,9 @@ def detect_network_upnp_causes(processed_data, collected_data):
                 'evidence': {'dns_errors': len(dns_errors), 'network_errors': len(network_event_errors)},
                 'recommendation': 'Check DNS settings, update network adapter drivers, verify network configuration'
             })
-    
-    # NIC driver fails to load → sterownik sieciowy uszkodzony lub niekompatybilny
+
+    # NIC driver fails to load → sterownik sieciowy uszkodzony lub
+    # niekompatybilny
     drivers_data = processed_data.get('drivers', {})
     if drivers_data:
         issues = drivers_data.get('issues', [])
@@ -469,21 +526,22 @@ def detect_network_upnp_causes(processed_data, collected_data):
                     'recommendation': 'Reinstall network adapter driver, check for driver conflicts, verify compatibility'
                 })
                 break
-    
+
     return causes
+
 
 def detect_cpu_thermal_causes(processed_data, collected_data):
     """Wykrywa przyczyny związane z procesorem i temperaturą."""
     causes = []
-    
+
     # CPU Thermal Trip / Overheat events → przegrzewanie CPU
     hardware_data = collected_data.get('collectors', {}).get('hardware', {})
     system_logs = processed_data.get('system_logs', {})
-    
+
     if hardware_data:
         sensors = hardware_data.get('sensors', {})
         cpu_temp = sensors.get('cpu_temp', '')
-        
+
         # Sprawdź czy temperatura jest zbyt wysoka (jeśli dostępna jako liczba)
         try:
             if isinstance(cpu_temp, (int, float)) and cpu_temp > 80:
@@ -495,15 +553,16 @@ def detect_cpu_thermal_causes(processed_data, collected_data):
                     'evidence': {'cpu_temp': cpu_temp},
                     'recommendation': 'Check CPU cooler, clean dust, reapply thermal paste, verify fan operation'
                 })
-        except:
+        except BaseException:
             pass
-    
+
     # CPU throttling z powodu temperatury → niedostateczne chłodzenie
     if system_logs:
         issues = system_logs.get('issues', [])
         for issue in issues:
             message = issue.get('message', '').lower()
-            if 'throttl' in message and ('thermal' in message or 'temperature' in message or 'cpu' in message):
+            if 'throttl' in message and (
+                    'thermal' in message or 'temperature' in message or 'cpu' in message):
                 causes.append({
                     'category': 'CPU/Thermal',
                     'cause': 'INSUFFICIENT_CPU_COOLING',
@@ -513,12 +572,13 @@ def detect_cpu_thermal_causes(processed_data, collected_data):
                     'recommendation': 'Improve CPU cooling, check thermal paste, verify cooler installation, clean system'
                 })
                 break
-    
+
     # BSOD przy wysokim obciążeniu CPU → możliwe uszkodzenie CPU
     bsod_data = collected_data.get('collectors', {}).get('bsod_dumps', {})
     if bsod_data and hardware_data:
         cpu_usage = hardware_data.get('cpu', {}).get('usage_percent', 0)
-        if cpu_usage > 90 and (bsod_data.get('bugchecks') or bsod_data.get('recent_crashes')):
+        if cpu_usage > 90 and (bsod_data.get('bugchecks')
+                               or bsod_data.get('recent_crashes')):
             causes.append({
                 'category': 'CPU/Thermal',
                 'cause': 'POSSIBLE_CPU_DAMAGE',
@@ -527,19 +587,25 @@ def detect_cpu_thermal_causes(processed_data, collected_data):
                 'evidence': {'cpu_usage': cpu_usage},
                 'recommendation': 'Stress test CPU, check for overheating, verify CPU stability, consider CPU replacement'
             })
-    
+
     return causes
+
 
 def detect_power_causes(processed_data, collected_data):
     """Wykrywa przyczyny związane z zasilaniem."""
     causes = []
-    
-    # EventID 41 (Kernel-Power) + częste restartowanie → niestabilne zasilanie lub uszkodzony PSU
+
+    # EventID 41 (Kernel-Power) + częste restartowanie → niestabilne zasilanie
+    # lub uszkodzony PSU
     bsod_data = collected_data.get('collectors', {}).get('bsod_dumps', {})
     if bsod_data:
         recent_crashes = bsod_data.get('recent_crashes', [])
-        kernel_power_41 = [c for c in recent_crashes if str(c.get('event_id', '')) == '41']
-        
+        kernel_power_41 = [
+            c for c in recent_crashes if str(
+                c.get(
+                    'event_id',
+                    '')) == '41']
+
         if len(kernel_power_41) >= 2:  # Częste restartowanie
             causes.append({
                 'category': 'Power',
@@ -549,7 +615,7 @@ def detect_power_causes(processed_data, collected_data):
                 'evidence': {'kernel_power_events': len(kernel_power_41)},
                 'recommendation': 'Check power supply, verify power connections, test with different PSU, check for power surges'
             })
-    
+
     # Voltage fluctuations w logach WHEA → problem z PSU lub płytą główną
     if bsod_data:
         whea_errors = bsod_data.get('whea_errors', [])
@@ -565,7 +631,7 @@ def detect_power_causes(processed_data, collected_data):
                     'recommendation': 'Check PSU voltage output, verify motherboard power delivery, test with different PSU'
                 })
                 break
-    
+
     # Nagłe wyłączenia przy wysokim poborze mocy → awaria zasilacza
     hardware_data = collected_data.get('collectors', {}).get('hardware', {})
     if bsod_data and hardware_data:
@@ -579,20 +645,22 @@ def detect_power_causes(processed_data, collected_data):
                 'evidence': {'cpu_usage': cpu_usage},
                 'recommendation': 'Test PSU capacity, check power consumption, replace PSU if necessary'
             })
-    
+
     return causes
+
 
 def detect_other_critical_causes(processed_data, collected_data):
     """Wykrywa inne poważne problemy systemowe."""
     causes = []
-    
+
     # System files missing / cannot boot → poważna korupcja systemu
     system_logs = processed_data.get('system_logs', {})
     if system_logs:
         issues = system_logs.get('issues', [])
         for issue in issues:
             message = issue.get('message', '').lower()
-            if ('system file' in message or 'boot' in message) and ('missing' in message or 'cannot' in message or 'corrupt' in message):
+            if ('system file' in message or 'boot' in message) and (
+                    'missing' in message or 'cannot' in message or 'corrupt' in message):
                 causes.append({
                     'category': 'System',
                     'cause': 'SEVERE_SYSTEM_CORRUPTION',
@@ -602,7 +670,7 @@ def detect_other_critical_causes(processed_data, collected_data):
                     'recommendation': 'Run DISM /Online /Cleanup-Image /RestoreHealth, sfc /scannow, consider system restore or reinstall'
                 })
                 break
-    
+
     # Registry corruption + nieudane naprawy → poważna korupcja rejestru
     registry_txr = processed_data.get('registry_txr', {})
     if registry_txr:
@@ -616,11 +684,16 @@ def detect_other_critical_causes(processed_data, collected_data):
                 'evidence': {'txr_failures': len(critical_issues)},
                 'recommendation': 'Run registry repair tools, check disk health, consider system restore'
             })
-    
+
     # VSS service consistently fails → problem z Volume Shadow Copy
     if system_logs:
         issues = system_logs.get('issues', [])
-        vss_failures = [i for i in issues if 'vss' in i.get('message', '').lower() and 'fail' in i.get('message', '').lower()]
+        vss_failures = [
+            i for i in issues if 'vss' in i.get(
+                'message',
+                '').lower() and 'fail' in i.get(
+                'message',
+                '').lower()]
         if len(vss_failures) >= 3:
             causes.append({
                 'category': 'System',
@@ -630,12 +703,15 @@ def detect_other_critical_causes(processed_data, collected_data):
                 'evidence': {'vss_failures': len(vss_failures)},
                 'recommendation': 'Check VSS service status, verify disk integrity, check ShadowCopy repository'
             })
-    
+
     # Repeated driver crash → sterownik powoduje awarię systemu
     drivers_data = processed_data.get('drivers', {})
     if drivers_data:
         issues = drivers_data.get('issues', [])
-        driver_crashes = [i for i in issues if 'crash' in i.get('message', '').lower() or 'fail' in i.get('message', '').lower()]
+        driver_crashes = [
+            i for i in issues if 'crash' in i.get(
+                'message', '').lower() or 'fail' in i.get(
+                'message', '').lower()]
         if len(driver_crashes) >= 3:
             causes.append({
                 'category': 'System',
@@ -645,12 +721,20 @@ def detect_other_critical_causes(processed_data, collected_data):
                 'evidence': {'driver_crashes': len(driver_crashes)},
                 'recommendation': 'Identify problematic driver, update or rollback, check for conflicts'
             })
-    
-    # EventID 1001 z krytycznymi błędami → poważna awaria aplikacji lub sterownika
+
+    # EventID 1001 z krytycznymi błędami → poważna awaria aplikacji lub
+    # sterownika
     if system_logs:
         issues = system_logs.get('issues', [])
-        event_1001 = [i for i in issues if str(i.get('event_id', '')) == '1001']
-        critical_1001 = [i for i in event_1001 if i.get('severity', '').upper() in ['CRITICAL', 'ERROR']]
+        event_1001 = [
+            i for i in issues if str(
+                i.get(
+                    'event_id',
+                    '')) == '1001']
+        critical_1001 = [
+            i for i in event_1001 if i.get(
+                'severity', '').upper() in [
+                'CRITICAL', 'ERROR']]
         if critical_1001:
             causes.append({
                 'category': 'System',
@@ -660,7 +744,7 @@ def detect_other_critical_causes(processed_data, collected_data):
                 'evidence': {'critical_1001_events': len(critical_1001)},
                 'recommendation': 'Check Windows Error Reporting logs, update problematic applications/drivers, check for conflicts'
             })
-    
+
     # Power surge detected → awaria sprzętowa lub PSU
     if system_logs:
         issues = system_logs.get('issues', [])
@@ -676,12 +760,19 @@ def detect_other_critical_causes(processed_data, collected_data):
                     'recommendation': 'Check PSU, verify power connections, test hardware components'
                 })
                 break
-    
+
     # Storage controller errors → problem z kontrolerem SATA/NVMe
     storage_health = processed_data.get('storage_health', {})
     if storage_health:
         issues = storage_health.get('issues', [])
-        controller_errors = [i for i in issues if 'controller' in i.get('message', '').lower() or 'sata' in i.get('message', '').lower() or 'nvme' in i.get('message', '').lower()]
+        controller_errors = [
+            i for i in issues if 'controller' in i.get(
+                'message',
+                '').lower() or 'sata' in i.get(
+                'message',
+                '').lower() or 'nvme' in i.get(
+                'message',
+                '').lower()]
         if controller_errors:
             causes.append({
                 'category': 'System',
@@ -691,14 +782,15 @@ def detect_other_critical_causes(processed_data, collected_data):
                 'evidence': {'controller_errors': len(controller_errors)},
                 'recommendation': 'Update storage controller drivers, check controller settings, test with different port/cable'
             })
-    
+
     # Disk SMART status critical → dysk zbliża się do awarii
     hardware_data = collected_data.get('collectors', {}).get('hardware', {})
     if hardware_data:
         disks = hardware_data.get('disks', [])
         for disk in disks:
             smart = disk.get('smart', {})
-            if smart and smart.get('HealthStatus', '').upper() in ['CRITICAL', 'FAIL', 'FAILING']:
+            if smart and smart.get('HealthStatus', '').upper() in [
+                    'CRITICAL', 'FAIL', 'FAILING']:
                 causes.append({
                     'category': 'System',
                     'cause': 'DISK_NEAR_FAILURE',
@@ -708,11 +800,15 @@ def detect_other_critical_causes(processed_data, collected_data):
                     'recommendation': 'Backup data immediately, replace disk, check SMART attributes'
                 })
                 break
-    
-    # File system corruption on multiple volumes → system niebezpiecznie niestabilny
+
+    # File system corruption on multiple volumes → system niebezpiecznie
+    # niestabilny
     if storage_health:
         issues = storage_health.get('issues', [])
-        corruption_errors = [i for i in issues if 'corrupt' in i.get('message', '').lower() or 'corruption' in i.get('message', '').lower()]
+        corruption_errors = [
+            i for i in issues if 'corrupt' in i.get(
+                'message', '').lower() or 'corruption' in i.get(
+                'message', '').lower()]
         if len(corruption_errors) >= 2:
             causes.append({
                 'category': 'System',
@@ -722,14 +818,16 @@ def detect_other_critical_causes(processed_data, collected_data):
                 'evidence': {'corruption_errors': len(corruption_errors)},
                 'recommendation': 'Immediate backup, run chkdsk on all volumes, consider system restore or reinstall'
             })
-    
-    # Unexpected shutdowns during disk-intensive operations → dysk lub kontroler prawdopodobnie uszkodzony
+
+    # Unexpected shutdowns during disk-intensive operations → dysk lub
+    # kontroler prawdopodobnie uszkodzony
     bsod_data = collected_data.get('collectors', {}).get('bsod_dumps', {})
     if bsod_data and storage_health:
         recent_crashes = bsod_data.get('recent_crashes', [])
         io_errors = storage_health.get('issues', [])
-        io_error_count = len([i for i in io_errors if 'io' in i.get('type', '').lower() or 'i/o' in i.get('message', '').lower()])
-        
+        io_error_count = len([i for i in io_errors if 'io' in i.get(
+            'type', '').lower() or 'i/o' in i.get('message', '').lower()])
+
         if recent_crashes and io_error_count >= 2:
             causes.append({
                 'category': 'System',
@@ -739,16 +837,21 @@ def detect_other_critical_causes(processed_data, collected_data):
                 'evidence': {'crashes': len(recent_crashes), 'io_errors': io_error_count},
                 'recommendation': 'Test disk health, check controller, backup data, replace if necessary'
             })
-    
+
     # Kernel-Power 41 + EventID 101 → problem z hardware lub sterownikiem
     if bsod_data and system_logs:
         recent_crashes = bsod_data.get('recent_crashes', [])
-        has_kernel_power_41 = any(str(c.get('event_id', '')) == '41' for c in recent_crashes)
-        
+        has_kernel_power_41 = any(
+            str(c.get('event_id', '')) == '41' for c in recent_crashes)
+
         if system_logs:
             issues = system_logs.get('issues', [])
-            event_101 = [i for i in issues if str(i.get('event_id', '')) == '101']
-            
+            event_101 = [
+                i for i in issues if str(
+                    i.get(
+                        'event_id',
+                        '')) == '101']
+
             if has_kernel_power_41 and event_101:
                 causes.append({
                     'category': 'System',
@@ -758,110 +861,128 @@ def detect_other_critical_causes(processed_data, collected_data):
                     'evidence': {'has_kernel_power_41': True, 'event_101_count': len(event_101)},
                     'recommendation': 'Check hardware components, update drivers, verify system stability'
                 })
-    
+
     return causes
+
 
 def detect_wer_causes(processed_data, collected_data):
     """
     Wykrywa przyczyny na podstawie Windows Error Reporting (WER) - golden rules.
-    
+
     Golden Rules:
     1. FaultingModule = ntdll.dll + EventID=1000 → crash systemowy (≥95%)
     2. Crash >=3 w 30 min dla tej samej aplikacji → prawdopodobny błąd aplikacji (≥95%)
     3. Crash w tym samym czasie co BSOD EventID=41 → prawdopodobna awaria sprzętowa (≥95%)
     """
     causes = []
-    
+
     # DEBUG: Sprawdź collected_data
-    logger.debug(f"[CAUSE_DETECTOR] DEBUG: collected_data type: {type(collected_data)}")
-    logger.debug(f"[CAUSE_DETECTOR] DEBUG: collected_data is dict: {isinstance(collected_data, dict)}")
+    logger.debug(
+        f"[CAUSE_DETECTOR] DEBUG: collected_data type: {type(collected_data)}")
+    logger.debug(
+        f"[CAUSE_DETECTOR] DEBUG: collected_data is dict: {isinstance(collected_data, dict)}")
     if isinstance(collected_data, dict):
-        logger.debug(f"[CAUSE_DETECTOR] DEBUG: collected_data keys: {list(collected_data.keys())}")
+        logger.debug(
+            f"[CAUSE_DETECTOR] DEBUG: collected_data keys: {list(collected_data.keys())}")
         if 'collectors' in collected_data:
-            logger.debug(f"[CAUSE_DETECTOR] DEBUG: collected_data['collectors'] type: {type(collected_data['collectors'])}")
+            logger.debug(
+                f"[CAUSE_DETECTOR] DEBUG: collected_data['collectors'] type: {type(collected_data['collectors'])}")
             if isinstance(collected_data['collectors'], dict):
-                logger.debug(f"[CAUSE_DETECTOR] DEBUG: collected_data['collectors'] keys: {list(collected_data['collectors'].keys())}")
+                logger.debug(
+                    f"[CAUSE_DETECTOR] DEBUG: collected_data['collectors'] keys: {list(collected_data['collectors'].keys())}")
                 if 'wer' in collected_data['collectors']:
-                    logger.debug(f"[CAUSE_DETECTOR] DEBUG: collected_data['collectors']['wer'] type: {type(collected_data['collectors']['wer'])}")
-    
+                    logger.debug(
+                        f"[CAUSE_DETECTOR] DEBUG: collected_data['collectors']['wer'] type: {type(collected_data['collectors']['wer'])}")
+
     wer_data = collected_data.get('collectors', {}).get('wer', {})
-    
+
     # ZABEZPIECZENIE: Upewnij się, że wer_data jest bezpieczny
     if not isinstance(wer_data, dict):
-        logger.warning(f"[CAUSE_DETECTOR] WER data is not a dict: {type(wer_data)}")
+        logger.warning(
+            f"[CAUSE_DETECTOR] WER data is not a dict: {type(wer_data)}")
         return causes
-    
+
     # DEBUG: Sprawdź wer_data (tylko podstawowe info)
     logger.debug(f"[CAUSE_DETECTOR] DEBUG: wer_data type: {type(wer_data)}")
-    logger.debug(f"[CAUSE_DETECTOR] DEBUG: wer_data is dict: {isinstance(wer_data, dict)}")
+    logger.debug(
+        f"[CAUSE_DETECTOR] DEBUG: wer_data is dict: {isinstance(wer_data, dict)}")
     logger.debug(f"[CAUSE_DETECTOR] DEBUG: wer_data empty: {not wer_data}")
-    
+
     if not wer_data:
-        logger.debug("[CAUSE_DETECTOR] DEBUG: wer_data is empty, returning empty causes")
+        logger.debug(
+            "[CAUSE_DETECTOR] DEBUG: wer_data is empty, returning empty causes")
         return causes
-    
-    logger.debug(f"[CAUSE_DETECTOR] DEBUG: wer_data keys: {list(wer_data.keys())}")
-    
+
+    logger.debug(
+        f"[CAUSE_DETECTOR] DEBUG: wer_data keys: {list(wer_data.keys())}")
+
     # Bezpieczne pobranie recent_crashes i grouped_crashes
     recent_crashes = wer_data.get('recent_crashes', [])
     grouped_crashes = wer_data.get('grouped_crashes', [])
-    
+
     # KRYTYCZNE ZABEZPIECZENIE: grouped_crashes MUSI być listą (konsumenci iterują po niej, NIE używają .get())
     # Jeśli jest dict, to błąd - konwertuj na listę
     if isinstance(grouped_crashes, dict):
-        logger.error(f"[CAUSE_DETECTOR] CRITICAL: grouped_crashes is dict (keys: {list(grouped_crashes.keys())[:5]}) instead of list! Converting...")
+        logger.error(
+            f"[CAUSE_DETECTOR] CRITICAL: grouped_crashes is dict (keys: {list(grouped_crashes.keys())[:5]}) instead of list! Converting...")
         grouped_crashes = [grouped_crashes] if grouped_crashes else []
     elif not isinstance(grouped_crashes, list):
-        logger.warning(f"[CAUSE_DETECTOR] grouped_crashes is not a list: {type(grouped_crashes)}, converting...")
-        grouped_crashes = [grouped_crashes] if grouped_crashes is not None else []
-    
+        logger.warning(
+            f"[CAUSE_DETECTOR] grouped_crashes is not a list: {type(grouped_crashes)}, converting...")
+        grouped_crashes = [
+            grouped_crashes] if grouped_crashes is not None else []
+
     # ZABEZPIECZENIE: Upewnij się, że recent_crashes jest listą
     if not isinstance(recent_crashes, list):
-        logger.warning(f"[CAUSE_DETECTOR] recent_crashes is not a list: {type(recent_crashes)}, converting...")
+        logger.warning(
+            f"[CAUSE_DETECTOR] recent_crashes is not a list: {type(recent_crashes)}, converting...")
         recent_crashes = [recent_crashes] if recent_crashes is not None else []
-    
+
     # DEBUG: Sprawdź typy po konwersji
-    logger.debug(f"[CAUSE_DETECTOR] DEBUG: recent_crashes type: {type(recent_crashes)}, is_list: {isinstance(recent_crashes, list)}")
-    logger.debug(f"[CAUSE_DETECTOR] DEBUG: grouped_crashes type: {type(grouped_crashes)}, is_list: {isinstance(grouped_crashes, list)}, length: {len(grouped_crashes) if isinstance(grouped_crashes, list) else 'N/A'}")
-    
+    logger.debug(
+        f"[CAUSE_DETECTOR] DEBUG: recent_crashes type: {type(recent_crashes)}, is_list: {isinstance(recent_crashes, list)}")
+    logger.debug(
+        f"[CAUSE_DETECTOR] DEBUG: grouped_crashes type: {type(grouped_crashes)}, is_list: {isinstance(grouped_crashes, list)}, length: {len(grouped_crashes) if isinstance(grouped_crashes, list) else 'N/A'}")
+
     # DEBUG: Sprawdź typy po konwersji
-    logger.debug(f"[CAUSE_DETECTOR] DEBUG: After conversion - recent_crashes type: {type(recent_crashes)}, length: {len(recent_crashes) if isinstance(recent_crashes, list) else 'N/A'}")
-    logger.debug(f"[CAUSE_DETECTOR] DEBUG: After conversion - grouped_crashes type: {type(grouped_crashes)}, length: {len(grouped_crashes) if isinstance(grouped_crashes, list) else 'N/A'}")
-    
+    logger.debug(
+        f"[CAUSE_DETECTOR] DEBUG: After conversion - recent_crashes type: {type(recent_crashes)}, length: {len(recent_crashes) if isinstance(recent_crashes, list) else 'N/A'}")
+    logger.debug(
+        f"[CAUSE_DETECTOR] DEBUG: After conversion - grouped_crashes type: {type(grouped_crashes)}, length: {len(grouped_crashes) if isinstance(grouped_crashes, list) else 'N/A'}")
+
     bsod_data = collected_data.get('collectors', {}).get('bsod_dumps', {})
-    
-    # Golden Rule 1: FaultingModule = ntdll.dll + EventID=1000 → crash systemowy (≥95%)
+
+    # Golden Rule 1: FaultingModule = ntdll.dll + EventID=1000 → crash
+    # systemowy (≥95%)
     try:
         # ZABEZPIECZENIE: Upewnij się, że recent_crashes jest iterowalne
         if not isinstance(recent_crashes, (list, tuple)):
-            logger.error(f"[CAUSE_DETECTOR] CRITICAL: recent_crashes is not iterable! Type: {type(recent_crashes)}")
+            logger.error(
+                f"[CAUSE_DETECTOR] CRITICAL: recent_crashes is not iterable! Type: {type(recent_crashes)}")
             log_error_with_analysis(
                 TypeError(f"recent_crashes is not iterable: {type(recent_crashes)}"),
                 recent_crashes,
                 {
                     'variable_name': 'recent_crashes',
                     'location': 'cause_detector.py:834',
-                    'function': 'detect_wer_causes'
-                },
-                continue_execution=True
-            )
+                    'function': 'detect_wer_causes'},
+                continue_execution=True)
         else:
             for idx, crash in enumerate(recent_crashes):
                 # ZABEZPIECZENIE: Upewnij się, że crash jest dict
                 if not isinstance(crash, dict):
-                    logger.warning(f"[CAUSE_DETECTOR] Crash[{idx}] is not a dict: {type(crash)}")
+                    logger.warning(
+                        f"[CAUSE_DETECTOR] Crash[{idx}] is not a dict: {type(crash)}")
                     log_error_with_analysis(
                         TypeError(f"Crash[{idx}] is not a dict: {type(crash)}"),
                         crash,
                         {
                             'variable_name': f'recent_crashes[{idx}]',
                             'location': 'cause_detector.py:837',
-                            'function': 'detect_wer_causes'
-                        },
-                        continue_execution=True
-                    )
+                            'function': 'detect_wer_causes'},
+                        continue_execution=True)
                     continue
-                
+
                 try:
                     event_id = str(safe_get_with_analysis(crash, 'event_id', '', {
                         'variable_name': f'crash[{idx}].event_id',
@@ -875,7 +996,7 @@ def detect_wer_causes(processed_data, collected_data):
                         'variable_name': f'crash[{idx}].application',
                         'location': 'cause_detector.py:843'
                     })) or '').lower()
-                    
+
                     if event_id == '1000' and 'ntdll.dll' in module_name:
                         causes.append({
                             'category': 'System',
@@ -929,29 +1050,34 @@ def detect_wer_causes(processed_data, collected_data):
             },
             continue_execution=True
         )
-    
-    # Golden Rule 2: Crash >=3 w 30 min dla tej samej aplikacji → prawdopodobny błąd aplikacji (≥95%)
+
+    # Golden Rule 2: Crash >=3 w 30 min dla tej samej aplikacji →
+    # prawdopodobny błąd aplikacji (≥95%)
     for group in grouped_crashes:
         # ZABEZPIECZENIE: Upewnij się, że group jest dict
         if not isinstance(group, dict):
-            logger.debug(f"[CAUSE_DETECTOR] Skipping non-dict group: {type(group)}")
+            logger.debug(
+                f"[CAUSE_DETECTOR] Skipping non-dict group: {type(group)}")
             continue
-        
+
         try:
             is_repeating = group.get('is_repeating', False)
             occurrences_30min = group.get('occurrences_30min', 0)
-            
+
             # Upewnij się, że wartości są poprawnego typu
             if not isinstance(is_repeating, bool):
                 is_repeating = False
             if not isinstance(occurrences_30min, (int, float)):
                 occurrences_30min = 0
-            
+
             if is_repeating and occurrences_30min >= 3:
-                app = str(group.get('application', 'Unknown'))[:200]  # Ogranicz długość
-                module = str(group.get('module_name', ''))[:200]  # Ogranicz długość
-                exception = str(group.get('exception_code', ''))[:100]  # Ogranicz długość
-                
+                app = str(group.get('application', 'Unknown'))[
+                    :200]  # Ogranicz długość
+                module = str(group.get('module_name', ''))[
+                    :200]  # Ogranicz długość
+                exception = str(group.get('exception_code', ''))[
+                    :100]  # Ogranicz długość
+
                 causes.append({
                     'category': 'Application',
                     'cause': 'REPEATING_APPLICATION_CRASH',
@@ -969,10 +1095,12 @@ def detect_wer_causes(processed_data, collected_data):
                     'recommendation': f'Application {app} is repeatedly crashing. Update the application, check for compatibility issues, reinstall if necessary, check for corrupted files or dependencies'
                 })
         except Exception as e:
-            logger.warning(f"[CAUSE_DETECTOR] Error processing group in Golden Rule 2: {e}")
+            logger.warning(
+                f"[CAUSE_DETECTOR] Error processing group in Golden Rule 2: {e}")
             continue
-    
-    # Golden Rule 3: Crash w tym samym czasie co BSOD EventID=41 → prawdopodobna awaria sprzętowa (≥95%)
+
+    # Golden Rule 3: Crash w tym samym czasie co BSOD EventID=41 →
+    # prawdopodobna awaria sprzętowa (≥95%)
     try:
         if bsod_data:
             recent_crashes_bsod = safe_get_with_analysis(
@@ -983,20 +1111,22 @@ def detect_wer_causes(processed_data, collected_data):
                     'function': 'detect_wer_causes'
                 }
             )
-            
+
             # Upewnij się, że recent_crashes_bsod jest listą
             if not isinstance(recent_crashes_bsod, list):
-                logger.warning(f"[CAUSE_DETECTOR] recent_crashes_bsod is not a list: {type(recent_crashes_bsod)}")
+                logger.warning(
+                    f"[CAUSE_DETECTOR] recent_crashes_bsod is not a list: {type(recent_crashes_bsod)}")
                 recent_crashes_bsod = []
-            
+
             # Znajdź BSOD EventID 41
             bsod_41_times = []
             for idx, bsod in enumerate(recent_crashes_bsod):
                 try:
                     if not isinstance(bsod, dict):
-                        logger.debug(f"[CAUSE_DETECTOR] BSOD[{idx}] is not a dict: {type(bsod)}")
+                        logger.debug(
+                            f"[CAUSE_DETECTOR] BSOD[{idx}] is not a dict: {type(bsod)}")
                         continue
-                    
+
                     event_id = str(safe_get_with_analysis(bsod, 'event_id', '', {
                         'variable_name': f'bsod[{idx}].event_id',
                         'location': 'cause_detector.py:909'
@@ -1021,15 +1151,17 @@ def detect_wer_causes(processed_data, collected_data):
                         continue_execution=True
                     )
                     continue
-            
-            # Sprawdź czy crashy systemowe wystąpiły w tym samym czasie (±5 minut)
+
+            # Sprawdź czy crashy systemowe wystąpiły w tym samym czasie (±5
+            # minut)
             if bsod_41_times:
                 for idx, crash in enumerate(recent_crashes):
                     try:
                         if not isinstance(crash, dict):
-                            logger.debug(f"[CAUSE_DETECTOR] Crash[{idx}] is not a dict: {type(crash)}")
+                            logger.debug(
+                                f"[CAUSE_DETECTOR] Crash[{idx}] is not a dict: {type(crash)}")
                             continue
-                        
+
                         crash_type = str(safe_get_with_analysis(crash, 'type', '', {
                             'variable_name': f'crash[{idx}].type',
                             'location': 'cause_detector.py:916'
@@ -1039,21 +1171,22 @@ def detect_wer_causes(processed_data, collected_data):
                             'location': 'cause_detector.py:917'
                         })
                         crash_time = parse_wer_timestamp(timestamp)
-                        
+
                         if crash_type == 'SYSTEM_CRASH' and crash_time:
                             # Sprawdź czy crash jest w oknie ±5 minut od BSOD
                             for bsod_time in bsod_41_times:
-                                time_diff = abs((crash_time - bsod_time).total_seconds())
+                                time_diff = abs(
+                                    (crash_time - bsod_time).total_seconds())
                                 if time_diff <= 300:  # 5 minut
-                                    app = str(safe_get_with_analysis(crash, 'application', 'Unknown', {
-                                        'variable_name': f'crash[{idx}].application',
-                                        'location': 'cause_detector.py:980'
-                                    }))
-                                    module = str(safe_get_with_analysis(crash, 'module_name', '', {
-                                        'variable_name': f'crash[{idx}].module_name',
-                                        'location': 'cause_detector.py:981'
-                                    }))
-                                    
+                                    app = str(
+                                        safe_get_with_analysis(
+                                            crash, 'application', 'Unknown', {
+                                                'variable_name': f'crash[{idx}].application', 'location': 'cause_detector.py:980'}))
+                                    module = str(
+                                        safe_get_with_analysis(
+                                            crash, 'module_name', '', {
+                                                'variable_name': f'crash[{idx}].module_name', 'location': 'cause_detector.py:981'}))
+
                                     causes.append({
                                         'category': 'Hardware',
                                         'cause': 'HARDWARE_FAILURE_WER_BSOD_CORRELATION',
@@ -1102,8 +1235,9 @@ def detect_wer_causes(processed_data, collected_data):
             },
             continue_execution=True
         )
-    
-    # Dodatkowa reguła: Systemowe procesy (winlogon.exe, csrss.exe) crashują + WHEA → hardware failure
+
+    # Dodatkowa reguła: Systemowe procesy (winlogon.exe, csrss.exe) crashują +
+    # WHEA → hardware failure
     try:
         if bsod_data and isinstance(bsod_data, dict):
             whea_errors = safe_get_with_analysis(
@@ -1114,25 +1248,27 @@ def detect_wer_causes(processed_data, collected_data):
                     'function': 'detect_wer_causes'
                 }
             )
-            
+
             # Upewnij się, że whea_errors jest listą
             if not isinstance(whea_errors, list):
-                logger.warning(f"[CAUSE_DETECTOR] whea_errors is not a list: {type(whea_errors)}")
+                logger.warning(
+                    f"[CAUSE_DETECTOR] whea_errors is not a list: {type(whea_errors)}")
                 whea_errors = []
-            
+
             if whea_errors:
                 system_processes = ['winlogon.exe', 'csrss.exe', 'lsass.exe']
                 for idx, crash in enumerate(recent_crashes):
                     try:
                         if not isinstance(crash, dict):
-                            logger.debug(f"[CAUSE_DETECTOR] Crash[{idx}] is not a dict: {type(crash)}")
+                            logger.debug(
+                                f"[CAUSE_DETECTOR] Crash[{idx}] is not a dict: {type(crash)}")
                             continue
-                        
+
                         app = (str(safe_get_with_analysis(crash, 'application', '', {
                             'variable_name': f'crash[{idx}].application',
                             'location': 'cause_detector.py:1112'
                         })) or '').lower()
-                        
+
                         if any(proc in app for proc in system_processes):
                             timestamp = safe_get_with_analysis(crash, 'timestamp', '', {
                                 'variable_name': f'crash[{idx}].timestamp',
@@ -1144,22 +1280,25 @@ def detect_wer_causes(processed_data, collected_data):
                                 for whea_idx, whea in enumerate(whea_errors):
                                     try:
                                         if not isinstance(whea, dict):
-                                            logger.debug(f"[CAUSE_DETECTOR] WHEA[{whea_idx}] is not a dict: {type(whea)}")
+                                            logger.debug(
+                                                f"[CAUSE_DETECTOR] WHEA[{whea_idx}] is not a dict: {type(whea)}")
                                             continue
-                                        
+
                                         whea_timestamp = safe_get_with_analysis(whea, 'timestamp', '', {
                                             'variable_name': f'whea[{whea_idx}].timestamp',
                                             'location': 'cause_detector.py:1118'
                                         })
-                                        whea_time = parse_bsod_timestamp(whea_timestamp)
+                                        whea_time = parse_bsod_timestamp(
+                                            whea_timestamp)
                                         if whea_time:
-                                            time_diff = abs((crash_time - whea_time).total_seconds())
+                                            time_diff = abs(
+                                                (crash_time - whea_time).total_seconds())
                                             if time_diff <= 600:  # 10 minut
                                                 whea_message = str(safe_get_with_analysis(whea, 'message', '', {
                                                     'variable_name': f'whea[{whea_idx}].message',
                                                     'location': 'cause_detector.py:1129'
                                                 }))[:200]
-                                                
+
                                                 causes.append({
                                                     'category': 'Hardware',
                                                     'cause': 'HARDWARE_FAILURE_SYSTEM_CRASH_WHEA',
@@ -1209,8 +1348,9 @@ def detect_wer_causes(processed_data, collected_data):
             },
             continue_execution=True
         )
-    
-    logger.info(f"[CAUSE_DETECTOR] WER golden rules detected {len(causes)} causes")
+
+    logger.info(
+        f"[CAUSE_DETECTOR] WER golden rules detected {len(causes)} causes")
     return causes
 
 
@@ -1218,7 +1358,7 @@ def parse_wer_timestamp(timestamp_str):
     """Parsuje timestamp z WER do datetime."""
     if not timestamp_str:
         return None
-    
+
     formats = [
         "%Y-%m-%dT%H:%M:%S.%f",
         "%Y-%m-%dT%H:%M:%S",
@@ -1226,22 +1366,21 @@ def parse_wer_timestamp(timestamp_str):
         "%m/%d/%Y %I:%M:%S %p",
         "%m/%d/%Y %H:%M:%S"
     ]
-    
+
     for fmt in formats:
         try:
             return datetime.strptime(timestamp_str[:19], fmt)
         except (ValueError, IndexError):
             continue
-    
+
     try:
         return datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
-    except:
+    except BaseException:
         pass
-    
+
     return None
 
 
 def parse_bsod_timestamp(timestamp_str):
     """Parsuje timestamp z BSOD do datetime."""
     return parse_wer_timestamp(timestamp_str)  # Użyj tej samej funkcji
-

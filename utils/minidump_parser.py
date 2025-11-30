@@ -34,13 +34,14 @@ STOP_CODES = {
     0x000000F2: "HARDWARE_INTERRUPT_STORM"
 }
 
+
 def parse_minidump(dump_file_path):
     """
     Parsuje plik minidump i wyciąga STOP code oraz offending driver.
-    
+
     Args:
         dump_file_path (str): Ścieżka do pliku .dmp
-    
+
     Returns:
         dict: {
             'stop_code': str,
@@ -57,41 +58,44 @@ def parse_minidump(dump_file_path):
         'parameters': {},
         'success': False
     }
-    
+
     if not os.path.exists(dump_file_path):
-        logger.warning(f"[MINIDUMP_PARSER] File does not exist: {dump_file_path}")
+        logger.warning(
+            f"[MINIDUMP_PARSER] File does not exist: {dump_file_path}")
         return result
-    
+
     try:
         logger.debug(f"[MINIDUMP_PARSER] Parsing minidump: {dump_file_path}")
-        
+
         with open(dump_file_path, 'rb') as f:
             # Minidump header (pierwsze 32 bajty)
             header = f.read(32)
-            
+
             # Sprawdź signature (PAGEDUMP lub MINIDUMP)
             signature = header[:4]
             if signature != b'PAGE' and signature != b'MDMP':
-                logger.warning(f"[MINIDUMP_PARSER] Invalid minidump signature: {signature}")
+                logger.warning(
+                    f"[MINIDUMP_PARSER] Invalid minidump signature: {signature}")
                 # Spróbuj znaleźć STOP code w pliku binarnym
                 return parse_minidump_binary_search(dump_file_path)
-            
+
             # Szukaj BugCheckCode w pliku
             # W minidump BugCheckCode jest zwykle w strukturze DUMP_HEADER
             f.seek(0)
             content = f.read(min(8192, os.path.getsize(dump_file_path)))
-            
+
             # Szukaj wzorców w binarnych danych
             # BugCheckCode jest często w formacie 4-byte integer
             for i in range(len(content) - 4):
                 # Sprawdź czy to może być STOP code (0x00000000 - 0x00000100)
-                potential_code = struct.unpack('<I', content[i:i+4])[0]
+                potential_code = struct.unpack('<I', content[i:i + 4])[0]
                 if potential_code in STOP_CODES:
                     result['stop_code'] = f"0x{potential_code:08X}"
                     result['stop_code_name'] = STOP_CODES[potential_code]
-                    logger.info(f"[MINIDUMP_PARSER] Found STOP code: {result['stop_code']} ({result['stop_code_name']})")
+                    logger.info(
+                        f"[MINIDUMP_PARSER] Found STOP code: {result['stop_code']} ({result['stop_code_name']})")
                     break
-            
+
             # Szukaj nazw sterowników w pliku (szukaj .sys i .dll)
             f.seek(0)
             full_content = f.read()
@@ -104,23 +108,27 @@ def parse_minidump(dump_file_path):
                 b'igdkmd64.sys',
                 b'amdkmdap.sys'
             ]
-            
+
             for pattern in driver_patterns:
                 if pattern in full_content:
                     driver_name = pattern.decode('utf-8', errors='ignore')
-                    if driver_name not in ['ntoskrnl.exe', 'hal.dll']:  # Pomiń zbyt ogólne
+                    if driver_name not in [
+                            'ntoskrnl.exe', 'hal.dll']:  # Pomiń zbyt ogólne
                         result['offending_driver'] = driver_name
-                        logger.info(f"[MINIDUMP_PARSER] Found potential offending driver: {driver_name}")
+                        logger.info(
+                            f"[MINIDUMP_PARSER] Found potential offending driver: {driver_name}")
                         break
-            
+
             result['success'] = True
-            
+
     except Exception as e:
-        logger.warning(f"[MINIDUMP_PARSER] Error parsing minidump {dump_file_path}: {e}")
+        logger.warning(
+            f"[MINIDUMP_PARSER] Error parsing minidump {dump_file_path}: {e}")
         # Fallback: spróbuj znaleźć informacje w tekście
         return parse_minidump_binary_search(dump_file_path)
-    
+
     return result
+
 
 def parse_minidump_binary_search(dump_file_path):
     """
@@ -133,12 +141,12 @@ def parse_minidump_binary_search(dump_file_path):
         'parameters': {},
         'success': False
     }
-    
+
     try:
         with open(dump_file_path, 'rb') as f:
             # Przeczytaj cały plik (lub pierwsze 64KB)
             content = f.read(min(65536, os.path.getsize(dump_file_path)))
-            
+
             # Szukaj STOP codes w różnych formatach
             for code, name in STOP_CODES.items():
                 # Szukaj jako 4-byte little-endian
@@ -147,20 +155,21 @@ def parse_minidump_binary_search(dump_file_path):
                     result['stop_code'] = f"0x{code:08X}"
                     result['stop_code_name'] = name
                     result['success'] = True
-                    logger.info(f"[MINIDUMP_PARSER] Found STOP code via binary search: {result['stop_code']}")
+                    logger.info(
+                        f"[MINIDUMP_PARSER] Found STOP code via binary search: {result['stop_code']}")
                     break
-            
+
             # Szukaj nazw sterowników
-            driver_names = ['atikmdag.sys', 'nvlddmkm.sys', 'igdkmd64.sys', 'amdkmdap.sys', 
-                          'dxgkrnl.sys', 'nvlddmkm.sys', 'atikmpag.sys']
+            driver_names = ['atikmdag.sys', 'nvlddmkm.sys', 'igdkmd64.sys', 'amdkmdap.sys',
+                            'dxgkrnl.sys', 'nvlddmkm.sys', 'atikmpag.sys']
             for driver in driver_names:
                 if driver.encode('utf-8') in content:
                     result['offending_driver'] = driver
-                    logger.info(f"[MINIDUMP_PARSER] Found driver via binary search: {driver}")
+                    logger.info(
+                        f"[MINIDUMP_PARSER] Found driver via binary search: {driver}")
                     break
-                    
+
     except Exception as e:
         logger.warning(f"[MINIDUMP_PARSER] Error in binary search: {e}")
-    
-    return result
 
+    return result

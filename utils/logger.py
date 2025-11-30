@@ -14,68 +14,74 @@ LOG_DIR.mkdir(exist_ok=True)
 # Nazwa pliku loga z timestampem
 LOG_FILE = LOG_DIR / f"diagnostic_tool_{datetime.now().strftime('%Y%m%d')}.log"
 # Plik logowania diagnostycznego (każdy krok diagnostyczny)
-DIAGNOSTIC_LOG_FILE = LOG_DIR / f"diagnostic_log_{datetime.now().strftime('%Y%m%d')}.txt"
+DIAGNOSTIC_LOG_FILE = LOG_DIR / \
+    f"diagnostic_log_{datetime.now().strftime('%Y%m%d')}.txt"
 
 # Konfiguracja loggera
+
+
 def setup_logger(name="DiagnosticTool", level=logging.DEBUG):
     """
     Konfiguruje i zwraca logger.
-    
+
     Args:
         name (str): Nazwa loggera
         level: Poziom logowania (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-    
+
     Returns:
         logging.Logger: Skonfigurowany logger
     """
     logger = logging.getLogger(name)
-    
+
     # Jeśli logger już ma handlery, nie konfiguruj ponownie
     if logger.handlers:
         return logger
-    
+
     logger.setLevel(level)
-    
+
     # Format logów
     detailed_format = logging.Formatter(
         '%(asctime)s | %(levelname)-8s | %(name)s | %(funcName)s:%(lineno)d | %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
-    
+
     simple_format = logging.Formatter(
         '%(asctime)s | %(levelname)-8s | %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
-    
+
     # Handler do pliku (szczegółowy)
     file_handler = logging.FileHandler(LOG_FILE, encoding='utf-8', mode='a')
     file_handler.setLevel(logging.DEBUG)  # Wszystkie poziomy do pliku
     file_handler.setFormatter(detailed_format)
-    
+
     # Handler do konsoli (uproszczony)
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)  # Tylko INFO i wyżej do konsoli
     console_handler.setFormatter(simple_format)
-    
+
     # Handler do pliku diagnostycznego (każdy krok diagnostyczny)
-    diagnostic_file_handler = logging.FileHandler(DIAGNOSTIC_LOG_FILE, encoding='utf-8', mode='a')
-    diagnostic_file_handler.setLevel(logging.INFO)  # INFO i wyżej do pliku diagnostycznego
+    diagnostic_file_handler = logging.FileHandler(
+        DIAGNOSTIC_LOG_FILE, encoding='utf-8', mode='a')
+    # INFO i wyżej do pliku diagnostycznego
+    diagnostic_file_handler.setLevel(logging.INFO)
     diagnostic_format = logging.Formatter(
         '%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     diagnostic_file_handler.setFormatter(diagnostic_format)
-    
+
     # Dodaj handlery
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
     logger.addHandler(diagnostic_file_handler)
-    
+
     return logger
 
 
 # Globalny logger
 _logger = None
+
 
 def get_logger():
     """Zwraca globalny logger (tworzy jeśli nie istnieje)."""
@@ -105,7 +111,7 @@ def log_function_call(func):
 def log_exception(logger, message="Exception occurred", exc_info=True):
     """
     Loguje wyjątek z pełnym tracebackiem.
-    
+
     Args:
         logger: Logger instance
         message (str): Wiadomość do logowania
@@ -127,7 +133,8 @@ def log_collector_end(collector_name, success=True, error=None, data_count=0):
     """Loguje zakończenie collectora."""
     logger = get_logger()
     if success:
-        logger.info(f"[COLLECTOR] Completed: {collector_name} (collected {data_count} items)")
+        logger.info(
+            f"[COLLECTOR] Completed: {collector_name} (collected {data_count} items)")
     else:
         logger.error(f"[COLLECTOR] Failed: {collector_name} - {error}")
 
@@ -138,11 +145,13 @@ def log_processor_start(processor_name):
     logger.info(f"[PROCESSOR] Starting: {processor_name}")
 
 
-def log_processor_end(processor_name, success=True, error=None, issues_found=0):
+def log_processor_end(processor_name, success=True,
+                      error=None, issues_found=0):
     """Loguje zakończenie procesora."""
     logger = get_logger()
     if success:
-        logger.info(f"[PROCESSOR] Completed: {processor_name} (found {issues_found} issues)")
+        logger.info(
+            f"[PROCESSOR] Completed: {processor_name} (found {issues_found} issues)")
     else:
         logger.error(f"[PROCESSOR] Failed: {processor_name} - {error}")
 
@@ -151,7 +160,8 @@ def log_bsod_analysis(bsod_found, related_events_count, top_causes_count):
     """Loguje wyniki analizy BSOD."""
     logger = get_logger()
     if bsod_found:
-        logger.info(f"[BSOD] Analysis completed: BSOD found, {related_events_count} related events, {top_causes_count} top causes")
+        logger.info(
+            f"[BSOD] Analysis completed: BSOD found, {related_events_count} related events, {top_causes_count} top causes")
     else:
         logger.info(f"[BSOD] Analysis completed: No BSOD found")
 
@@ -172,4 +182,3 @@ def log_data_sample(data_name, sample_data, max_length=200):
     if len(data_str) > max_length:
         data_str = data_str[:max_length] + "..."
     logger.debug(f"[DATA] {data_name}: {data_str}")
-

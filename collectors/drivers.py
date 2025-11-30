@@ -1,6 +1,7 @@
 # collectors/drivers.py
 import sys
 
+
 def collect():
     """
     Zbiera informacje o sterownikach systemowych.
@@ -15,7 +16,9 @@ def collect():
     try:
         c = wmi.WMI()
         for drv in c.Win32_PnPSignedDriver():
-            name = getattr(drv, "DeviceName", None) or getattr(drv, "FriendlyName", None) or "Unknown"
+            name = getattr(
+                drv, "DeviceName", None) or getattr(
+                drv, "FriendlyName", None) or "Unknown"
             provider = getattr(drv, "DriverProviderName", None) or "Unknown"
             version = getattr(drv, "DriverVersion", None) or "Unknown"
             date = getattr(drv, "DriverDate", None) or "Unknown"
@@ -30,4 +33,3 @@ def collect():
     except Exception as e:
         raise RuntimeError(f"WMI scan failed: {e}")
     return results
-

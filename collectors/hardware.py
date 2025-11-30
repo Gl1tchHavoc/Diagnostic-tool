@@ -15,6 +15,7 @@ if sys.platform == "win32":
     except ImportError:
         wmi = None
 
+
 def collect():
     """
     Zbiera szczegółowe informacje o sprzęcie systemowym.
@@ -22,7 +23,7 @@ def collect():
     """
     from utils.logger import get_logger
     logger = get_logger()
-    
+
     data = {}
 
     # CPU - szczegółowe informacje
@@ -31,7 +32,7 @@ def collect():
         cpu_freq = psutil.cpu_freq()
         cpu_times = psutil.cpu_times()
         cpu_per_core = psutil.cpu_percent(interval=0.1, percpu=True)
-        
+
         data['cpu'] = {
             'physical_cores': psutil.cpu_count(logical=False),
             'logical_cores': psutil.cpu_count(logical=True),
@@ -53,7 +54,7 @@ def collect():
                 'softirq': getattr(cpu_times, 'softirq', None)
             }
         }
-        
+
         # Dodatkowe informacje o CPU z WMI (Windows)
         if sys.platform == "win32" and wmi:
             try:
@@ -81,7 +82,8 @@ def collect():
                     })
                     break  # Tylko pierwszy procesor
             except Exception as e:
-                logger.debug(f"[HARDWARE] Could not get detailed CPU info from WMI: {e}")
+                logger.debug(
+                    f"[HARDWARE] Could not get detailed CPU info from WMI: {e}")
     except Exception as e:
         logger.warning(f"[HARDWARE] Error collecting CPU info: {e}")
         data['cpu'] = {'error': str(e)}
@@ -91,7 +93,7 @@ def collect():
     try:
         mem = psutil.virtual_memory()
         swap = psutil.swap_memory()
-        
+
         data['ram'] = {
             'total': mem.total,
             'used': mem.used,
@@ -124,9 +126,11 @@ def collect():
             c = wmi.WMI()
             for mem_slot in c.Win32_PhysicalMemory():
                 slot_info = {
-                    'capacity': int(mem_slot.Capacity) if mem_slot.Capacity else None,
+                    'capacity': int(
+                        mem_slot.Capacity) if mem_slot.Capacity else None,
                     'manufacturer': mem_slot.Manufacturer.strip() if mem_slot.Manufacturer else None,
-                    'speed': int(mem_slot.Speed) if mem_slot.Speed else None,
+                    'speed': int(
+                        mem_slot.Speed) if mem_slot.Speed else None,
                     'part_number': mem_slot.PartNumber.strip() if mem_slot.PartNumber else None,
                     'bank_label': mem_slot.BankLabel.strip() if mem_slot.BankLabel else None,
                     'serial_number': mem_slot.SerialNumber.strip() if mem_slot.SerialNumber else None,
@@ -136,35 +140,39 @@ def collect():
                     'configured_voltage': mem_slot.ConfiguredVoltage,
                     'device_locator': mem_slot.DeviceLocator.strip() if mem_slot.DeviceLocator else None,
                     'status': mem_slot.Status,
-                    'tag': mem_slot.Tag.strip() if mem_slot.Tag else None
-                }
+                    'tag': mem_slot.Tag.strip() if mem_slot.Tag else None}
                 data['ram_slots'].append(slot_info)
         except Exception as e:
             logger.warning(f"[HARDWARE] Error reading RAM slots: {e}")
-            data['ram_slots'].append({'error': f'Unable to read RAM slots: {e}'})
+            data['ram_slots'].append(
+                {'error': f'Unable to read RAM slots: {e}'})
 
     # Dyski - używamy get_logical_volumes() dla pełnych informacji
-    logger.debug("[HARDWARE] Collecting disk information using get_logical_volumes()")
+    logger.debug(
+        "[HARDWARE] Collecting disk information using get_logical_volumes()")
     from utils.disk_helper import get_logical_volumes, get_existing_drives
-    
+
     disks = []
     logical_volumes = get_logical_volumes()
     existing_drives = get_existing_drives()
-    logger.debug(f"[HARDWARE] Found {len(logical_volumes)} logical volumes, {len(existing_drives)} accessible drives")
-    
+    logger.debug(
+        f"[HARDWARE] Found {len(logical_volumes)} logical volumes, {len(existing_drives)} accessible drives")
+
     # Użyj get_logical_volumes() jako głównego źródła danych
     for volume in logical_volumes:
         drive_letter = volume.get('device_id', '')
-        
-        # Pomiń shadowcopy i wirtualne dyski (chyba że użytkownik chce je widzieć)
+
+        # Pomiń shadowcopy i wirtualne dyski (chyba że użytkownik chce je
+        # widzieć)
         if volume.get('is_shadowcopy', False):
-            logger.debug(f"[HARDWARE] Skipping ShadowCopy volume {drive_letter}")
+            logger.debug(
+                f"[HARDWARE] Skipping ShadowCopy volume {drive_letter}")
             continue
-        
+
         if volume.get('is_virtual', False):
             logger.debug(f"[HARDWARE] Skipping virtual volume {drive_letter}")
             continue
-        
+
         # Buduj informacje o dysku
         disk_info = {
             'device': drive_letter,
@@ -177,7 +185,7 @@ def collect():
             'status': volume.get('status'),
             'accessible': volume.get('accessible', False)
         }
-        
+
         # Dodaj informacje o użyciu (z psutil jeśli dostępne)
         if volume.get('psutil_usage'):
             usage = volume['psutil_usage']
@@ -192,16 +200,17 @@ def collect():
             disk_info['free'] = volume.get('free_space', 0)
             if disk_info['total'] and disk_info['total'] > 0:
                 disk_info['used'] = disk_info['total'] - disk_info['free']
-                disk_info['percent'] = (disk_info['used'] / disk_info['total']) * 100
+                disk_info['percent'] = (
+                    disk_info['used'] / disk_info['total']) * 100
             else:
                 disk_info['used'] = None
                 disk_info['percent'] = None
-        
+
         # Jeśli nie jest dostępny, dodaj informację o błędzie
         if not volume.get('accessible', False):
             disk_info['error'] = volume.get('access_error', 'Not accessible')
             disk_info['error_type'] = 'AccessError'
-        
+
         # Dodaj informacje o dysku fizycznym z WMI
         if sys.platform == "win32" and wmi and drive_letter:
             try:
@@ -212,7 +221,9 @@ def collect():
                         if logical_disk.DeviceID == drive_letter:
                             # Znajdź dysk fizyczny
                             for physical_disk in c.Win32_DiskDrive():
-                                if str(physical_disk.Index) == str(partition.DiskIndex):
+                                if str(
+                                        physical_disk.Index) == str(
+                                        partition.DiskIndex):
                                     disk_info['physical_disk'] = {
                                         'model': physical_disk.Model.strip() if physical_disk.Model else None,
                                         'serial': physical_disk.SerialNumber.strip() if physical_disk.SerialNumber else None,
@@ -227,55 +238,72 @@ def collect():
                             break
                     break
             except Exception as e:
-                logger.debug(f"[HARDWARE] Could not get physical disk info for {drive_letter}: {e}")
-        
+                logger.debug(
+                    f"[HARDWARE] Could not get physical disk info for {drive_letter}: {e}")
+
         # Dodaj SMART data i NVMe health
         if sys.platform == "win32" and wmi:
             try:
                 c = wmi.WMI()
                 # Znajdź powiązany dysk fizyczny dla SMART
                 for physical_disk in c.Win32_DiskDrive():
-                    if physical_disk.DeviceID in str(disk_info.get('physical_disk', {}).get('model', '')) or \
-                       (drive_letter and physical_disk.Index == disk_info.get('physical_disk', {}).get('index')):
+                    if physical_disk.DeviceID in str(
+                        disk_info.get(
+                            'physical_disk',
+                            {}).get(
+                            'model',
+                            '')) or (
+                        drive_letter and physical_disk.Index == disk_info.get(
+                            'physical_disk',
+                            {}).get('index')):
                         # SMART attributes (jeśli dostępne)
                         try:
                             smart_data = get_smart_data(physical_disk.DeviceID)
                             if smart_data:
                                 disk_info['smart'] = smart_data
                         except Exception as e:
-                            logger.debug(f"[HARDWARE] Could not get SMART data for {drive_letter}: {e}")
-                        
+                            logger.debug(
+                                f"[HARDWARE] Could not get SMART data for {drive_letter}: {e}")
+
                         # NVMe health (jeśli to NVMe)
-                        if 'NVMe' in (physical_disk.InterfaceType or '') or 'nvme' in (physical_disk.Model or '').lower():
+                        if 'NVMe' in (
+                                physical_disk.InterfaceType or '') or 'nvme' in (
+                                physical_disk.Model or '').lower():
                             try:
-                                nvme_health = get_nvme_health(physical_disk.DeviceID)
+                                nvme_health = get_nvme_health(
+                                    physical_disk.DeviceID)
                                 if nvme_health:
                                     disk_info['nvme_health'] = nvme_health
                             except Exception as e:
-                                logger.debug(f"[HARDWARE] Could not get NVMe health for {drive_letter}: {e}")
-                        
+                                logger.debug(
+                                    f"[HARDWARE] Could not get NVMe health for {drive_letter}: {e}")
+
                         # PCIe link info (jeśli dostępne)
                         try:
                             pcie_info = get_pcie_info(physical_disk.DeviceID)
                             if pcie_info:
                                 disk_info['pcie'] = pcie_info
                         except Exception as e:
-                            logger.debug(f"[HARDWARE] Could not get PCIe info for {drive_letter}: {e}")
-                        
+                            logger.debug(
+                                f"[HARDWARE] Could not get PCIe info for {drive_letter}: {e}")
+
                         break
             except Exception as e:
-                logger.debug(f"[HARDWARE] Could not get extended disk info: {e}")
-        
+                logger.debug(
+                    f"[HARDWARE] Could not get extended disk info: {e}")
+
         disks.append(disk_info)
-        logger.debug(f"[HARDWARE] Added volume {drive_letter}: {disk_info.get('volume_name', 'N/A')} ({disk_info.get('total', 0)} bytes)")
-    
+        logger.debug(
+            f"[HARDWARE] Added volume {drive_letter}: {disk_info.get('volume_name', 'N/A')} ({disk_info.get('total', 0)} bytes)")
+
     # Fallback: jeśli get_logical_volumes() nie zwróciło wyników, użyj psutil
     if not disks:
-        logger.warning("[HARDWARE] get_logical_volumes() returned no volumes, falling back to psutil")
+        logger.warning(
+            "[HARDWARE] get_logical_volumes() returned no volumes, falling back to psutil")
         for part in psutil.disk_partitions():
             device = part.device
             mountpoint = part.mountpoint
-            
+
             # Wyciągnij literę dysku (dla Windows)
             drive_letter = None
             if sys.platform == "win32" and device and len(device) >= 2:
@@ -283,7 +311,7 @@ def collect():
                     drive_letter = device[:2].upper()
                 elif ':' in device:
                     drive_letter = device.split(':')[0] + ':'
-            
+
             # Próbuj zebrać informacje o dysku
             try:
                 usage = psutil.disk_usage(mountpoint)
@@ -313,7 +341,7 @@ def collect():
                                     'quotas_incomplete': logical_disk.QuotasIncomplete,
                                     'quotas_rebuild': logical_disk.QuotasRebuilding
                                 })
-                                
+
                                 # Znajdź powiązany dysk fizyczny
                                 for partition in c.Win32_DiskPartition():
                                     if partition.DeviceID in logical_disk.DeviceID or drive_letter in partition.DeviceID:
@@ -346,13 +374,17 @@ def collect():
                                         break
                                 break
                     except Exception as e:
-                        logger.debug(f"[HARDWARE] Could not get detailed disk info from WMI: {e}")
+                        logger.debug(
+                            f"[HARDWARE] Could not get detailed disk info from WMI: {e}")
                         disk_info['wmi_error'] = str(e)
                 disks.append(disk_info)
-                logger.debug(f"[HARDWARE] Successfully collected info for drive {device}")
+                logger.debug(
+                    f"[HARDWARE] Successfully collected info for drive {device}")
             except PermissionError as e:
-                # Dysk jest wykryty, ale niedostępny - dodaj z informacją o błędzie
-                logger.warning(f"[HARDWARE] PermissionError accessing drive {device}: {e}")
+                # Dysk jest wykryty, ale niedostępny - dodaj z informacją o
+                # błędzie
+                logger.warning(
+                    f"[HARDWARE] PermissionError accessing drive {device}: {e}")
                 disk_info = {
                     'device': device,
                     'mountpoint': mountpoint,
@@ -373,11 +405,13 @@ def collect():
                                     disk_info['description'] = logical_disk.Description if logical_disk.Description else None
                                     break
                     except Exception as wmi_error:
-                        logger.debug(f"[HARDWARE] Could not get WMI info for {device}: {wmi_error}")
+                        logger.debug(
+                            f"[HARDWARE] Could not get WMI info for {device}: {wmi_error}")
                 disks.append(disk_info)
             except OSError as e:
                 # Błąd systemowy (np. dysk nie jest zamontowany)
-                logger.warning(f"[HARDWARE] OSError accessing drive {device}: {e}")
+                logger.warning(
+                    f"[HARDWARE] OSError accessing drive {device}: {e}")
                 disks.append({
                     'device': device,
                     'mountpoint': mountpoint,
@@ -387,7 +421,8 @@ def collect():
                 })
             except Exception as e:
                 # Inne błędy - dodaj z informacją o błędzie
-                logger.warning(f"[HARDWARE] Error accessing drive {device}: {type(e).__name__}: {e}")
+                logger.warning(
+                    f"[HARDWARE] Error accessing drive {device}: {type(e).__name__}: {e}")
                 disks.append({
                     'device': device,
                     'mountpoint': mountpoint,
@@ -395,14 +430,15 @@ def collect():
                     'error': f'Error: {type(e).__name__} - {str(e)}',
                     'error_type': type(e).__name__
                 })
-    
-    logger.info(f"[HARDWARE] Collected info for {len(disks)} drives (including inaccessible ones)")
+
+    logger.info(
+        f"[HARDWARE] Collected info for {len(disks)} drives (including inaccessible ones)")
     data['disks'] = disks
 
     # GPU - szczegółowe informacje
     logger.debug("[HARDWARE] Collecting GPU information")
     data['gpu'] = []
-    
+
     # GPUtil (jeśli dostępny)
     if GPUtil:
         try:
@@ -425,7 +461,7 @@ def collect():
                 data['gpu'].append({'info': 'No GPU detected by GPUtil'})
         except Exception as e:
             logger.debug(f"[HARDWARE] GPUtil detection failed: {e}")
-    
+
     # WMI dla Windows (dodatkowe informacje o GPU)
     if sys.platform == "win32" and wmi:
         try:
@@ -433,7 +469,8 @@ def collect():
             for gpu in c.Win32_VideoController():
                 gpu_info = {
                     'name': gpu.Name.strip() if gpu.Name else None,
-                    'adapter_ram': int(gpu.AdapterRAM) if gpu.AdapterRAM else None,
+                    'adapter_ram': int(
+                        gpu.AdapterRAM) if gpu.AdapterRAM else None,
                     'driver_version': gpu.DriverVersion.strip() if gpu.DriverVersion else None,
                     'driver_date': gpu.DriverDate.strip() if gpu.DriverDate else None,
                     'video_mode_description': gpu.VideoModeDescription.strip() if gpu.VideoModeDescription else None,
@@ -443,15 +480,20 @@ def collect():
                     'pnp_device_id': gpu.PNPDeviceID.strip() if gpu.PNPDeviceID else None,
                     'device_id': gpu.DeviceID.strip() if gpu.DeviceID else None,
                     'adapter_dac_type': gpu.AdapterDACType.strip() if gpu.AdapterDACType else None,
-                    'max_memory_supported': int(gpu.MaxMemorySupported) if gpu.MaxMemorySupported else None,
-                    'max_refresh_rate': int(gpu.MaxRefreshRate) if gpu.MaxRefreshRate else None,
-                    'min_refresh_rate': int(gpu.MinRefreshRate) if gpu.MinRefreshRate else None,
-                    'current_refresh_rate': int(gpu.CurrentRefreshRate) if gpu.CurrentRefreshRate else None,
-                    'current_horizontal_resolution': int(gpu.CurrentHorizontalResolution) if gpu.CurrentHorizontalResolution else None,
-                    'current_vertical_resolution': int(gpu.CurrentVerticalResolution) if gpu.CurrentVerticalResolution else None,
-                    'source': 'WMI'
-                }
-                
+                    'max_memory_supported': int(
+                        gpu.MaxMemorySupported) if gpu.MaxMemorySupported else None,
+                    'max_refresh_rate': int(
+                        gpu.MaxRefreshRate) if gpu.MaxRefreshRate else None,
+                    'min_refresh_rate': int(
+                        gpu.MinRefreshRate) if gpu.MinRefreshRate else None,
+                    'current_refresh_rate': int(
+                        gpu.CurrentRefreshRate) if gpu.CurrentRefreshRate else None,
+                    'current_horizontal_resolution': int(
+                        gpu.CurrentHorizontalResolution) if gpu.CurrentHorizontalResolution else None,
+                    'current_vertical_resolution': int(
+                        gpu.CurrentVerticalResolution) if gpu.CurrentVerticalResolution else None,
+                    'source': 'WMI'}
+
                 # Sprawdź czy to już istnieje w liście (z GPUtil)
                 existing = False
                 for existing_gpu in data['gpu']:
@@ -459,12 +501,12 @@ def collect():
                         existing_gpu.update(gpu_info)
                         existing = True
                         break
-                
+
                 if not existing:
                     data['gpu'].append(gpu_info)
         except Exception as e:
             logger.debug(f"[HARDWARE] WMI GPU detection failed: {e}")
-    
+
     if not data['gpu']:
         data['gpu'].append({'info': 'No GPU detected'})
 
@@ -474,7 +516,7 @@ def collect():
         netcards = []
         net_stats = psutil.net_if_stats()
         net_io = psutil.net_io_counters(pernic=True)
-        
+
         for iface, addrs in psutil.net_if_addrs().items():
             interface_info = {
                 'interface': iface,
@@ -483,25 +525,24 @@ def collect():
                 'ipv4': [],
                 'ipv6': []
             }
-            
+
             # Adresy sieciowe
             for addr in addrs:
                 addr_info = {
-                    'family': str(addr.family),
-                    'address': addr.address,
-                    'netmask': addr.netmask if hasattr(addr, 'netmask') else None,
-                    'broadcast': addr.broadcast if hasattr(addr, 'broadcast') else None,
-                    'ptp': addr.ptp if hasattr(addr, 'ptp') else None
-                }
+                    'family': str(
+                        addr.family), 'address': addr.address, 'netmask': addr.netmask if hasattr(
+                        addr, 'netmask') else None, 'broadcast': addr.broadcast if hasattr(
+                        addr, 'broadcast') else None, 'ptp': addr.ptp if hasattr(
+                        addr, 'ptp') else None}
                 interface_info['addresses'].append(addr_info)
-                
+
                 if addr.family == psutil.AF_LINK:
                     interface_info['mac'] = addr.address
                 elif addr.family == 2:  # IPv4
                     interface_info['ipv4'].append(addr.address)
                 elif addr.family == 23:  # IPv6
                     interface_info['ipv6'].append(addr.address)
-            
+
             # Statystyki interfejsu
             if iface in net_stats:
                 stats = net_stats[iface]
@@ -509,9 +550,11 @@ def collect():
                     'isup': stats.isup,
                     'speed': stats.speed,
                     'mtu': stats.mtu,
-                    'duplex': str(stats.duplex) if hasattr(stats, 'duplex') else None
-                }
-            
+                    'duplex': str(
+                        stats.duplex) if hasattr(
+                        stats,
+                        'duplex') else None}
+
             # I/O statystyki
             if iface in net_io:
                 io = net_io[iface]
@@ -525,9 +568,9 @@ def collect():
                     'dropin': io.dropin,
                     'dropout': io.dropout
                 }
-            
+
             netcards.append(interface_info)
-        
+
         # Dodatkowe informacje z WMI (Windows)
         if sys.platform == "win32" and wmi:
             try:
@@ -551,15 +594,22 @@ def collect():
                                 })
                                 break
             except Exception as e:
-                logger.debug(f"[HARDWARE] Could not get detailed network info from WMI: {e}")
-        
+                logger.debug(
+                    f"[HARDWARE] Could not get detailed network info from WMI: {e}")
+
         data['network'] = netcards
         data['network_summary'] = {
-            'total_interfaces': len(netcards),
-            'active_interfaces': len([n for n in netcards if n.get('stats', {}).get('isup', False)]),
-            'total_bytes_sent': sum(n.get('io', {}).get('bytes_sent', 0) for n in netcards),
-            'total_bytes_recv': sum(n.get('io', {}).get('bytes_recv', 0) for n in netcards)
-        }
+            'total_interfaces': len(netcards), 'active_interfaces': len(
+                [
+                    n for n in netcards if n.get(
+                        'stats', {}).get(
+                        'isup', False)]), 'total_bytes_sent': sum(
+                n.get(
+                    'io', {}).get(
+                    'bytes_sent', 0) for n in netcards), 'total_bytes_recv': sum(
+                n.get(
+                    'io', {}).get(
+                    'bytes_recv', 0) for n in netcards)}
     except Exception as e:
         logger.warning(f"[HARDWARE] Error collecting network info: {e}")
         data['network'] = {'error': str(e)}
@@ -584,7 +634,7 @@ def collect():
                     'replaceable': board.Replaceable,
                     'requires_daughter_board': board.RequiresDaughterBoard
                 })
-            
+
             # BIOS informacje
             data['bios'] = []
             try:
@@ -601,7 +651,7 @@ def collect():
                     })
             except Exception as e:
                 logger.debug(f"[HARDWARE] Could not get BIOS info: {e}")
-            
+
             # Chipset informacje
             data['chipset'] = []
             try:
@@ -614,12 +664,13 @@ def collect():
                     })
             except Exception as e:
                 logger.debug(f"[HARDWARE] Could not get chipset info: {e}")
-            
+
             if not data['motherboard']:
                 data['motherboard'].append({'info': 'Motherboard not found'})
         except Exception as e:
             logger.warning(f"[HARDWARE] Error reading motherboard info: {e}")
-            data['motherboard'].append({'error': f'Unable to read motherboard info: {e}'})
+            data['motherboard'].append(
+                {'error': f'Unable to read motherboard info: {e}'})
 
     # Sensors - temperatury i inne czujniki
     logger.debug("[HARDWARE] Collecting sensor information")
@@ -632,25 +683,25 @@ def collect():
                 temp_celsius = (sensor.CurrentTemperature / 10.0 - 273.15)
                 data['sensors']['cpu_temp'] = round(temp_celsius, 2)
                 data['sensors']['cpu_temp_raw'] = sensor.CurrentTemperature
-                data['sensors']['thermal_zone'] = sensor.InstanceName.strip() if sensor.InstanceName else None
+                data['sensors']['thermal_zone'] = sensor.InstanceName.strip(
+                ) if sensor.InstanceName else None
         except Exception as e:
             logger.debug(f"[HARDWARE] Could not get CPU temperature: {e}")
             data['sensors']['cpu_temp'] = f'Unavailable: {e}'
-        
+
         # Fan speeds (jeśli dostępne)
         try:
             c = wmi.WMI(namespace="root\\wmi")
             fans = []
             for fan in c.MSAcpi_Fan():
-                fans.append({
-                    'active': fan.Active,
-                    'desired_speed': fan.DesiredSpeed if hasattr(fan, 'DesiredSpeed') else None
-                })
+                fans.append({'active': fan.Active,
+                             'desired_speed': fan.DesiredSpeed if hasattr(fan,
+                                                                          'DesiredSpeed') else None})
             if fans:
                 data['sensors']['fans'] = fans
         except Exception as e:
             logger.debug(f"[HARDWARE] Could not get fan info: {e}")
-    
+
     # psutil sensors (jeśli dostępne)
     try:
         if hasattr(psutil, "sensors_temperatures"):
@@ -672,9 +723,10 @@ def collect():
             data['battery'] = {
                 'percent': battery.percent,
                 'plugged_in': battery.power_plugged,
-                'seconds_left': battery.secsleft if hasattr(battery, 'secsleft') else None
-            }
-            
+                'seconds_left': battery.secsleft if hasattr(
+                    battery,
+                    'secsleft') else None}
+
             # Dodatkowe informacje z WMI (Windows)
             if sys.platform == "win32" and wmi:
                 try:
@@ -699,13 +751,14 @@ def collect():
                         })
                         break
                 except Exception as e:
-                    logger.debug(f"[HARDWARE] Could not get detailed battery info from WMI: {e}")
+                    logger.debug(
+                        f"[HARDWARE] Could not get detailed battery info from WMI: {e}")
         else:
             data['battery'] = {'info': 'No battery detected'}
     except Exception as e:
         logger.warning(f"[HARDWARE] Error collecting battery info: {e}")
         data['battery'] = {'error': f'Battery info unavailable: {e}'}
-    
+
     # USB Devices
     logger.debug("[HARDWARE] Collecting USB devices information")
     data['usb_devices'] = []
@@ -724,11 +777,11 @@ def collect():
                         'status': device.Status,
                         'pnp_class': device.PNPClass.strip() if device.PNPClass else None
                     })
-                except:
+                except BaseException:
                     pass
         except Exception as e:
             logger.debug(f"[HARDWARE] Could not get USB devices info: {e}")
-    
+
     # PCI Devices
     logger.debug("[HARDWARE] Collecting PCI devices information")
     data['pci_devices'] = []
@@ -748,7 +801,7 @@ def collect():
                     })
         except Exception as e:
             logger.debug(f"[HARDWARE] Could not get PCI devices info: {e}")
-    
+
     # System Chassis
     logger.debug("[HARDWARE] Collecting system chassis information")
     data['chassis'] = []
@@ -773,7 +826,7 @@ def collect():
                 })
         except Exception as e:
             logger.debug(f"[HARDWARE] Could not get chassis info: {e}")
-    
+
     # Memory SPD table
     logger.debug("[HARDWARE] Collecting memory SPD information")
     data['memory_spd'] = []
@@ -786,7 +839,8 @@ def collect():
                     'part_number': mem.PartNumber.strip() if mem.PartNumber else None,
                     'serial_number': mem.SerialNumber.strip() if mem.SerialNumber else None,
                     'speed': mem.Speed if mem.Speed else None,
-                    'capacity': int(mem.Capacity) if mem.Capacity else None,
+                    'capacity': int(
+                        mem.Capacity) if mem.Capacity else None,
                     'form_factor': mem.FormFactor if mem.FormFactor else None,
                     'memory_type': mem.MemoryType if mem.MemoryType else None,
                     'configured_clock_speed': mem.ConfiguredClockSpeed if mem.ConfiguredClockSpeed else None,
@@ -795,12 +849,11 @@ def collect():
                     'min_voltage': mem.MinVoltage if mem.MinVoltage else None,
                     'bank_label': mem.BankLabel.strip() if mem.BankLabel else None,
                     'device_locator': mem.DeviceLocator.strip() if mem.DeviceLocator else None,
-                    'tag': mem.Tag.strip() if mem.Tag else None
-                }
+                    'tag': mem.Tag.strip() if mem.Tag else None}
                 data['memory_spd'].append(spd_data)
         except Exception as e:
             logger.debug(f"[HARDWARE] Could not get memory SPD info: {e}")
-    
+
     # PSU readings (jeśli dostępne)
     logger.debug("[HARDWARE] Collecting PSU information")
     data['psu'] = {}
@@ -811,21 +864,25 @@ def collect():
             for thermal in c.MSAcpi_ThermalZoneTemperature():
                 if 'PSU' in str(thermal) or 'Power' in str(thermal):
                     data['psu']['thermal_zone'] = {
-                        'current_temperature': thermal.CurrentTemperature if hasattr(thermal, 'CurrentTemperature') else None,
-                        'critical_trip_point': thermal.CriticalTripPoint if hasattr(thermal, 'CriticalTripPoint') else None
-                    }
+                        'current_temperature': thermal.CurrentTemperature if hasattr(
+                            thermal,
+                            'CurrentTemperature') else None,
+                        'critical_trip_point': thermal.CriticalTripPoint if hasattr(
+                            thermal,
+                            'CriticalTripPoint') else None}
         except Exception as e:
             logger.debug(f"[HARDWARE] Could not get PSU info: {e}")
-    
+
     logger.info("[HARDWARE] Hardware collection completed")
     return data
+
 
 def get_smart_data(device_id):
     """Pobiera SMART data dla dysku (CrystalDiskInfo-like)."""
     from utils.subprocess_helper import run_powershell_hidden
     from utils.logger import get_logger
     import json
-    
+
     logger = get_logger()
     try:
         # Użyj PowerShell do pobrania SMART attributes
@@ -850,12 +907,13 @@ def get_smart_data(device_id):
         logger.debug(f"[HARDWARE] Error getting SMART data: {e}")
     return None
 
+
 def get_nvme_health(device_id):
     """Pobiera NVMe health status."""
     from utils.subprocess_helper import run_powershell_hidden
     from utils.logger import get_logger
     import json
-    
+
     logger = get_logger()
     try:
         # Użyj wmic lub PowerShell do NVMe health
@@ -879,12 +937,13 @@ def get_nvme_health(device_id):
         logger.debug(f"[HARDWARE] Error getting NVMe health: {e}")
     return None
 
+
 def get_pcie_info(device_id):
     """Pobiera informacje o PCIe link width i speed."""
     from utils.subprocess_helper import run_powershell_hidden
     from utils.logger import get_logger
     import json
-    
+
     logger = get_logger()
     try:
         # Użyj PowerShell do pobrania PCIe info
@@ -908,4 +967,3 @@ def get_pcie_info(device_id):
         logger = get_logger()
         logger.debug(f"[HARDWARE] Error getting PCIe info: {e}")
     return None
-

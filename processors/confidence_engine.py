@@ -61,81 +61,83 @@ PROBLEM_TO_CAUSES = {
     ]
 }
 
+
 def calculate_confidence(processed_data):
     """
     Oblicza confidence dla każdej przyczyny problemów.
-    
+
     Formuła:
     Confidence = (liczba powiązanych eventów / liczba wszystkich krytycznych eventów) × 100%
     Max: 100%
-    
+
     Args:
         processed_data (dict): Przetworzone dane z wszystkich procesorów
-    
+
     Returns:
         dict: Analiza przyczyn z confidence
     """
     # Zbierz wszystkie krytyczne eventy
     all_critical = []
-    
+
     for processor_name, processor_data in processed_data.items():
         if isinstance(processor_data, dict):
             critical = processor_data.get("critical_issues", [])
             if critical:
                 all_critical.extend(critical)
-            
+
             critical_events = processor_data.get("critical_events", [])
             if critical_events:
                 all_critical.extend(critical_events)
-            
+
             # Issues z severity CRITICAL
             issues = processor_data.get("issues", [])
             for issue in issues:
                 if issue.get("severity", "").upper() == "CRITICAL":
                     all_critical.append(issue)
-    
+
     total_critical_events = len(all_critical)
-    
+
     if total_critical_events == 0:
         return {
             "top_causes": [],
             "all_causes": {},
             "total_critical_events": 0
         }
-    
+
     # Mapuj problemy na przyczyny
     cause_to_events = defaultdict(list)
-    
+
     for critical_event in all_critical:
         issue_type = critical_event.get("type", "")
-        
+
         # Znajdź przyczyny dla tego typu problemu
         if issue_type in PROBLEM_TO_CAUSES:
             causes = PROBLEM_TO_CAUSES[issue_type]
             for cause in causes:
                 cause_to_events[cause].append(critical_event)
-    
+
     # Oblicz confidence dla każdej przyczyny
     cause_confidence = {}
     for cause, related_events in cause_to_events.items():
-        # Confidence = (liczba powiązanych eventów / liczba wszystkich krytycznych eventów) × 100%
+        # Confidence = (liczba powiązanych eventów / liczba wszystkich
+        # krytycznych eventów) × 100%
         confidence = (len(related_events) / total_critical_events) * 100
         # Limit do 100%
         confidence = min(100.0, confidence)
-        
+
         cause_confidence[cause] = {
             "confidence": round(confidence, 2),
             "related_events_count": len(related_events),
             "related_events": related_events[:5]  # Max 5 przykładów
         }
-    
+
     # Sortuj według confidence
     sorted_causes = sorted(
         cause_confidence.items(),
         key=lambda x: x[1]["confidence"],
         reverse=True
     )
-    
+
     # Top przyczyny
     top_causes = [
         {
@@ -145,10 +147,10 @@ def calculate_confidence(processed_data):
         }
         for cause, data in sorted_causes[:10]  # Top 10
     ]
-    
+
     return {
         "top_causes": top_causes,
-        "all_causes": {cause: data["confidence"] for cause, data in cause_confidence.items()},
-        "total_critical_events": total_critical_events
-    }
-
+        "all_causes": {
+            cause: data["confidence"] for cause,
+            data in cause_confidence.items()},
+        "total_critical_events": total_critical_events}
