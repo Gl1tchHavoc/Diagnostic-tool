@@ -40,9 +40,16 @@ class TestCollectors(unittest.TestCase):
     
     def test_hardware_collector(self):
         """Test collectora hardware."""
-        # W CI mockuj _collect_memory_spd - WMI może nie być dostępne
+        # W CI mockuj wszystkie funkcje używające WMI - mogą powodować access violation
         if IS_CI:
-            with patch('collectors.hardware._collect_memory_spd') as mock_spd:
+            with patch('collectors.hardware._collect_memory_spd') as mock_spd, \
+                 patch('collectors.hardware._collect_pci') as mock_pci, \
+                 patch('collectors.hardware._collect_ram_slots') as mock_ram_slots, \
+                 patch('collectors.hardware._collect_motherboard') as mock_mb, \
+                 patch('collectors.hardware._collect_chassis') as mock_chassis, \
+                 patch('collectors.hardware._collect_usb') as mock_usb, \
+                 patch('collectors.hardware._collect_gpu') as mock_gpu:
+                
                 mock_spd.return_value = [
                     {
                         'manufacturer': 'Test Manufacturer',
@@ -51,6 +58,24 @@ class TestCollectors(unittest.TestCase):
                         'speed': 3200
                     }
                 ]
+                mock_pci.return_value = [
+                    {
+                        'name': 'Test PCI Device',
+                        'device_id': 'PCI\\VEN_TEST&DEV_1234',
+                        'manufacturer': 'Test Manufacturer',
+                        'pnp_class': 'PCI'
+                    }
+                ]
+                mock_ram_slots.return_value = []
+                mock_mb.return_value = {
+                    'boards': [],
+                    'bios': [],
+                    'chipset': []
+                }
+                mock_chassis.return_value = []
+                mock_usb.return_value = []
+                mock_gpu.return_value = []
+                
                 result = hardware.collect()
         else:
             # Lokalnie - użyj prawdziwej funkcji
@@ -66,6 +91,9 @@ class TestCollectors(unittest.TestCase):
         # Sprawdź czy memory_spd jest w wynikach
         if "memory_spd" in result:
             self.assertIsInstance(result["memory_spd"], list)
+        # Sprawdź czy pci_devices jest w wynikach
+        if "pci_devices" in result:
+            self.assertIsInstance(result["pci_devices"], list)
     
     def test_drivers_collector(self):
         """Test collectora drivers."""
@@ -152,17 +180,24 @@ class TestCollectorMaster(unittest.TestCase):
     
     def test_collect_all_format(self):
         """Test czy collect_all zwraca poprawny format MVP."""
-        # W CI mockuj _collect_memory_spd - WMI może nie być dostępne
+        # W CI mockuj wszystkie funkcje hardware używające WMI
         if IS_CI:
-            with patch('collectors.hardware._collect_memory_spd') as mock_spd:
-                mock_spd.return_value = [
-                    {
-                        'manufacturer': 'Test Manufacturer',
-                        'part_number': 'TEST-1234',
-                        'capacity': 8589934592,
-                        'speed': 3200
-                    }
-                ]
+            with patch('collectors.hardware._collect_memory_spd') as mock_spd, \
+                 patch('collectors.hardware._collect_pci') as mock_pci, \
+                 patch('collectors.hardware._collect_ram_slots') as mock_ram_slots, \
+                 patch('collectors.hardware._collect_motherboard') as mock_mb, \
+                 patch('collectors.hardware._collect_chassis') as mock_chassis, \
+                 patch('collectors.hardware._collect_usb') as mock_usb, \
+                 patch('collectors.hardware._collect_gpu') as mock_gpu:
+                
+                mock_spd.return_value = []
+                mock_pci.return_value = []
+                mock_ram_slots.return_value = []
+                mock_mb.return_value = {'boards': [], 'bios': [], 'chipset': []}
+                mock_chassis.return_value = []
+                mock_usb.return_value = []
+                mock_gpu.return_value = []
+                
                 result = collect_all(save_raw=False, output_dir="output/raw")
         else:
             # Lokalnie - użyj prawdziwej funkcji
@@ -193,17 +228,24 @@ class TestCollectorMaster(unittest.TestCase):
     
     def test_collect_all_async_wrapper(self):
         """Test asynchronicznej wersji collect_all."""
-        # W CI mockuj _collect_memory_spd - WMI może nie być dostępne
+        # W CI mockuj wszystkie funkcje hardware używające WMI
         if IS_CI:
-            with patch('collectors.hardware._collect_memory_spd') as mock_spd:
-                mock_spd.return_value = [
-                    {
-                        'manufacturer': 'Test Manufacturer',
-                        'part_number': 'TEST-1234',
-                        'capacity': 8589934592,
-                        'speed': 3200
-                    }
-                ]
+            with patch('collectors.hardware._collect_memory_spd') as mock_spd, \
+                 patch('collectors.hardware._collect_pci') as mock_pci, \
+                 patch('collectors.hardware._collect_ram_slots') as mock_ram_slots, \
+                 patch('collectors.hardware._collect_motherboard') as mock_mb, \
+                 patch('collectors.hardware._collect_chassis') as mock_chassis, \
+                 patch('collectors.hardware._collect_usb') as mock_usb, \
+                 patch('collectors.hardware._collect_gpu') as mock_gpu:
+                
+                mock_spd.return_value = []
+                mock_pci.return_value = []
+                mock_ram_slots.return_value = []
+                mock_mb.return_value = {'boards': [], 'bios': [], 'chipset': []}
+                mock_chassis.return_value = []
+                mock_usb.return_value = []
+                mock_gpu.return_value = []
+                
                 result = collect_all_async_wrapper(
                     save_raw=False, output_dir="output/raw"
                 )

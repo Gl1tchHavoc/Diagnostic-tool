@@ -871,21 +871,42 @@ def _collect_pci():
         try:
             c = wmi.WMI()
             for pci in c.Win32_PnPEntity():
-                if 'PCI' in (pci.PNPClass or ''):
-                    pci_devices.append({
-                        'name': pci.Name.strip() if pci.Name else None,
-                        'device_id': pci.DeviceID.strip()
-                        if pci.DeviceID else None,
-                        'manufacturer': pci.Manufacturer.strip()
-                        if pci.Manufacturer else None,
-                        'description': pci.Description.strip()
-                        if pci.Description else None,
-                        'status': pci.Status,
-                        'pnp_class': pci.PNPClass.strip()
-                        if pci.PNPClass else None,
-                        'service': pci.Service.strip()
-                        if pci.Service else None
-                    })
+                try:
+                    # Bezpieczny dostęp do właściwości WMI - mogą powodować access violation
+                    pnp_class = getattr(pci, 'PNPClass', None) or ''
+                    if 'PCI' in str(pnp_class):
+                        pci_devices.append({
+                            'name': (
+                                pci.Name.strip()
+                                if getattr(pci, 'Name', None) else None
+                            ),
+                            'device_id': (
+                                pci.DeviceID.strip()
+                                if getattr(pci, 'DeviceID', None) else None
+                            ),
+                            'manufacturer': (
+                                pci.Manufacturer.strip()
+                                if getattr(pci, 'Manufacturer', None) else None
+                            ),
+                            'description': (
+                                pci.Description.strip()
+                                if getattr(pci, 'Description', None) else None
+                            ),
+                            'status': getattr(pci, 'Status', None),
+                            'pnp_class': (
+                                str(pnp_class).strip() if pnp_class else None
+                            ),
+                            'service': (
+                                pci.Service.strip()
+                                if getattr(pci, 'Service', None) else None
+                            )
+                        })
+                except Exception as device_error:
+                    # Pomiń problematyczne urządzenie i kontynuuj
+                    logger.debug(
+                        f"[HARDWARE] Error reading PCI device: {device_error}"
+                    )
+                    continue
         except Exception as e:
             logger.debug(f"[HARDWARE] Could not get PCI devices info: {e}")
     return pci_devices
