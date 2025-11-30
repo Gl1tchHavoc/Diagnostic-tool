@@ -1,0 +1,77 @@
+@startuml
+
+title Diagnostic-tool MVP - Pipeline Flow
+
+skinparam rectangle {
+  BackgroundColor<<Collector>> LightBlue
+  BackgroundColor<<Processor>> LightGreen
+  BackgroundColor<<GUI>> LightYellow
+  BackgroundColor<<Orchestrator>> LightCoral
+  BorderColor Black
+}
+
+actor User
+
+' GUI Layer
+rectangle "GUI MVP\n- Display collector status\n- View detailed data\n- Export JSON/HTML" <<GUI>> {
+}
+
+' Orchestrator Layer
+rectangle "Collector Master\n- Parallel execution\n- Standardize format\n- Error handling" <<Orchestrator>> {
+}
+
+' Processors Layer
+rectangle "Processors MVP\n- Validate data\n- Parse JSON\n- Prepare for reporting" <<Processor>> {
+}
+
+' Collectors Layer
+rectangle "Collector: Hardware\nCPU, RAM, GPU, Temp" <<Collector>> {
+}
+
+rectangle "Collector: System\nWindows version, uptime, patches" <<Collector>> {
+}
+
+rectangle "Collector: Storage\nDisks, partitions, SMART" <<Collector>> {
+}
+
+rectangle "Collector: Network\nAdapters, IP, connections" <<Collector>> {
+}
+
+rectangle "Collector: Processes & Services\nRunning processes, autostart, services status" <<Collector>> {
+}
+
+rectangle "Collector: Event Logs\nSystem & Application" <<Collector>> {
+}
+
+rectangle "Collector: Drivers & Registry TxR" <<Collector>> {
+}
+
+' Flow Connections
+User --> GUI MVP : Initiates scan / views results
+
+GUI MVP --> "Collector Master" : Request full scan / single collector
+
+"Collector Master" --> "Collector: Hardware" : Request data (parallel)
+"Collector Master" --> "Collector: System" : Request data (parallel)
+"Collector Master" --> "Collector: Storage" : Request data (parallel)
+"Collector Master" --> "Collector: Network" : Request data (parallel)
+"Collector Master" --> "Collector: Processes & Services" : Request data (parallel)
+"Collector Master" --> "Collector: Event Logs" : Request data (parallel)
+"Collector Master" --> "Collector: Drivers & Registry TxR" : Request data (parallel)
+
+"Collector: Hardware" --> "Collector Master" : Standardized JSON / status
+"Collector: System" --> "Collector Master" : Standardized JSON / status
+"Collector: Storage" --> "Collector Master" : Standardized JSON / status
+"Collector: Network" --> "Collector Master" : Standardized JSON / status
+"Collector: Processes & Services" --> "Collector Master" : Standardized JSON / status
+"Collector: Event Logs" --> "Collector Master" : Standardized JSON / status
+"Collector: Drivers & Registry TxR" --> "Collector Master" : Standardized JSON / status
+
+"Collector Master" --> GUI MVP : Aggregated data + summary
+
+GUI MVP --> Processors MVP : Request processing (optional)
+
+Processors MVP --> GUI MVP : Processed data + validation results
+
+@enduml
+

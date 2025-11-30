@@ -79,29 +79,35 @@ Zebrać i zaprezentować dane diagnostyczne Windows w sposób spójny, czytelny 
 
 ## Plan implementacji
 
-### Faza 1: Standaryzacja Collectorów
-1. Zaktualizować `collector_master.py` aby zwracał spójny format
-2. Zaktualizować każdy collector aby zwracał standardowy format z statusem
-3. Dodać walidację formatu zwracanego
+### ✅ Faza 1: Standaryzacja Collectorów (ZAKOŃCZONA)
+1. ✅ Zaktualizować `collector_master.py` aby zwracał spójny format
+2. ✅ Zaktualizować każdy collector aby zwracał standardowy format z statusem
+3. ✅ Dodać walidację formatu zwracanego
+4. ✅ Dodać CollectorRegistry dla modularności
+5. ✅ Dodać równoległe wykonanie collectorów
 
-### Faza 2: Uproszczenie Procesorów
-1. Stworzyć bazowy processor z minimalną funkcjonalnością
-2. Zrefaktoryzować istniejące procesory do minimalnej wersji
-3. Usunąć złożoną logikę analityczną (przenieść do osobnych modułów)
+### ✅ Faza 2: Uproszczenie Procesorów (ZAKOŃCZONA)
+1. ✅ Stworzyć bazowy processor z minimalną funkcjonalnością
+2. ✅ Zrefaktoryzować `analyzer.py` do obsługi nowego formatu
+3. ✅ Dodać ProcessorRegistry dla modularności
 
-### Faza 3: Refaktoryzacja GUI
-1. Dodać panel z listą collectorów i statusami
-2. Dodać widok surowych danych (TreeView)
-3. Dodać eksport raportu (JSON/HTML)
+### ✅ Faza 3: Refaktoryzacja GUI (ZAKOŃCZONA)
+1. ✅ Dodać panel z listą collectorów i statusami (TreeView)
+2. ✅ Dodać widok surowych danych (ScrolledText)
+3. ✅ Dodać eksport raportu (JSON/HTML)
+4. ✅ Dodać możliwość uruchamiania pojedynczych collectorów
+5. ✅ Dodać wyświetlanie danych pojedynczych collectorów
+6. ✅ Dodać cache danych collectorów
 
-### Faza 4: Uproszczenie CLI
-1. Zrefaktoryzować `main.py` aby wyświetlał status collectorów
-2. Dodać czytelny format tabeli dla outputu
+### ⏳ Faza 4: Uproszczenie CLI (W TRAKCIE)
+1. ⏳ Zrefaktoryzować `main.py` aby wyświetlał status collectorów
+2. ⏳ Dodać czytelny format tabeli dla outputu
 
-### Faza 5: Dokumentacja
-1. Zaktualizować README.md
-2. Dodać przykłady użycia
-3. Dodać dokumentację API
+### ✅ Faza 5: Dokumentacja (ZAKOŃCZONA)
+1. ✅ Zaktualizować README.md
+2. ✅ Dodać plan refaktoryzacji (MVP_REFACTORING_PLAN.md)
+3. ✅ Dodać dokumentację architektury (docs/MVP_ARCHITECTURE.md)
+4. ✅ Dodać diagram flow (docs/MVP_PIPELINE_FLOW.puml)
 
 ## Struktura danych MVP
 

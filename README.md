@@ -89,6 +89,28 @@ python main.py
 python cli.py --full
 ```
 
+## Architektura i Flow
+
+### Diagram Pipeline Flow
+
+Aplikacja używa modularnej architektury z następującym flow:
+
+```
+User → GUI MVP → Collector Master → Collectors (parallel) → Collector Master → GUI MVP
+                                                              ↓
+                                                         Processors MVP → GUI MVP
+```
+
+**Wizualizacja:**
+- 📊 [Mermaid Diagram](docs/MVP_PIPELINE_FLOW.md) - Renderowany automatycznie w GitHub
+- 📐 [PlantUML Diagram](docs/MVP_PIPELINE_FLOW.puml) - Dla edycji i zaawansowanych narzędzi
+- 📖 [Architecture Documentation](docs/MVP_ARCHITECTURE.md) - Pełna dokumentacja architektury
+
+**Jak wyświetlić diagram PlantUML:**
+1. Online: http://www.plantuml.com/plantuml/uml/ (wklej zawartość pliku `.puml`)
+2. VS Code: Zainstaluj rozszerzenie "PlantUML" i naciśnij `Alt+D`
+3. IntelliJ/PyCharm: Zainstaluj wtyczkę "PlantUML integration"
+
 ## Struktura projektu
 
 ```
@@ -109,6 +131,7 @@ python cli.py --full
 │   └── collector_master.py  # Orchestrator collectorów
 ├── processors/         # Moduły przetwarzające dane (MVP - minimalna wersja)
 │   ├── analyzer.py    # Główny analyzer
+│   ├── base_processor.py  # Bazowy processor MVP
 │   ├── hardware_processor.py
 │   ├── driver_processor.py
 │   ├── system_logs_processor.py
@@ -116,10 +139,20 @@ python cli.py --full
 │   ├── storage_health_processor.py
 │   ├── system_info_processor.py
 │   └── ... (inne procesory)
+├── core/              # Moduły core (MVP)
+│   ├── config_loader.py  # Loader konfiguracji
+│   ├── collector_registry.py  # Rejestr collectorów
+│   └── processor_registry.py  # Rejestr procesorów
+├── docs/              # Dokumentacja
+│   ├── MVP_PIPELINE_FLOW.md  # Diagram flow (Mermaid)
+│   ├── MVP_PIPELINE_FLOW.puml  # Diagram flow (PlantUML)
+│   └── MVP_ARCHITECTURE.md  # Dokumentacja architektury
 ├── output/             # Wygenerowane raporty
 │   ├── raw/           # Surowe dane z collectorów
 │   └── processed/     # Przetworzone raporty
-├── gui.py             # Interfejs graficzny (MVP)
+├── config.json        # Plik konfiguracyjny
+├── gui_mvp.py        # Interfejs graficzny MVP
+├── gui.py             # Interfejs graficzny (stary)
 ├── main.py            # CLI entry point (MVP)
 └── cli.py             # CLI orchestrator
 ```
