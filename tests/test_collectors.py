@@ -5,7 +5,7 @@ import os
 import unittest
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 # Dodaj główny katalog projektu do ścieżki
 project_root = Path(__file__).parent.parent
@@ -188,16 +188,17 @@ class TestCollectors(unittest.TestCase):
         # W CI mockuj WMI - może powodować access violation
         if IS_CI:
             with patch('collectors.storage_health.wmi') as mock_wmi_module:
-                # Stwórz mock obiektu WMI
-                mock_wmi_instance = type('MockWMI', (), {})()
-                mock_disk = type('MockDisk', (), {
-                    'Model': 'Test Disk',
-                    'SerialNumber': 'TEST123456',
-                    'Status': 'OK',
-                    'Size': 1000000000000,
-                    'InterfaceType': 'SATA',
-                    'MediaType': 'Fixed hard disk media'
-                })()
+                # Stwórz mock obiektu WMI używając MagicMock
+                mock_wmi_instance = MagicMock()
+                mock_disk = MagicMock()
+                mock_disk.Model = 'Test Disk'
+                mock_disk.SerialNumber = 'TEST123456'
+                mock_disk.Status = 'OK'
+                mock_disk.Size = 1000000000000
+                mock_disk.InterfaceType = 'SATA'
+                mock_disk.MediaType = 'Fixed hard disk media'
+                
+                # Właściwe ustawienie dla dynamicznego atrybutu
                 mock_wmi_instance.Win32_DiskDrive.return_value = [mock_disk]
                 mock_wmi_module.WMI.return_value = mock_wmi_instance
                 
@@ -218,18 +219,19 @@ class TestCollectors(unittest.TestCase):
         # W CI mockuj WMI - może powodować access violation
         if IS_CI:
             with patch('collectors.services.wmi') as mock_wmi_module:
-                # Stwórz mock obiektu WMI
-                mock_wmi_instance = type('MockWMI', (), {})()
-                mock_service = type('MockService', (), {
-                    'Name': 'TestService',
-                    'DisplayName': 'Test Service',
-                    'State': 'Running',
-                    'StartMode': 'Auto',
-                    'Status': 'OK',
-                    'ProcessId': 1234,
-                    'PathName': 'C:\\test\\service.exe',
-                    'Description': 'Test service description'
-                })()
+                # Stwórz mock obiektu WMI używając MagicMock
+                mock_wmi_instance = MagicMock()
+                mock_service = MagicMock()
+                mock_service.Name = 'TestService'
+                mock_service.DisplayName = 'Test Service'
+                mock_service.State = 'Running'
+                mock_service.StartMode = 'Auto'
+                mock_service.Status = 'OK'
+                mock_service.ProcessId = 1234
+                mock_service.PathName = r'C:\test\service.exe'
+                mock_service.Description = 'Test service description'
+                
+                # Właściwe ustawienie dla dynamicznego atrybutu
                 mock_wmi_instance.Win32_Service.return_value = [mock_service]
                 mock_wmi_module.WMI.return_value = mock_wmi_instance
                 
