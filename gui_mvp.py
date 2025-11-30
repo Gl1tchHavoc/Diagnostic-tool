@@ -332,7 +332,7 @@ class DiagnosticsGUIMVP:
             self.raw_data_text.insert(1.0, f"Error displaying data: {e}")
     
     def export_json(self):
-        """Eksportuje raport do JSON."""
+        """Eksportuje raport do JSON używając wspólnego modułu eksportu."""
         if not self.last_collected_data:
             messagebox.showwarning("No Data", "No data to export. Please run a scan first.")
             return
@@ -345,22 +345,23 @@ class DiagnosticsGUIMVP:
         
         if filename:
             try:
+                from utils.export_utils import export_json
+                # Przygotuj dane do eksportu
                 export_data = {
-                    "timestamp": datetime.now().isoformat(),
                     "collected_data": self.last_collected_data,
                     "processed_data": self.last_processed_data
                 }
-                with open(filename, "w", encoding="utf-8") as f:
-                    json.dump(export_data, f, indent=2, ensure_ascii=False, default=str)
+                # Eksportuj do wybranego pliku
+                filepath = Path(filename)
+                export_json(export_data, filename=filepath.name, output_dir=str(filepath.parent))
                 messagebox.showinfo("Success", f"Report exported to:\n{filename}")
-                logger.info(f"[EXPORT] JSON report exported to {filename}")
             except Exception as e:
                 error_msg = f"Failed to export JSON: {e}"
                 logger.error(f"[EXPORT] {error_msg}")
                 messagebox.showerror("Error", error_msg)
     
     def export_html(self):
-        """Eksportuje raport do HTML."""
+        """Eksportuje raport do HTML używając wspólnego modułu eksportu."""
         if not self.last_collected_data:
             messagebox.showwarning("No Data", "No data to export. Please run a scan first.")
             return
@@ -373,80 +374,20 @@ class DiagnosticsGUIMVP:
         
         if filename:
             try:
-                html_content = self.generate_html_report()
-                with open(filename, "w", encoding="utf-8") as f:
-                    f.write(html_content)
+                from utils.export_utils import export_html
+                # Eksportuj do wybranego pliku
+                filepath = Path(filename)
+                export_html(
+                    self.last_collected_data,
+                    self.last_processed_data,
+                    filename=filepath.name,
+                    output_dir=str(filepath.parent)
+                )
                 messagebox.showinfo("Success", f"Report exported to:\n{filename}")
-                logger.info(f"[EXPORT] HTML report exported to {filename}")
             except Exception as e:
                 error_msg = f"Failed to export HTML: {e}"
                 logger.error(f"[EXPORT] {error_msg}")
                 messagebox.showerror("Error", error_msg)
-    
-    def generate_html_report(self) -> str:
-        """Generuje raport HTML."""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Podsumowanie collectorów
-        collectors_summary = ""
-        if self.last_collected_data:
-            collectors = self.last_collected_data.get("collectors", {})
-            summary = self.last_collected_data.get("summary", {})
-            
-            collectors_summary = f"""
-            <h2>Collectors Summary</h2>
-            <p>Total: {summary.get('total_collectors', 0)} | 
-               Collected: {summary.get('collected', 0)} | 
-               Errors: {summary.get('errors', 0)}</p>
-            <table border="1" cellpadding="5">
-                <tr><th>Collector</th><th>Status</th><th>Error</th></tr>
-            """
-            
-            for name, result in collectors.items():
-                if isinstance(result, dict):
-                    status = result.get("status", "Unknown")
-                    error = result.get("error", "")
-                    status_icon = "✅" if status == "Collected" else "❌"
-                    collectors_summary += f"""
-                    <tr>
-                        <td>{name}</td>
-                        <td>{status_icon} {status}</td>
-                        <td>{error if error else "-"}</td>
-                    </tr>
-                    """
-            
-            collectors_summary += "</table>"
-        
-        html = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Diagnostic Tool Report - {timestamp}</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; margin: 20px; background: #1e1e1e; color: #ffffff; }}
-        h1 {{ color: #00cc66; }}
-        h2 {{ color: #0066cc; margin-top: 30px; }}
-        table {{ border-collapse: collapse; width: 100%; margin: 20px 0; background: #2e2e2e; }}
-        th, td {{ border: 1px solid #555; padding: 8px; text-align: left; }}
-        th {{ background: #444; color: #fff; }}
-        tr:nth-child(even) {{ background: #333; }}
-        pre {{ background: #1e1e1e; padding: 15px; border: 1px solid #555; overflow-x: auto; }}
-        .status-collected {{ color: #00cc66; }}
-        .status-error {{ color: #cc0000; }}
-    </style>
-</head>
-<body>
-    <h1>Diagnostic Tool Report</h1>
-    <p>Generated: {timestamp}</p>
-    
-    {collectors_summary}
-    
-    <h2>Raw Data (JSON)</h2>
-    <pre>{json.dumps(self.last_collected_data, indent=2, ensure_ascii=False, default=str)}</pre>
-</body>
-</html>
-        """
-        return html
     
     def update_status(self, message: str):
         """Aktualizuje status bar."""

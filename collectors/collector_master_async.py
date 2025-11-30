@@ -108,6 +108,14 @@ async def _run_collector_async(collector_name: str, collector_func: Callable, me
         log_collector_end(collector_name, success=True, data_count=data_count)
         log_performance(f"Collector {collector_name}", duration_ms / 1000, f"collected {data_count} items")
         
+        # Faza 2: Rejestruj w monitorze wydajności
+        try:
+            from utils.performance_monitor import get_performance_monitor
+            monitor = get_performance_monitor()
+            monitor.record_collector(collector_name, duration_ms, "Collected", data_count)
+        except Exception as e:
+            logger.debug(f"[COLLECTOR_ASYNC] Failed to record performance: {e}")
+        
         return (collector_name, standardized_result)
         
     except Exception as e:
@@ -128,6 +136,14 @@ async def _run_collector_async(collector_name: str, collector_func: Callable, me
         log_collector_end(collector_name, success=False, error=error_msg)
         log_performance(f"Collector {collector_name}", duration_ms / 1000, "FAILED")
         logger.exception(f"Collector {collector_name} raised exception")
+        
+        # Faza 2: Rejestruj w monitorze wydajności
+        try:
+            from utils.performance_monitor import get_performance_monitor
+            monitor = get_performance_monitor()
+            monitor.record_collector(collector_name, duration_ms, "Error", 0, error_msg)
+        except Exception as e:
+            logger.debug(f"[COLLECTOR_ASYNC] Failed to record performance: {e}")
         
         return (collector_name, standardized_result)
 
@@ -178,13 +194,33 @@ async def collect_all_async(save_raw=True, output_dir="output/raw", progress_cal
     
     logger.info(f"[COLLECTION_ASYNC] Starting async collection of {total} collectors")
     
-    # Pełna asynchroniczność - uruchom wszystkie collectory równocześnie
-    tasks = []
-    for step, (collector_name, message, collector_func) in enumerate(collectors_list, 1):
-        task = _run_collector_async(
-            collector_name, collector_func, message, step, total, progress_callback
-        )
-        tasks.append(task)
+    # Faza 4: Ograniczenie równoległości przy dużych skanach (asyncio.Semaphore)
+    max_concurrent = config.get("collectors.max_concurrent", None)
+    if max_concurrent and total > max_concurrent:
+        logger.info(f"[COLLECTION_ASYNC] Limiting concurrency to {max_concurrent} collectors")
+        semaphore = asyncio.Semaphore(max_concurrent)
+        
+        async def _run_with_semaphore(collector_name, collector_func, message, step, total, progress_callback):
+            async with semaphore:
+                return await _run_collector_async(
+                    collector_name, collector_func, message, step, total, progress_callback
+                )
+        
+        # Uruchom wszystkie collectory z semaforem
+        tasks = []
+        for step, (collector_name, message, collector_func) in enumerate(collectors_list, 1):
+            task = _run_with_semaphore(
+                collector_name, collector_func, message, step, total, progress_callback
+            )
+            tasks.append(task)
+    else:
+        # Pełna asynchroniczność - uruchom wszystkie collectory równocześnie
+        tasks = []
+        for step, (collector_name, message, collector_func) in enumerate(collectors_list, 1):
+            task = _run_collector_async(
+                collector_name, collector_func, message, step, total, progress_callback
+            )
+            tasks.append(task)
     
     # Uruchom wszystkie collectory równocześnie i zbierz wyniki
     completed = 0

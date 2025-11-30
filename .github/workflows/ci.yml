@@ -1,0 +1,58 @@
+name: CI - Tests and Validation
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov pytest-asyncio
+    
+    - name: Run tests
+      run: |
+        python -m pytest tests/ -v --cov=collectors --cov=processors --cov=core --cov-report=xml --cov-report=html
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+    
+    - name: Validate PlantUML diagram
+      run: |
+        python -c "import sys; sys.exit(0 if open('docs/MVP_PIPELINE_FLOW.puml').read().strip() else 1)"
+    
+    - name: Check code quality
+      run: |
+        pip install flake8
+        flake8 collectors/ processors/ core/ --max-line-length=120 --ignore=E501,W503 || true
+
+  validate-diagrams:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Validate PlantUML syntax
+      uses: plantuml/plantuml-action@v1
+      with:
+        files: docs/*.puml
+        recursive: true
+

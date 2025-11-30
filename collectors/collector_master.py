@@ -123,6 +123,14 @@ def _run_collector(collector_name: str, collector_func: Callable, message: str,
         log_collector_end(collector_name, success=True, data_count=data_count)
         log_performance(f"Collector {collector_name}", duration_ms / 1000, f"collected {data_count} items")
         
+        # Faza 2: Rejestruj w monitorze wydajności
+        try:
+            from utils.performance_monitor import get_performance_monitor
+            monitor = get_performance_monitor()
+            monitor.record_collector(collector_name, duration_ms, "Collected", data_count)
+        except Exception as e:
+            logger.debug(f"[COLLECTOR_MASTER] Failed to record performance: {e}")
+        
         return (collector_name, standardized_result)
         
     except Exception as e:
@@ -142,6 +150,14 @@ def _run_collector(collector_name: str, collector_func: Callable, message: str,
         log_collector_end(collector_name, success=False, error=error_msg)
         log_performance(f"Collector {collector_name}", duration_ms / 1000, "FAILED")
         logger.exception(f"Collector {collector_name} raised exception")
+        
+        # Faza 2: Rejestruj w monitorze wydajności
+        try:
+            from utils.performance_monitor import get_performance_monitor
+            monitor = get_performance_monitor()
+            monitor.record_collector(collector_name, duration_ms, "Error", 0, error_msg)
+        except Exception as e:
+            logger.debug(f"[COLLECTOR_MASTER] Failed to record performance: {e}")
         
         return (collector_name, standardized_result)
 

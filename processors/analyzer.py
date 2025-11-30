@@ -116,6 +116,16 @@ def analyze_all(collected_data, progress_callback=None):
                 processed_data[name] = processor_result
                 log_processor_end(name, success=True, issues_found=issues_count)
                 log_performance(f"Processor {name}", duration, f"found {issues_count} issues")
+                
+                # Faza 2: Rejestruj w monitorze wydajności
+                try:
+                    from utils.performance_monitor import get_performance_monitor
+                    monitor = get_performance_monitor()
+                    errors_count = len(processor_result.get("errors", [])) if isinstance(processor_result, dict) else 0
+                    warnings_count = len(processor_result.get("warnings", [])) if isinstance(processor_result, dict) else 0
+                    monitor.record_processor(name, int(duration * 1000), "Collected", errors_count, warnings_count)
+                except Exception as e:
+                    logger.debug(f"[ANALYZER] Failed to record performance: {e}")
             except Exception as e:
                 duration = time.time() - processor_start_time
                 error_msg = f"{type(e).__name__}: {e}"
@@ -131,6 +141,14 @@ def analyze_all(collected_data, progress_callback=None):
                     "validation_passed": False,
                     "processor_name": name
                 }
+                
+                # Faza 2: Rejestruj w monitorze wydajności
+                try:
+                    from utils.performance_monitor import get_performance_monitor
+                    monitor = get_performance_monitor()
+                    monitor.record_processor(name, int(duration * 1000), "Error", 1, 0)
+                except Exception as e:
+                    logger.debug(f"[ANALYZER] Failed to record performance: {e}")
     
     # Wykryj przyczyny problemów (przed budowaniem raportu)
     if progress_callback:

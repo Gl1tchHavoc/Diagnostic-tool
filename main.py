@@ -58,6 +58,33 @@ def main():
     print("-" * 60)
     collected_data = collect_all(save_raw=True, output_dir="output/raw")
     logger.info(f"Data collection completed. Collected {len(collected_data.get('collectors', {}))} collector results")
+    
+    # Faza 1: Wyświetl statusy collectorów w konsoli
+    print("\nCollectors Status:")
+    print("-" * 60)
+    collectors = collected_data.get("collectors", {})
+    summary = collected_data.get("summary", {})
+    
+    # Tabela statusów
+    print(f"{'Collector':<25} {'Status':<15} {'Time (ms)':<12} {'Error':<30}")
+    print("-" * 60)
+    
+    for name, result in sorted(collectors.items()):
+        if isinstance(result, dict):
+            status = result.get("status", "Unknown")
+            exec_time = result.get("execution_time_ms", 0)
+            error = result.get("error", "")
+            
+            status_icon = "✅" if status == "Collected" else "❌"
+            status_display = f"{status_icon} {status}"
+            error_display = error[:28] + "..." if len(error) > 30 else error
+            
+            print(f"{name:<25} {status_display:<15} {exec_time:<12} {error_display:<30}")
+    
+    print("-" * 60)
+    print(f"Total: {summary.get('total_collectors', 0)} | "
+          f"Collected: {summary.get('collected', 0)} | "
+          f"Errors: {summary.get('errors', 0)}")
     print()
     
     # Przetwórz i przeanalizuj
@@ -69,17 +96,29 @@ def main():
     logger.info("Data analysis completed")
     print()
     
-    # Zapisz przetworzone dane
-    output_path = Path("output/processed")
-    output_path.mkdir(parents=True, exist_ok=True)
-    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    report_file = output_path / f"analysis_report_{timestamp_str}.json"
-    
+    # Zapisz przetworzone dane używając wspólnego modułu eksportu
+    json_file = None
     try:
-        with open(report_file, "w", encoding="utf-8") as f:
-            json.dump(analysis_report, f, indent=2, ensure_ascii=False, default=str)
-        logger.info(f"Analysis report saved to: {report_file}")
-        print(f"Analysis report saved to: {report_file}")
+        from utils.export_utils import export_json, export_html
+        
+        # Eksport JSON
+        export_data = {
+            "collected_data": collected_data,
+            "processed_data": analysis_report
+        }
+        json_file = export_json(export_data, output_dir="output/processed")
+        logger.info(f"Analysis report (JSON) saved to: {json_file}")
+        print(f"Analysis report (JSON) saved to: {json_file}")
+        
+        # Eksport HTML (opcjonalnie)
+        try:
+            html_file = export_html(collected_data, analysis_report, output_dir="output/processed")
+            logger.info(f"Analysis report (HTML) saved to: {html_file}")
+            print(f"Analysis report (HTML) saved to: {html_file}")
+        except Exception as e:
+            logger.warning(f"Failed to export HTML report: {e}")
+            print(f"Warning: HTML export failed: {e}")
+        
     except Exception as e:
         logger.error(f"Failed to save report: {e}")
         print(f"Failed to save report: {e}")
