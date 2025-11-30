@@ -6,6 +6,18 @@ import sys
 import signal
 from utils.logger import get_logger
 
+# COM initialization dla Windows (wymagane w każdym wątku)
+if sys.platform == "win32":
+    try:
+        import pythoncom
+    except ImportError:
+        pythoncom = None
+        logger = get_logger()
+        logger.warning(
+            "[SUBPROCESS] pythoncom not available - COM init skipped")
+else:
+    pythoncom = None
+
 logger = get_logger()
 
 
@@ -33,6 +45,9 @@ def run_powershell_safe(cmd_list, startupinfo=None, timeout=30):
     """
     Uruchamia PowerShell z bezpieczną obsługą kodowania i timeoutem.
     Próbuje różne kodowania w przypadku błędów UnicodeDecodeError.
+    
+    Inicjalizuje COM w każdym wątku przed użyciem subprocessa
+    (wymagane dla Windows API w środowisku wielowątkowym).
 
     Args:
         cmd_list (list): Lista argumentów dla subprocess (np. ["powershell", "-Command", "..."])
@@ -45,67 +60,88 @@ def run_powershell_safe(cmd_list, startupinfo=None, timeout=30):
     Raises:
         RuntimeError: Jeśli komenda się nie powiedzie lub timeout
     """
-    # Lista kodowań do wypróbowania (w kolejności priorytetu)
-    encodings = [
-        'utf-8',
-        'utf-8-sig',  # UTF-8 z BOM
-        'cp1250',     # Windows-1250 (Central European)
-        'cp1252',     # Windows-1252 (Western European)
-        'cp850',      # DOS Latin-1
-        'latin1',     # ISO-8859-1
-        'cp437',      # DOS US
-    ]
-
-    # Najpierw spróbuj bez text=True, żeby dostać raw bytes
-    try:
-        result_bytes = subprocess.check_output(
-            cmd_list,
-            stderr=subprocess.DEVNULL,
-            startupinfo=startupinfo,
-            timeout=timeout,
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-        )
-    except subprocess.TimeoutExpired:
-        logger.warning(
-            f"[SUBPROCESS] PowerShell command timeout after {timeout}s")
-        raise RuntimeError(f"PowerShell command timeout after {timeout}s")
-    except subprocess.CalledProcessError as e:
-        logger.warning(
-            f"[SUBPROCESS] PowerShell command failed with code {e.returncode}")
-        raise RuntimeError(f"PowerShell command failed: {e}")
-    except OSError as e:
-        # Błąd 0x800401f0 i podobne błędy COM/Windows API
-        logger.warning(f"[SUBPROCESS] OS error during subprocess: {e}")
-        # Zwróć pusty string zamiast crashować
-        return ""
-    except Exception as e:
-        logger.warning(f"[SUBPROCESS] Unexpected error during subprocess: {e}")
-        # Zwróć pusty string zamiast crashować
-        return ""
-
-    # Próbuj różne kodowania
-    for encoding in encodings:
+    # Inicjalizacja COM dla Windows (wymagane w każdym wątku)
+    com_initialized = False
+    if sys.platform == "win32" and pythoncom is not None:
         try:
-            result = result_bytes.decode(encoding)
-            if encoding != 'utf-8':
-                logger.debug(f"[SUBPROCESS] Used encoding: {encoding}")
-            return result
-        except UnicodeDecodeError:
-            continue
-
-    # Jeśli wszystkie kodowania zawiodły, użyj errors='replace' z UTF-8
-    # To zastąpi nieprawidłowe znaki znakiem zastępczym
-    logger.warning(
-        "[SUBPROCESS] All encodings failed, using UTF-8 with error replacement")
+            pythoncom.CoInitialize()
+            com_initialized = True
+        except Exception as e:
+            logger.debug(
+                f"[SUBPROCESS] COM initialization failed: {e} "
+                f"(may already be initialized)")
+    
     try:
-        result = result_bytes.decode('utf-8', errors='replace')
-        return result
-    except Exception as e:
-        # Ostateczny fallback - użyj errors='ignore'
-        logger.error(
-            f"[SUBPROCESS] UTF-8 decode failed: {e}, using ignore mode")
-        result = result_bytes.decode('utf-8', errors='ignore')
-        return result
+        # Lista kodowań do wypróbowania (w kolejności priorytetu)
+        encodings = [
+            'utf-8',
+            'utf-8-sig',  # UTF-8 z BOM
+            'cp1250',     # Windows-1250 (Central European)
+            'cp1252',     # Windows-1252 (Western European)
+            'cp850',      # DOS Latin-1
+            'latin1',     # ISO-8859-1
+            'cp437',      # DOS US
+        ]
+
+        # Najpierw spróbuj bez text=True, żeby dostać raw bytes
+        try:
+            result_bytes = subprocess.check_output(
+                cmd_list,
+                stderr=subprocess.DEVNULL,
+                startupinfo=startupinfo,
+                timeout=timeout,
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            )
+        except subprocess.TimeoutExpired:
+            logger.warning(
+                f"[SUBPROCESS] PowerShell command timeout after {timeout}s")
+            raise RuntimeError(f"PowerShell command timeout after {timeout}s")
+        except subprocess.CalledProcessError as e:
+            logger.warning(
+                f"[SUBPROCESS] PowerShell command failed with code {e.returncode}")
+            raise RuntimeError(f"PowerShell command failed: {e}")
+        except OSError as e:
+            # Błąd 0x800401f0 i podobne błędy COM/Windows API
+            logger.warning(f"[SUBPROCESS] OS error during subprocess: {e}")
+            # Zwróć pusty string zamiast crashować
+            return ""
+        except Exception as e:
+            logger.warning(
+                f"[SUBPROCESS] Unexpected error during subprocess: {e}")
+            # Zwróć pusty string zamiast crashować
+            return ""
+
+        # Próbuj różne kodowania
+        for encoding in encodings:
+            try:
+                result = result_bytes.decode(encoding)
+                if encoding != 'utf-8':
+                    logger.debug(f"[SUBPROCESS] Used encoding: {encoding}")
+                return result
+            except UnicodeDecodeError:
+                continue
+
+        # Jeśli wszystkie kodowania zawiodły, użyj errors='replace' z UTF-8
+        # To zastąpi nieprawidłowe znaki znakiem zastępczym
+        logger.warning(
+            "[SUBPROCESS] All encodings failed, using UTF-8 with error replacement")
+        try:
+            result = result_bytes.decode('utf-8', errors='replace')
+            return result
+        except Exception as e:
+            # Ostateczny fallback - użyj errors='ignore'
+            logger.error(
+                f"[SUBPROCESS] UTF-8 decode failed: {e}, using ignore mode")
+            result = result_bytes.decode('utf-8', errors='ignore')
+            return result
+    finally:
+        # Zwolnij COM jeśli został zainicjalizowany
+        if com_initialized and pythoncom is not None:
+            try:
+                pythoncom.CoUninitialize()
+            except Exception as e:
+                logger.debug(
+                    f"[SUBPROCESS] COM uninitialization failed: {e}")
 
 
 def run_powershell_hidden(command, timeout=30):
