@@ -62,17 +62,19 @@ graph TB
     CollectorMaster --> Logger
     ProcessorsMVP --> Logger
     
-classDef gui fill:#fff4a3,stroke:#333,stroke-width:2px,color:#000
-classDef orchestrator fill:#ffcccc,stroke:#333,stroke-width:2px,color:#000
-classDef processor fill:#ccffcc,stroke:#333,stroke-width:2px,color:#000
-classDef collector fill:#cce5ff,stroke:#333,stroke-width:2px,color:#000
-classDef logger fill:#f0f0f0,stroke:#333,stroke-width:1px,stroke-dasharray:5 5,color:#000
+    classDef gui fill:#fff4a3,stroke:#333,stroke-width:2px,color:#000000
+    classDef orchestrator fill:#ffcccc,stroke:#333,stroke-width:2px,color:#000000
+    classDef processor fill:#ccffcc,stroke:#333,stroke-width:2px,color:#000000
+    classDef collector fill:#cce5ff,stroke:#333,stroke-width:2px,color:#000000
+    classDef logger fill:#f0f0f0,stroke:#333,stroke-width:1px,stroke-dasharray:5 5,color:#000000
     
     class GUIMVP,CLIMVP gui
     class CollectorMaster orchestrator
     class ProcessorsMVP processor
     class Hardware,System,Storage,Network,Processes,EventLogs,Drivers collector
     class Logger logger
+    
+    style User fill:#e1f5ff,stroke:#0066cc,stroke-width:2px,color:#000000
 ```
 
 **Więcej informacji:**

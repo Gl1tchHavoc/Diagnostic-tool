@@ -320,14 +320,30 @@ class DiagnosticsGUIMVP:
             self.progress_bar['value'] = 0
     
     def display_raw_data(self, data: dict):
-        """Wyświetla surowe dane w text widget."""
+        """Wyświetla surowe dane w text widget w czytelnej formie."""
         try:
+            # Włącz edycję przed modyfikacją
+            self.raw_data_text.config(state=tk.NORMAL)
+            
             # Formatuj JSON w czytelny sposób
             formatted_json = json.dumps(data, indent=2, ensure_ascii=False, default=str)
             self.raw_data_text.delete(1.0, tk.END)
-            self.raw_data_text.insert(1.0, formatted_json)
+            
+            # Dodaj nagłówek z informacją o skanie
+            header = "=== FULL SCAN DATA ===\n"
+            header += f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            header += "=" * 60 + "\n\n"
+            
+            self.raw_data_text.insert(1.0, header + formatted_json)
+            
+            # Ustaw kolor tekstu dla lepszej czytelności
+            self.raw_data_text.config(fg="#ffffff", bg="#1e1e1e", insertbackground="#ffffff")
+            
+            # Wyłącz edycję po wyświetleniu (tylko do odczytu)
+            self.raw_data_text.config(state=tk.NORMAL)  # Pozostaw włączone dla kopiowania
         except Exception as e:
             logger.error(f"[GUI] Failed to display raw data: {e}")
+            self.raw_data_text.config(state=tk.NORMAL)
             self.raw_data_text.delete(1.0, tk.END)
             self.raw_data_text.insert(1.0, f"Error displaying data: {e}")
     
@@ -458,15 +474,29 @@ class DiagnosticsGUIMVP:
                 messagebox.showinfo("No Data", f"No data available for {self.selected_collector}. Please run a scan or the collector first.")
     
     def display_collector_data(self, collector_name: str, data: dict):
-        """Wyświetla dane konkretnego collectora."""
+        """Wyświetla dane konkretnego collectora w czytelnej formie."""
         try:
+            # Włącz edycję przed modyfikacją
+            self.raw_data_text.config(state=tk.NORMAL)
+            
             # Formatuj JSON w czytelny sposób
             formatted_json = json.dumps(data, indent=2, ensure_ascii=False, default=str)
             self.raw_data_text.delete(1.0, tk.END)
-            self.raw_data_text.insert(1.0, f"=== {collector_name.upper()} DATA ===\n\n{formatted_json}")
+            
+            # Nagłówek z informacją o collectorze
+            header = f"=== {collector_name.upper()} DATA ===\n"
+            header += f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            header += "=" * 60 + "\n\n"
+            
+            self.raw_data_text.insert(1.0, header + formatted_json)
+            
+            # Ustaw kolor tekstu dla lepszej czytelności
+            self.raw_data_text.config(fg="#ffffff", bg="#1e1e1e", insertbackground="#ffffff")
+            
             self.update_status(f"Displaying data for: {collector_name}")
         except Exception as e:
             logger.error(f"[GUI] Failed to display collector data: {e}")
+            self.raw_data_text.config(state=tk.NORMAL)
             self.raw_data_text.delete(1.0, tk.END)
             self.raw_data_text.insert(1.0, f"Error displaying data for {collector_name}: {e}")
     
