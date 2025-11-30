@@ -8,6 +8,7 @@ import os
 import re
 import xml.etree.ElementTree as ET
 import configparser
+import winreg
 from pathlib import Path
 from datetime import datetime, timedelta
 from collections import defaultdict
@@ -18,6 +19,112 @@ logger = get_logger()
 
 # Event IDs do zbierania
 WER_EVENT_IDS = [1000, 1001, 1002, 1005, 1008]
+
+
+def check_local_dumps():
+    """
+    ✅ 1. AUTODETEKCJA – sprawdza, czy LocalDumps jest włączone.
+    
+    Returns:
+        dict: {
+            "enabled": bool,
+            "dump_count": int or None,
+            "dump_type": int or None,
+            "dump_folder": str or None,
+            "folder_exists": bool,
+            "warnings": list
+        }
+    """
+    result = {
+        "enabled": False,
+        "dump_count": None,
+        "dump_type": None,
+        "dump_folder": None,
+        "folder_exists": False,
+        "warnings": []
+    }
+    
+    try:
+        key_path = r"SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps"
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path, 0, winreg.KEY_READ) as key:
+            # DumpType
+            try:
+                dump_type, _ = winreg.QueryValueEx(key, "DumpType")
+                result["dump_type"] = dump_type
+            except FileNotFoundError:
+                result["warnings"].append("DumpType missing")
+            
+            # DumpCount
+            try:
+                dump_count, _ = winreg.QueryValueEx(key, "DumpCount")
+                result["dump_count"] = dump_count
+            except FileNotFoundError:
+                result["warnings"].append("DumpCount missing")
+            
+            # DumpFolder
+            try:
+                dump_folder, _ = winreg.QueryValueEx(key, "DumpFolder")
+                dump_folder = os.path.expandvars(dump_folder)
+                result["dump_folder"] = dump_folder
+                result["folder_exists"] = os.path.isdir(dump_folder)
+            except FileNotFoundError:
+                result["warnings"].append("DumpFolder missing")
+    
+    except FileNotFoundError:
+        result["warnings"].append("LocalDumps registry key missing")
+        return result  # LocalDumps disabled
+    except PermissionError:
+        result["warnings"].append("Cannot access registry - admin rights may be required")
+        return result
+    except Exception as e:
+        result["warnings"].append(f"Error checking LocalDumps: {e}")
+        return result
+    
+    # Enabled if DumpType exists
+    if result["dump_type"] is not None:
+        result["enabled"] = True
+    
+    return result
+
+
+def enable_local_dumps(dump_folder=r"%LOCALAPPDATA%\CrashDumps"):
+    """
+    ✅ 2. AUTOKONFIGURACJA – włącza LocalDumps automatycznie.
+    
+    Args:
+        dump_folder (str): Ścieżka do folderu z dumpami (może zawierać zmienne środowiskowe)
+        
+    Returns:
+        bool: True jeśli udało się włączyć, False w przeciwnym razie
+    """
+    key_path = r"SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps"
+    
+    try:
+        # Create/open key
+        key = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, key_path)
+        
+        # Set values
+        winreg.SetValueEx(key, "DumpType", 0, winreg.REG_DWORD, 2)   # Full dump
+        winreg.SetValueEx(key, "DumpCount", 0, winreg.REG_DWORD, 10)
+        winreg.SetValueEx(key, "DumpFolder", 0, winreg.REG_EXPAND_SZ, dump_folder)
+        
+        winreg.CloseKey(key)
+        
+        # Expand folder
+        expanded_folder = os.path.expandvars(dump_folder)
+        if not os.path.isdir(expanded_folder):
+            os.makedirs(expanded_folder, exist_ok=True)
+        
+        logger.info(f"[WER] LocalDumps enabled successfully. Dump folder: {expanded_folder}")
+        return True
+    
+    except PermissionError:
+        logger.error("[WER] Cannot enable LocalDumps – admin rights required.")
+        return False
+    except Exception as e:
+        logger.error(f"[WER] Error enabling LocalDumps: {e}")
+        return False
+
 
 def collect():
     """
@@ -52,6 +159,30 @@ def collect():
         wer_data["error"] = "Windows only"
         return wer_data
     
+    # ✅ AUTODETEKCJA i AUTOKONFIGURACJA LocalDumps
+    logger.info("[WER] Checking LocalDumps configuration...")
+    ld = check_local_dumps()
+    
+    if not ld["enabled"]:
+        logger.warning("[WER] LocalDumps is DISABLED – crash diagnostics will be incomplete.")
+        
+        # Attempt auto-fix
+        if enable_local_dumps():
+            logger.info("[WER] LocalDumps was enabled automatically.")
+            print("⚠️ LocalDumps were disabled. Enabled now.\n"
+                  "Please trigger a crash and re-run the tool for full diagnostics.")
+        else:
+            logger.warning("[WER] LocalDumps could not be enabled automatically.")
+            print("⚠️ LocalDumps are disabled and cannot be automatically enabled.\n"
+                  "Run the program as administrator or enable manually.")
+    else:
+        logger.info(f"[WER] LocalDumps is enabled. Dump folder: {ld.get('dump_folder', 'N/A')}")
+        if ld.get("warnings"):
+            logger.warning(f"[WER] LocalDumps warnings: {ld['warnings']}")
+    
+    # Zapisz informacje o LocalDumps w wynikach
+    wer_data["local_dumps"] = ld
+    
     try:
         # Krok 1: Zbieranie z Event Log
         logger.info("[WER] Collecting crash data from Event Log")
@@ -71,6 +202,10 @@ def collect():
                 "count": len(wer_crashes),
                 "description": f"Parsed {len(wer_crashes)} .wer files from ReportQueue/ReportArchive"
             })
+        
+        # 4️⃣ Powiązanie Event Log → WER Files (korelacja)
+        logger.info("[WER] Correlating Event Log crashes with WER files")
+        wer_data["recent_crashes"] = correlate_event_log_with_wer_files(wer_data["recent_crashes"])
         
         # Krok 3: Grupowanie i analiza powtarzających się crashy
         logger.info("[WER] Grouping and analyzing repeating crashes")
@@ -502,6 +637,17 @@ def collect():
     logger.info("[WER] DEBUG: ACTUALLY RETURNING NOW")
     sys.stdout.flush()
     
+    # ✅ 3. OSTRZEGANIE / SELF-AWARE MODE – jeżeli dumpów nie ma
+    report_count = len(wer_data.get("reports", []))
+    total_crashes = wer_data.get("statistics", {}).get("total_crashes", 0)
+    
+    if report_count == 0 and total_crashes == 0:
+        logger.warning("[WER] No WER reports found. LocalDumps might have been disabled previously.")
+        print("⚠️ No WER reports found.\n"
+              "LocalDumps might have been disabled previously.\n"
+              "Now that they're enabled, crashes need time to accumulate.\n"
+              "Re-run the tool after the next crash.")
+    
     # Próba zwrócenia z dodatkowym logowaniem
     try:
         result = wer_data
@@ -584,7 +730,24 @@ def collect_from_event_log():
 
 def extract_crash_details(record):
     """
+    🔷 1.1. Event Log — Crash Reports
     Wyciąga szczegółowe dane o crashu z rekordu Event Log.
+    
+    Minimalne wymagane pola:
+    - TimeCreated: czas wystąpienia
+    - EventID: typ błędu
+    - Source: Windows Error Reporting / Application Error
+    - Message: szczegóły crasha
+    - FaultingApplicationName: EXE
+    - FaultingApplicationVersion: wersja aplikacji
+    - FaultingModuleName: moduł (DLL / driver)
+    - FaultingModuleVersion: wersja modułu
+    - ExceptionCode: kod błędu (0xc0000005 → access violation)
+    - FaultOffset: offset wyjątku
+    - ActivityID: korelacja
+    - ReportID: ID raportu w Microsoft telemetry
+    
+    Reguła: ✔ rekord uznajemy za crash tylko jeśli ma FaultingApplicationName lub Application Error.
     
     Args:
         record (dict): Rekord z Event Log
@@ -598,88 +761,204 @@ def extract_crash_details(record):
             return None
         
         message = record.get("Message", "") or ""
-        timestamp = record.get("TimeCreated") or record.get("Time", "")
-        provider = record.get("ProviderName", "") or ""
+        # TimeCreated - czas wystąpienia
+        timestamp = record.get("TimeCreated") or record.get("Time", "") or record.get("TimeCreated", "")
+        provider = record.get("ProviderName", "") or record.get("Source", "") or ""
         
-        # 1️⃣ Pobranie crashy z Event Log - Event ID 1000, 1001
-        # Wyciągnij AppName z różnych formatów
-        app_name = extract_field_from_message(message, [
-            r'Application\s+Name:\s*([^\r\n]+)',
-            r'Faulting\s+application\s+name:\s*([^\r\n]+)',
-            r'Application:\s*([^\r\n,]+)',
-            r'AppName:\s*([^\r\n]+)',
-            r'Faulting\s+Application\s+Name:\s*([^\r\n]+)'
-        ])
+        # 1️⃣ EventID 1000 (Application Error) - kluczowe pola
+        # FaultingApplicationName - EXE (z różnych formatów)
+        app_name = (
+            record.get("FaultingApplicationName") or
+            extract_field_from_message(message, [
+                r'Faulting\s+application\s+name:\s*([^\r\n]+)',
+                r'Application\s+Name:\s*([^\r\n]+)',
+                r'Application:\s*([^\r\n,]+)',
+                r'AppName:\s*([^\r\n]+)',
+                r'Faulting\s+Application\s+Name:\s*([^\r\n]+)'
+            ])
+        )
         
-        app_version = extract_field_from_message(message, [
-            r'Application\s+Version:\s*([^\r\n]+)',
-            r'Application\s+Version\s+String:\s*([^\r\n]+)'
-        ])
+        # FaultingApplicationPath - pełna ścieżka do aplikacji
+        app_path = (
+            record.get("FaultingApplicationPath") or
+            extract_field_from_message(message, [
+                r'Faulting\s+application\s+path:\s*([^\r\n]+)',
+                r'Application\s+Path:\s*([^\r\n]+)',
+                r'Faulting\s+Application\s+Path:\s*([^\r\n]+)'
+            ])
+        )
         
-        module_name = extract_field_from_message(message, [
-            r'Faulting\s+module\s+name:\s*([^\r\n]+)',
-            r'Module\s+Name:\s*([^\r\n]+)',
-            r'Faulting\s+Module\s+Name:\s*([^\r\n]+)',
-            r'Module:\s*([^\r\n]+)'
-        ])
+        # FaultingApplicationVersion - wersja aplikacji
+        app_version = (
+            record.get("FaultingApplicationVersion") or
+            extract_field_from_message(message, [
+                r'Faulting\s+application\s+version:\s*([^\r\n]+)',
+                r'Application\s+Version:\s*([^\r\n]+)',
+                r'Application\s+Version\s+String:\s*([^\r\n]+)'
+            ])
+        )
         
-        # 6️⃣ Dodatkowe usprawnienia: Jeśli AppName == None → spróbuj Faulting module name
+        # FaultingModuleName - moduł (DLL / driver)
+        module_name = (
+            record.get("FaultingModuleName") or
+            extract_field_from_message(message, [
+                r'Faulting\s+module\s+name:\s*([^\r\n]+)',
+                r'Module\s+Name:\s*([^\r\n]+)',
+                r'Faulting\s+Module\s+Name:\s*([^\r\n]+)',
+                r'Module:\s*([^\r\n]+)'
+            ])
+        )
+        
+        # FaultingModulePath - pełna ścieżka do modułu
+        module_path = (
+            record.get("FaultingModulePath") or
+            extract_field_from_message(message, [
+                r'Faulting\s+module\s+path:\s*([^\r\n]+)',
+                r'Module\s+Path:\s*([^\r\n]+)',
+                r'Faulting\s+Module\s+Path:\s*([^\r\n]+)'
+            ])
+        )
+        
+        # FaultingModuleVersion - wersja modułu
+        module_version = (
+            record.get("FaultingModuleVersion") or
+            extract_field_from_message(message, [
+                r'Faulting\s+module\s+version:\s*([^\r\n]+)',
+                r'Module\s+Version:\s*([^\r\n]+)'
+            ])
+        )
+        
+        # 2️⃣ EventID 1002 (Application Hang) - specjalna obsługa
+        is_hang = (event_id == "1002")
+        hang_type = None
+        if is_hang:
+            # Dla Application Hang, wyciągnij dodatkowe informacje
+            hang_type = extract_field_from_message(message, [
+                r'Application\s+hang:\s*([^\r\n]+)',
+                r'Hang\s+type:\s*([^\r\n]+)',
+                r'Application\s+stopped\s+responding:\s*([^\r\n]+)'
+            ])
+            # Jeśli nie ma app_name, spróbuj wyciągnąć z message
+            if not app_name:
+                app_name = extract_field_from_message(message, [
+                    r'Application\s+Name:\s*([^\r\n]+)',
+                    r'Program:\s*([^\r\n]+)'
+                ])
+        
+        # ExceptionCode - kod błędu
+        exception_code = (
+            record.get("ExceptionCode") or
+            extract_field_from_message(message, [
+                r'Exception\s+Code:\s*([^\r\n]+)',
+                r'Exception\s+code:\s*([^\r\n]+)',
+                r'ExceptionCode:\s*([^\r\n]+)'
+            ])
+        )
+        
+        # FaultOffset - offset wyjątku
+        fault_offset = (
+            record.get("FaultOffset") or
+            extract_field_from_message(message, [
+                r'Fault\s+offset:\s*([^\r\n]+)',
+                r'FaultOffset:\s*([^\r\n]+)',
+                r'Offset:\s*([^\r\n]+)'
+            ])
+        )
+        
+        # ActivityID - korelacja
+        activity_id = record.get("ActivityID") or record.get("ActivityId", "") or ""
+        
+        # ReportID - ID raportu w Microsoft telemetry
+        report_id = record.get("ReportID") or record.get("ReportId", "") or ""
+        
+        process_id = (
+            record.get("ProcessId") or
+            extract_field_from_message(message, [
+                r'Process\s+Id:\s*(\d+)',
+                r'ProcessId:\s*(\d+)'
+            ])
+        )
+        
+        thread_id = (
+            record.get("ThreadId") or
+            extract_field_from_message(message, [
+                r'Thread\s+Id:\s*(\d+)',
+                r'ThreadId:\s*(\d+)'
+            ])
+        )
+        
+        # OS Version
+        os_version = (
+            record.get("OSVersion") or
+            extract_field_from_message(message, [
+                r'OS\s+Version:\s*([^\r\n]+)',
+                r'Operating\s+System\s+Version:\s*([^\r\n]+)'
+            ])
+        )
+        
+        # Reguła: ✔ rekord uznajemy za crash tylko jeśli ma FaultingApplicationName lub Application Error
         if not app_name or app_name == "Unknown":
+            # Fallback: spróbuj Faulting module name
             if module_name:
                 logger.debug(f"[WER] AppName is None/Unknown, using module_name as fallback: {module_name}")
                 app_name = module_name
+            elif provider and provider != "Application Error":
+                app_name = provider
             else:
-                # Jeśli nadal Unknown → spróbuj wyciągnąć z ProviderName
-                if provider and provider != "Application Error":
-                    app_name = provider
-                else:
-                    app_name = "Unknown"
+                # Oznacz jako Unknown, ale NIE USUWAJ (statystyka)
+                app_name = "Unknown"
         
-        module_version = extract_field_from_message(message, [
-            r'Faulting\s+module\s+version:\s*([^\r\n]+)',
-            r'Module\s+Version:\s*([^\r\n]+)'
-        ])
+        # Normalizuj ścieżki - konwersja na absolutne ścieżki
+        app_name = normalize_path(app_name)
+        module_name = normalize_path(module_name) if module_name else ""
         
-        exception_code = extract_field_from_message(message, [
-            r'Exception\s+Code:\s*([^\r\n]+)',
-            r'Exception\s+code:\s*([^\r\n]+)',
-            r'ExceptionCode:\s*([^\r\n]+)'
-        ])
+        # Normalizuj timestamp
+        timestamp_parsed = parse_timestamp(timestamp) if timestamp else None
+        timestamp_str = timestamp_parsed.isoformat() if timestamp_parsed else (timestamp or "")
         
-        process_id = extract_field_from_message(message, [
-            r'Process\s+Id:\s*(\d+)',
-            r'ProcessId:\s*(\d+)'
-        ])
+        # Normalizuj ścieżki - jeśli nie ma pełnej ścieżki, użyj nazwy
+        if app_path:
+            app_path = normalize_path(app_path)
+        elif app_name:
+            app_path = normalize_path(app_name)
         
-        thread_id = extract_field_from_message(message, [
-            r'Thread\s+Id:\s*(\d+)',
-            r'ThreadId:\s*(\d+)'
-        ])
-        
-        # Wyciągnij wersję OS z message
-        os_version = extract_field_from_message(message, [
-            r'OS\s+Version:\s*([^\r\n]+)',
-            r'Operating\s+System\s+Version:\s*([^\r\n]+)'
-        ])
-        
-        # 6️⃣ Dodatkowe usprawnienia: Walidacja i logowanie
-        logger.debug(f"[WER] Extracted crash - AppName: {app_name}, Module: {module_name}, ExceptionCode: {exception_code}")
+        if module_path:
+            module_path = normalize_path(module_path)
+        elif module_name:
+            module_path = normalize_path(module_name)
         
         crash = {
             "event_id": event_id,
-            "timestamp": timestamp,
-            "message": message[:500] if len(message) > 500 else message,  # Ogranicz długość
+            "timestamp": timestamp_str,
+            "time_created": timestamp_str,  # Alias dla kompatybilności
+            "message": message[:500] if len(message) > 500 else message,
+            "source": provider,  # Windows Error Reporting / Application Error
             "provider": provider,
             "application": app_name or "Unknown",
+            "faulting_application_name": app_name or "Unknown",  # Alias
+            "faulting_application_path": app_path or "",  # 1️⃣ NOWE POLE
             "app_version": app_version or "",
+            "faulting_application_version": app_version or "",  # Alias
             "module_name": module_name or "",
+            "faulting_module_name": module_name or "",  # Alias
+            "faulting_module_path": module_path or "",  # 1️⃣ NOWE POLE
             "module_version": module_version or "",
+            "faulting_module_version": module_version or "",  # Alias
             "exception_code": exception_code or "",
+            "fault_offset": fault_offset or "",
+            "activity_id": activity_id,
+            "report_id": report_id,
             "process_id": process_id or "",
             "thread_id": thread_id or "",
             "os_version": os_version or "",
-            "type": determine_crash_type(app_name, module_name, exception_code)
+            "type": determine_crash_type(app_name, module_name, exception_code),
+            "severity": get_exception_severity(exception_code),
+            "is_hang": is_hang,  # 2️⃣ EventID 1002
+            "hang_type": hang_type or ""  # 2️⃣ EventID 1002
         }
+        
+        # 3️⃣ Dodaj criticality do crasha
+        crash["criticality"] = calculate_crash_criticality(crash)
         
         return crash
         
@@ -710,6 +989,155 @@ def extract_field_from_message(message, patterns):
                 return value
     
     return None
+
+
+def normalize_path(path_str):
+    """
+    ✅ 3.2. Wszystkie ścieżki → absolutne
+    Konwertuje ścieżkę na absolutną. Jeśli tylko nazwa pliku, próbuje znaleźć pełną ścieżkę.
+    
+    Args:
+        path_str (str): Ścieżka do normalizacji
+        
+    Returns:
+        str: Znormalizowana ścieżka
+    """
+    if not path_str or path_str == "Unknown":
+        return path_str
+    
+    try:
+        # Jeśli już jest absolutna ścieżka, zwróć ją
+        if os.path.isabs(path_str):
+            return os.path.normpath(path_str)
+        
+        # Jeśli tylko nazwa pliku (np. "steam.exe"), spróbuj znaleźć w PATH
+        if os.path.sep not in path_str:
+            # Można tutaj dodać mapowanie z Event Log, ale na razie zwróć jak jest
+            return path_str
+        
+        # Względna ścieżka - spróbuj zrobić absolutną
+        abs_path = os.path.abspath(path_str)
+        if os.path.exists(abs_path):
+            return abs_path
+        
+        return path_str
+    except Exception:
+        return path_str
+
+
+def get_exception_severity(exception_code):
+    """
+    ✅ 6. Reguły analizy - system priorytetów dla exception codes
+    
+    High severity:
+    - 0xc0000005 (access violation)
+    - 0xc0000409 (stack buffer overflow)
+    - 0xc000001d (illegal instruction)
+    - 0xe06d7363 (C++ exception)
+    - 0xc00000fd (stack overflow)
+    - 0xc0000374 (heap corruption)
+    
+    Medium:
+    - 0xc0000142 (DLL init failed)
+    - 0xc0150004 (side-by-side)
+    - 0xc000022 (invalid image)
+    
+    Low:
+    - "Stopped responding"
+    - "BEX" (DEP)
+    
+    Args:
+        exception_code (str): Kod wyjątku
+        
+    Returns:
+        str: "High", "Medium", "Low", lub "Unknown"
+    """
+    if not exception_code:
+        return "Unknown"
+    
+    exc_upper = str(exception_code).upper().strip()
+    
+    # High severity
+    high_codes = [
+        "0XC0000005", "C0000005",  # access violation
+        "0XC0000409", "C0000409",  # stack buffer overflow
+        "0XC000001D", "C000001D",  # illegal instruction
+        "0XE06D7363", "E06D7363",  # C++ exception
+        "0XC00000FD", "C00000FD",  # stack overflow
+        "0XC0000374", "C0000374",  # heap corruption
+    ]
+    
+    if any(code in exc_upper for code in high_codes):
+        return "High"
+    
+    # Medium severity
+    medium_codes = [
+        "0XC0000142", "C0000142",  # DLL init failed
+        "0XC0150004", "C0150004",  # side-by-side
+        "0XC000022", "C000022",    # invalid image
+    ]
+    
+    if any(code in exc_upper for code in medium_codes):
+        return "Medium"
+    
+    # Low severity
+    if "STOPPED RESPONDING" in exc_upper or "BEX" in exc_upper:
+        return "Low"
+    
+    return "Unknown"
+
+
+def calculate_crash_criticality(crash):
+    """
+    3️⃣ Severity / Criticality - automatyczna ocena ważności crasha
+    
+    Ocena na podstawie:
+    - aplikacja systemowa vs użytkownika
+    - exception code znany jako krytyczny (np. 0xC0000005)
+    - typ crasha (SYSTEM_CRASH, KERNEL_CRASH, APPLICATION_CRASH)
+    
+    Args:
+        crash (dict): Crash event
+        
+    Returns:
+        str: "Critical", "High", "Medium", "Low"
+    """
+    if not isinstance(crash, dict):
+        return "Unknown"
+    
+    app_name = (crash.get("application") or crash.get("faulting_application_name") or "").lower()
+    exception_code = crash.get("exception_code", "")
+    crash_type = crash.get("type", "")
+    severity = crash.get("severity", "Unknown")
+    
+    # Systemowe procesy = Critical
+    system_processes = [
+        "winlogon.exe", "csrss.exe", "lsass.exe", "services.exe",
+        "smss.exe", "wininit.exe", "dwm.exe", "svchost.exe",
+        "explorer.exe", "ntoskrnl.exe", "hal.dll"
+    ]
+    
+    if any(proc in app_name for proc in system_processes):
+        return "Critical"
+    
+    # Kernel crash = Critical
+    if crash_type == "KERNEL_CRASH" or crash_type == "SYSTEM_CRASH":
+        return "Critical"
+    
+    # High severity exception codes = High
+    if severity == "High":
+        return "High"
+    
+    # Medium severity = Medium
+    if severity == "Medium":
+        return "Medium"
+    
+    # Low severity = Low
+    if severity == "Low":
+        return "Low"
+    
+    # Domyślnie Medium dla aplikacji użytkownika
+    return "Medium"
 
 
 def determine_crash_type(app_name, module_name, exception_code):
@@ -747,8 +1175,24 @@ def determine_crash_type(app_name, module_name, exception_code):
 
 def parse_wer_file(wer_file_path):
     """
-    Parsuje plik .wer (może być w formacie INI lub XML).
-    Wyciąga: AppName, Module, ExceptionCode, Timestamp.
+    ✅ 2. Reguły parsowania plików WER (.wer)
+    
+    Plik .wer to format klucz=wartość.
+    
+    Parsuje sekcje (case-insensitive):
+    - [ReportMetadata]
+    - [AppCompat]
+    - [ProblemSignatures]
+    - [DynamicSignatures]
+    - [UserMetadata]
+    - [SystemInformation]
+    
+    Wyciąga pola:
+    - ReportMetadata: ReportType, CreationTime, ReportStatus
+    - ProblemSignatures: P1 (EXE), P2 (wersja EXE), P3 (moduł), P4 (wersja modułu), P5 (offset), P9 (Exception Code)
+    - SystemInformation: OSVersion, LocaleID, BIOSVersion
+    - AppCompat: AppCompatFlags
+    - DynamicSignatures: DynamicSig[1..10]
     
     Args:
         wer_file_path (Path): Ścieżka do pliku .wer
@@ -760,32 +1204,46 @@ def parse_wer_file(wer_file_path):
         if not wer_file_path.exists():
             return None
         
-        # Spróbuj najpierw jako INI
+        # Pliki .wer mogą zawierać null bytes - czytaj binarnie i filtruj
         try:
-            config = configparser.ConfigParser()
-            # configparser wymaga sekcji, więc musimy obsłużyć pliki bez sekcji
-            with open(wer_file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
+            with open(wer_file_path, 'rb') as f:
+                raw_content = f.read()
             
-            # Sprawdź czy to XML (zaczyna się od <?xml lub <)
-            if content.strip().startswith('<?xml') or content.strip().startswith('<'):
-                return parse_wer_xml(wer_file_path, content)
-            else:
-                # To jest INI-like format
-                return parse_wer_ini(wer_file_path, content)
-                
+            # Filtruj null bytes i inne nieprawidłowe znaki
+            # Konwertuj na string, usuwając null bytes i inne problematyczne znaki
+            content = raw_content.decode('utf-8', errors='ignore')
+            # Usuń wszystkie null bytes
+            content = content.replace('\x00', '')
+            # Usuń inne problematyczne znaki kontrolne (zostaw tylko \r, \n, \t)
+            content = ''.join(c for c in content if ord(c) >= 32 or c in '\r\n\t')
+            
         except Exception as e:
-            logger.debug(f"[WER] Error parsing .wer file {wer_file_path}: {e}")
+            logger.debug(f"[WER] Error reading .wer file {wer_file_path}: {e}")
             return None
-            
+        
+        if not content or len(content.strip()) < 10:
+            logger.debug(f"[WER] .wer file {wer_file_path} is empty or too short")
+            return None
+        
+        # Sprawdź czy to XML (zaczyna się od <?xml lub <)
+        content_stripped = content.strip()
+        if content_stripped.startswith('<?xml') or content_stripped.startswith('<'):
+            return parse_wer_xml(wer_file_path, content)
+        else:
+            # To jest INI-like format - użyj configparser
+            return parse_wer_ini_with_sections(wer_file_path, content)
+                
     except Exception as e:
-        logger.debug(f"[WER] Error reading .wer file {wer_file_path}: {e}")
+        logger.debug(f"[WER] Error parsing .wer file {wer_file_path}: {e}")
         return None
 
 
-def parse_wer_ini(wer_file_path, content):
+def parse_wer_ini_with_sections(wer_file_path, content):
     """
-    Parsuje plik .wer w formacie INI.
+    ✅ 2.1. Parsuj sekcje i klucze (case-insensitive)
+    
+    Parsuje plik .wer w formacie INI z sekcjami używając configparser.
+    Sekcje: ReportMetadata, ProblemSignatures, SystemInformation, AppCompat, DynamicSignatures
     
     Args:
         wer_file_path (Path): Ścieżka do pliku
@@ -795,78 +1253,279 @@ def parse_wer_ini(wer_file_path, content):
         dict: Wyciągnięte dane o crashu lub None
     """
     try:
-        # Pliki .wer w formacie INI często nie mają sekcji, więc parsujemy ręcznie
+        # Utwórz configparser z case-insensitive opcją
+        config = configparser.ConfigParser()
+        config.optionxform = str  # Zachowaj oryginalną wielkość liter w kluczach
+        
+        # Spróbuj sparsować jako INI
+        try:
+            # Usuń jeszcze raz null bytes i problematyczne znaki przed parsowaniem
+            clean_content = content.replace('\x00', '').replace('\x01', '').replace('\x02', '')
+            # Usuń puste linie z samymi null bytes
+            lines = [line for line in clean_content.split('\n') if line.strip()]
+            clean_content = '\n'.join(lines)
+            
+            config.read_string(clean_content)
+        except configparser.MissingSectionHeaderError:
+            # Jeśli brak sekcji, dodaj domyślną sekcję
+            clean_content = content.replace('\x00', '').replace('\x01', '').replace('\x02', '')
+            lines = [line for line in clean_content.split('\n') if line.strip()]
+            clean_content = '\n'.join(lines)
+            config.read_string(f"[DEFAULT]\n{clean_content}")
+        except Exception as e:
+            # Jeśli configparser nie działa, użyj ręcznego parsowania
+            logger.debug(f"[WER] configparser failed for {wer_file_path}, using fallback: {e}")
+            return parse_wer_ini_fallback(wer_file_path, content)
+        
+        # Wyciągnij dane z sekcji (case-insensitive)
         app_name = None
-        module = None
+        app_version = None
+        module_name = None
+        module_version = None
         exception_code = None
+        fault_offset = None
         timestamp = None
+        report_type = None
+        report_status = None
+        os_version = None
+        locale_id = None
+        bios_version = None
+        app_compat_flags = None
+        dynamic_sigs = {}
+        dump_count = None
+        parent_process_name = None
+        parent_process_version = None
+        report_guid = None
         
-        # Wyciągnij wartości używając regex
-        # AppName → Faulting application
-        app_match = re.search(r'Faulting\s+application[:\s]+([^\r\n]+)', content, re.IGNORECASE)
-        if not app_match:
-            app_match = re.search(r'AppName[:\s]+([^\r\n]+)', content, re.IGNORECASE)
-        if app_match:
-            app_name = app_match.group(1).strip()
-        
-        # Module → Faulting module
-        module_match = re.search(r'Faulting\s+module[:\s]+([^\r\n]+)', content, re.IGNORECASE)
-        if not module_match:
-            module_match = re.search(r'Module[:\s]+([^\r\n]+)', content, re.IGNORECASE)
-        if module_match:
-            module = module_match.group(1).strip()
-        
-        # ExceptionCode → Exception code
-        exception_match = re.search(r'Exception\s+code[:\s]+([^\r\n]+)', content, re.IGNORECASE)
-        if not exception_match:
-            exception_match = re.search(r'ExceptionCode[:\s]+([^\r\n]+)', content, re.IGNORECASE)
-        if exception_match:
-            exception_code = exception_match.group(1).strip()
-        
-        # Timestamp → czas crasha
-        timestamp_match = re.search(r'Time[:\s]+([^\r\n]+)', content, re.IGNORECASE)
-        if not timestamp_match:
-            timestamp_match = re.search(r'Timestamp[:\s]+([^\r\n]+)', content, re.IGNORECASE)
-        if not timestamp_match:
-            # Spróbuj wyciągnąć z nazwy pliku lub daty modyfikacji
-            timestamp = datetime.fromtimestamp(wer_file_path.stat().st_mtime)
-        else:
-            timestamp_str = timestamp_match.group(1).strip()
-            timestamp = parse_timestamp(timestamp_str)
-            if not timestamp:
-                # Fallback do daty modyfikacji pliku
-                timestamp = datetime.fromtimestamp(wer_file_path.stat().st_mtime)
+        # ReportMetadata
+        for section_name in config.sections():
+            section_lower = section_name.lower()
+            section = config[section_name]
+            
+            # ReportMetadata
+            if 'reportmetadata' in section_lower or 'metadata' in section_lower:
+                report_type = get_config_value(section, 'ReportType')
+                timestamp = get_config_value(section, 'CreationTime')
+                report_status = get_config_value(section, 'ReportStatus')
+                report_guid = get_config_value(section, 'ReportGUID')
+            
+            # ProblemSignatures
+            elif 'problemsignatures' in section_lower or 'signature' in section_lower:
+                # P1 = nazwa EXE, P2 = wersja EXE, P3 = nazwa modułu, P4 = wersja modułu, P5 = offset, P9 = Exception Code
+                app_name = get_config_value(section, 'P1')
+                app_version = get_config_value(section, 'P2')
+                module_name = get_config_value(section, 'P3')
+                module_version = get_config_value(section, 'P4')
+                fault_offset = get_config_value(section, 'P5')
+                exception_code = get_config_value(section, 'P9')
+            
+            # SystemInformation
+            elif 'systeminformation' in section_lower or 'system' in section_lower:
+                os_version = get_config_value(section, 'OSVersion')
+                locale_id = get_config_value(section, 'LocaleID')
+                bios_version = get_config_value(section, 'BIOSVersion')
+            
+            # AppCompat
+            elif 'appcompat' in section_lower:
+                app_compat_flags = get_config_value(section, 'AppCompatFlags')
+            
+            # DynamicSignatures
+            elif 'dynamicsignatures' in section_lower or 'dynamic' in section_lower:
+                for key in section:
+                    if key.lower().startswith('dynamicsig'):
+                        dynamic_sigs[key] = section[key]
+            
+            # Sprawdź też w DEFAULT
+            if 'default' in config:
+                default_section = config['DEFAULT']
+                if not app_name:
+                    app_name = get_config_value(default_section, 'P1') or get_config_value(default_section, 'FaultingApplicationName')
+                if not module_name:
+                    module_name = get_config_value(default_section, 'P3') or get_config_value(default_section, 'FaultingModuleName')
+                if not exception_code:
+                    exception_code = get_config_value(default_section, 'P9') or get_config_value(default_section, 'ExceptionCode')
+                if not timestamp:
+                    timestamp = get_config_value(default_section, 'CreationTime') or get_config_value(default_section, 'Time')
+                dump_count = get_config_value(default_section, 'DumpCount') or dump_count
+                parent_process_name = get_config_value(default_section, 'ParentProcessName') or parent_process_name
+                parent_process_version = get_config_value(default_section, 'ParentProcessVersion') or parent_process_version
         
         # Jeśli nie znaleziono timestamp, użyj daty modyfikacji pliku
         if not timestamp:
             timestamp = datetime.fromtimestamp(wer_file_path.stat().st_mtime)
+        else:
+            timestamp_parsed = parse_timestamp(timestamp)
+            if not timestamp_parsed:
+                timestamp = datetime.fromtimestamp(wer_file_path.stat().st_mtime)
+            else:
+                timestamp = timestamp_parsed
+        
+        # Normalizuj ścieżki
+        app_name = normalize_path(app_name) if app_name else None
+        module_name = normalize_path(module_name) if module_name else None
         
         # Zwróć tylko jeśli znaleziono przynajmniej AppName lub Module
-        if app_name or module:
+        if app_name or module_name:
             crash = {
                 "event_id": "WER_FILE",
                 "timestamp": timestamp.isoformat() if isinstance(timestamp, datetime) else str(timestamp),
+                "time_created": timestamp.isoformat() if isinstance(timestamp, datetime) else str(timestamp),
                 "message": f"WER file: {wer_file_path.name}",
+                "source": "Windows Error Reporting",
                 "provider": "Windows Error Reporting",
                 "application": app_name or "Unknown",
-                "app_version": "",
-                "module_name": module or "",
-                "module_version": "",
+                "faulting_application_name": app_name or "Unknown",
+                "app_version": app_version or "",
+                "faulting_application_version": app_version or "",
+                "module_name": module_name or "",
+                "faulting_module_name": module_name or "",
+                "module_version": module_version or "",
+                "faulting_module_version": module_version or "",
                 "exception_code": exception_code or "",
-                "process_id": "",
-                "thread_id": "",
-                "os_version": "",
-                "type": determine_crash_type(app_name, module, exception_code),
+                "fault_offset": fault_offset or "",
+                "os_version": os_version or "",
+                "type": determine_crash_type(app_name, module_name, exception_code),
+                "severity": get_exception_severity(exception_code),
                 "source": "wer_file",
-                "wer_file_path": str(wer_file_path)
+                "wer_file_path": str(wer_file_path),
+                "report_type": report_type or "",
+                "report_status": report_status or "",
+                "report_guid": report_guid or "",
+                "dump_count": dump_count or "",
+                "parent_process_name": parent_process_name or "",
+                "parent_process_version": parent_process_version or "",
+                "locale_id": locale_id or "",
+                "bios_version": bios_version or "",
+                "app_compat_flags": app_compat_flags or "",
+                "dynamic_signatures": dynamic_sigs
             }
-            logger.debug(f"[WER] Parsed .wer file - AppName: {app_name}, Module: {module}, ExceptionCode: {exception_code}")
+            logger.debug(f"[WER] Parsed .wer file - AppName: {app_name}, Module: {module_name}, ExceptionCode: {exception_code}")
             return crash
         
         return None
         
     except Exception as e:
         logger.debug(f"[WER] Error parsing INI .wer file {wer_file_path}: {e}")
+        # Fallback do ręcznego parsowania
+        return parse_wer_ini_fallback(wer_file_path, content)
+
+
+def get_config_value(section, key, default=None):
+    """
+    Pobiera wartość z sekcji configparser (case-insensitive).
+    
+    Args:
+        section: Sekcja configparser
+        key (str): Klucz do pobrania
+        default: Wartość domyślna
+        
+    Returns:
+        str: Wartość lub None
+    """
+    try:
+        # Spróbuj dokładne dopasowanie
+        if key in section:
+            return section[key]
+        
+        # Spróbuj case-insensitive
+        key_lower = key.lower()
+        for k in section:
+            if k.lower() == key_lower:
+                return section[k]
+        
+        return default
+    except Exception:
+        return default
+
+
+def parse_wer_ini_fallback(wer_file_path, content):
+    """
+    Fallback - ręczne parsowanie pliku .wer gdy configparser nie działa.
+    Obsługuje pliki z null bytes i innymi problematycznymi znakami.
+    
+    Args:
+        wer_file_path (Path): Ścieżka do pliku
+        content (str): Zawartość pliku
+        
+    Returns:
+        dict: Wyciągnięte dane o crashu lub None
+    """
+    try:
+        # Oczyść content z null bytes i problematycznych znaków
+        clean_content = content.replace('\x00', '').replace('\x01', '').replace('\x02', '')
+        # Usuń znaki kontrolne (zostaw tylko \r, \n, \t)
+        clean_content = ''.join(c for c in clean_content if ord(c) >= 32 or c in '\r\n\t')
+        
+        app_name = None
+        module = None
+        exception_code = None
+        timestamp = None
+        
+        # Wyciągnij wartości używając regex
+        app_match = re.search(r'Faulting\s+application[:\s]+([^\r\n]+)', content, re.IGNORECASE)
+        if not app_match:
+            app_match = re.search(r'AppName[:\s]+([^\r\n]+)', content, re.IGNORECASE)
+        if not app_match:
+            app_match = re.search(r'P1[:\s=]+([^\r\n]+)', content, re.IGNORECASE)
+        if app_match:
+            app_name = app_match.group(1).strip()
+        
+        module_match = re.search(r'Faulting\s+module[:\s]+([^\r\n]+)', content, re.IGNORECASE)
+        if not module_match:
+            module_match = re.search(r'Module[:\s]+([^\r\n]+)', content, re.IGNORECASE)
+        if not module_match:
+            module_match = re.search(r'P3[:\s=]+([^\r\n]+)', content, re.IGNORECASE)
+        if module_match:
+            module = module_match.group(1).strip()
+        
+        exception_match = re.search(r'Exception\s+code[:\s]+([^\r\n]+)', content, re.IGNORECASE)
+        if not exception_match:
+            exception_match = re.search(r'ExceptionCode[:\s]+([^\r\n]+)', content, re.IGNORECASE)
+        if not exception_match:
+            exception_match = re.search(r'P9[:\s=]+([^\r\n]+)', content, re.IGNORECASE)
+        if exception_match:
+            exception_code = exception_match.group(1).strip()
+        
+        timestamp_match = re.search(r'CreationTime[:\s=]+([^\r\n]+)', content, re.IGNORECASE)
+        if not timestamp_match:
+            timestamp_match = re.search(r'Time[:\s]+([^\r\n]+)', content, re.IGNORECASE)
+        if not timestamp_match:
+            timestamp = datetime.fromtimestamp(wer_file_path.stat().st_mtime)
+        else:
+            timestamp_str = timestamp_match.group(1).strip()
+            timestamp = parse_timestamp(timestamp_str)
+            if not timestamp:
+                timestamp = datetime.fromtimestamp(wer_file_path.stat().st_mtime)
+        
+        if not timestamp:
+            timestamp = datetime.fromtimestamp(wer_file_path.stat().st_mtime)
+        
+        app_name = normalize_path(app_name) if app_name else None
+        module = normalize_path(module) if module else None
+        
+        if app_name or module:
+            crash = {
+                "event_id": "WER_FILE",
+                "timestamp": timestamp.isoformat() if isinstance(timestamp, datetime) else str(timestamp),
+                "time_created": timestamp.isoformat() if isinstance(timestamp, datetime) else str(timestamp),
+                "message": f"WER file: {wer_file_path.name}",
+                "provider": "Windows Error Reporting",
+                "application": app_name or "Unknown",
+                "faulting_application_name": app_name or "Unknown",
+                "module_name": module or "",
+                "faulting_module_name": module or "",
+                "exception_code": exception_code or "",
+                "type": determine_crash_type(app_name, module, exception_code),
+                "severity": get_exception_severity(exception_code),
+                "source": "wer_file",
+                "wer_file_path": str(wer_file_path)
+            }
+            return crash
+        
+        return None
+        
+    except Exception as e:
+        logger.debug(f"[WER] Error in fallback parsing: {e}")
         return None
 
 
@@ -960,95 +1619,395 @@ def parse_wer_xml(wer_file_path, content):
 
 def collect_from_wer_directories():
     """
-    2️⃣ Parsowanie .wer files z ReportQueue i ReportArchive.
-    Zbiera dane z katalogów Windows Error Reporting i parsuje pliki .wer.
+    3️⃣ Pełne parsowanie katalogów WER
+    
+    Parsuje:
+    - Report.wer (główny manifest w każdym katalogu)
+    - *.mdmp / *.hdmp (minidump / full dump)
+    - MemoryInfo.txt (zużycie RAM)
+    - AppCompat.txt (zgodność)
     
     Returns:
         list: Lista crash events wyciągniętych z plików .wer
     """
     crashes = []
-    reports = []
+    report_dirs_processed = []
     
-    # 2️⃣ Parsowanie .wer files - lokalizacje:
-    # C:\ProgramData\Microsoft\Windows\WER\ReportQueue
-    # C:\ProgramData\Microsoft\Windows\WER\ReportArchive
+    # 3️⃣ Parsowanie katalogów WER - WSZYSTKIE wymagane lokalizacje:
+    # %ProgramData%\Microsoft\Windows\WER\ReportQueue
+    # %ProgramData%\Microsoft\Windows\WER\ReportArchive
+    # %LOCALAPPDATA%\Microsoft\Windows\WER\ReportQueue
+    # %LOCALAPPDATA%\Microsoft\Windows\WER\ReportArchive
+    programdata = os.environ.get("ProgramData", "C:/ProgramData")
+    localappdata = os.environ.get("LOCALAPPDATA", "")
+    
     wer_paths = [
-        Path("C:/ProgramData/Microsoft/Windows/WER/ReportQueue"),
-        Path("C:/ProgramData/Microsoft/Windows/WER/ReportArchive"),
-        Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "Windows" / "WER",
-        Path("C:/ProgramData/Microsoft/Windows/WER")
+        Path(programdata) / "Microsoft" / "Windows" / "WER" / "ReportQueue",
+        Path(programdata) / "Microsoft" / "Windows" / "WER" / "ReportArchive",
     ]
+    
+    # Dodaj LOCALAPPDATA ścieżki tylko jeśli zmienna środowiskowa istnieje
+    if localappdata:
+        wer_paths.extend([
+            Path(localappdata) / "Microsoft" / "Windows" / "WER" / "ReportQueue",
+            Path(localappdata) / "Microsoft" / "Windows" / "WER" / "ReportArchive",
+        ])
+    
+    logger.info(f"[WER] Checking {len(wer_paths)} WER directory locations")
     
     for wer_path in wer_paths:
         if not wer_path.exists():
+            logger.debug(f"[WER] WER directory does not exist: {wer_path}")
             continue
         
+        logger.info(f"[WER] Processing WER directory: {wer_path}")
+        
         try:
-            # Znajdź wszystkie pliki *.wer
-            wer_files = list(wer_path.rglob("*.wer"))
-            logger.debug(f"[WER] Found {len(wer_files)} .wer files in {wer_path}")
+            # Znajdź wszystkie katalogi raportów w tym katalogu
+            report_dirs = [d for d in wer_path.iterdir() if d.is_dir()]
+            logger.info(f"[WER] Found {len(report_dirs)} report directories in {wer_path}")
             
-            # Parsuj pliki .wer (maksymalnie 50 najnowszych)
+            if not report_dirs:
+                continue
+            
+            # Parsuj katalogi raportów (maksymalnie 50 najnowszych z każdego katalogu)
             parsed_count = 0
-            for wer_file in sorted(wer_files, key=lambda x: x.stat().st_mtime, reverse=True)[:50]:
+            for report_dir in sorted(report_dirs, key=lambda x: x.stat().st_mtime, reverse=True)[:50]:
                 try:
-                    crash = parse_wer_file(wer_file)
+                    # 3️⃣ Parsuj Report.wer w katalogu
+                    report_wer = report_dir / "Report.wer"
+                    if not report_wer.exists():
+                        continue
+                    
+                    crash = parse_wer_file(report_wer)
                     if crash:
+                        # 4️⃣ Dodatkowe pliki w katalogu
+                        crash["wer_directory"] = str(report_dir)
+                        crash["wer_files"] = []
+                        
+                        # 1️⃣ Parsowanie dumpów - wyciąganie Exception Code, Faulting Module, Stack Trace
+                        mdmp_files = list(report_dir.glob("*.mdmp"))
+                        hdmp_files = list(report_dir.glob("*.hdmp"))
+                        dump_data = []
+                        
+                        # Parsuj minidumpy
+                        for dump_file in mdmp_files:
+                            try:
+                                from utils.minidump_parser import parse_minidump
+                                dump_info = parse_minidump(str(dump_file))
+                                if dump_info.get("success"):
+                                    dump_data.append({
+                                        "file": str(dump_file),
+                                        "type": "minidump",
+                                        "stop_code": dump_info.get("stop_code"),
+                                        "stop_code_name": dump_info.get("stop_code_name"),
+                                        "offending_driver": dump_info.get("offending_driver")
+                                    })
+                                    # Uzupełnij brakujące pola z dumpa
+                                    if not crash.get("exception_code") and dump_info.get("stop_code"):
+                                        crash["exception_code"] = dump_info.get("stop_code")
+                                        crash["severity"] = get_exception_severity(dump_info.get("stop_code"))
+                                    if not crash.get("module_name") and dump_info.get("offending_driver"):
+                                        crash["module_name"] = dump_info.get("offending_driver")
+                                        crash["faulting_module_name"] = dump_info.get("offending_driver")
+                            except Exception as e:
+                                logger.debug(f"[WER] Error parsing minidump {dump_file}: {e}")
+                        
+                        # Parsuj full dumpy (hdmp)
+                        for dump_file in hdmp_files:
+                            try:
+                                from utils.minidump_parser import parse_minidump
+                                dump_info = parse_minidump(str(dump_file))
+                                if dump_info.get("success"):
+                                    dump_data.append({
+                                        "file": str(dump_file),
+                                        "type": "fulldump",
+                                        "stop_code": dump_info.get("stop_code"),
+                                        "stop_code_name": dump_info.get("stop_code_name"),
+                                        "offending_driver": dump_info.get("offending_driver")
+                                    })
+                                    # Uzupełnij brakujące pola z dumpa
+                                    if not crash.get("exception_code") and dump_info.get("stop_code"):
+                                        crash["exception_code"] = dump_info.get("stop_code")
+                                        crash["severity"] = get_exception_severity(dump_info.get("stop_code"))
+                                    if not crash.get("module_name") and dump_info.get("offending_driver"):
+                                        crash["module_name"] = dump_info.get("offending_driver")
+                                        crash["faulting_module_name"] = dump_info.get("offending_driver")
+                            except Exception as e:
+                                logger.debug(f"[WER] Error parsing fulldump {dump_file}: {e}")
+                        
+                        if mdmp_files:
+                            crash["wer_files"].extend([str(f) for f in mdmp_files])
+                        if hdmp_files:
+                            crash["wer_files"].extend([str(f) for f in hdmp_files])
+                        if dump_data:
+                            crash["dump_analysis"] = dump_data
+                        
+                        # Sprawdź MemoryInfo.txt
+                        memory_info = report_dir / "MemoryInfo.txt"
+                        if memory_info.exists():
+                            crash["has_memory_info"] = True
+                            crash["wer_files"].append(str(memory_info))
+                            # Spróbuj wyciągnąć informacje o pamięci
+                            try:
+                                with open(memory_info, 'r', encoding='utf-8', errors='ignore') as f:
+                                    mem_content = f.read()
+                                    # Wyciągnij użycie pamięci
+                                    mem_match = re.search(r'Memory\s+Usage:\s*([^\r\n]+)', mem_content, re.IGNORECASE)
+                                    if mem_match:
+                                        crash["memory_usage"] = mem_match.group(1).strip()
+                            except Exception:
+                                pass
+                        
+                        # Sprawdź AppCompat.txt
+                        appcompat = report_dir / "AppCompat.txt"
+                        if appcompat.exists():
+                            crash["has_appcompat"] = True
+                            crash["wer_files"].append(str(appcompat))
+                        
                         crashes.append(crash)
                         parsed_count += 1
-                except Exception as e:
-                    logger.debug(f"[WER] Error parsing .wer file {wer_file}: {e}")
-                    continue
-            
-            logger.info(f"[WER] Parsed {parsed_count} .wer files from {wer_path}")
-            
-            # Zbierz też informacje o katalogach raportów (dla kompatybilności)
-            report_dirs = [d for d in wer_path.iterdir() if d.is_dir()]
-            for report_dir in sorted(report_dirs, key=lambda x: x.stat().st_mtime, reverse=True)[:20]:
-                try:
-                    stat = report_dir.stat()
-                    report_info = {
-                        "path": str(report_dir),
-                        "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                        "size": stat.st_size
-                    }
-                    
-                    # Sprawdź czy jest plik .wer w katalogu
-                    wer_file = report_dir / "Report.wer"
-                    if wer_file.exists():
-                        report_info["has_wer_file"] = True
-                        # Plik już został sparsowany powyżej
-                    
-                    reports.append(report_info)
-                    
+                        report_dirs_processed.append({
+                            "path": str(report_dir),
+                            "modified": datetime.fromtimestamp(report_dir.stat().st_mtime).isoformat()
+                        })
+                        
                 except Exception as e:
                     logger.debug(f"[WER] Error processing report directory {report_dir}: {e}")
                     continue
             
-            # Jeśli znaleziono crashy, nie sprawdzaj kolejnej ścieżki
-            if crashes:
-                break
+            logger.info(f"[WER] Parsed {parsed_count} report directories from {wer_path}")
                 
         except Exception as e:
-            logger.debug(f"[WER] Error accessing WER directory {wer_path}: {e}")
+            logger.warning(f"[WER] Error accessing WER directory {wer_path}: {e}")
             continue
     
-    logger.info(f"[WER] Collected {len(crashes)} crashes from .wer files and {len(reports)} WER report directories")
+    logger.info(f"[WER] Collected {len(crashes)} crashes from {len(wer_paths)} WER directory locations")
     
-    # Zwróć crashy (będą dodane do recent_crashes) oraz informacje o raportach
-    # Dla kompatybilności zwracamy listę, ale crashy są już w crashes
     return crashes
+
+
+def correlate_event_log_with_wer_files(crashes):
+    """
+    4️⃣ Powiązanie Event Log → WER Files
+    
+    Korelacja po:
+    - ReportId (z Event Log) → ReportGUID (z WER file)
+    - CreationTime (z Event Log) → CreationTime (z WER file) ± 5 sekund
+    - P1/P2 z signatures (AppName + Version)
+    
+    Args:
+        crashes (list): Lista crash events z Event Log i WER files
+        
+    Returns:
+        list: Lista crash events z dodanymi korelacjami
+    """
+    # Podziel crashy na Event Log i WER files
+    event_log_crashes = [c for c in crashes if isinstance(c, dict) and c.get("source") != "wer_file"]
+    wer_file_crashes = [c for c in crashes if isinstance(c, dict) and c.get("source") == "wer_file"]
+    
+    if not event_log_crashes or not wer_file_crashes:
+        return crashes
+    
+    # Utwórz mapę WER files po różnych kluczach
+    wer_by_report_id = {}
+    wer_by_time = {}
+    wer_by_app = {}
+    
+    for wer_crash in wer_file_crashes:
+        report_guid = wer_crash.get("report_guid", "")
+        if report_guid:
+            wer_by_report_id[report_guid.lower()] = wer_crash
+        
+        timestamp = parse_timestamp(wer_crash.get("timestamp", ""))
+        if timestamp:
+            # Klucz: timestamp zaokrąglony do 5 sekund
+            time_key = timestamp.replace(second=(timestamp.second // 5) * 5, microsecond=0)
+            if time_key not in wer_by_time:
+                wer_by_time[time_key] = []
+            wer_by_time[time_key].append(wer_crash)
+        
+        app_name = (wer_crash.get("application") or "").lower()
+        app_version = (wer_crash.get("app_version") or "").lower()
+        if app_name:
+            key = (app_name, app_version)
+            if key not in wer_by_app:
+                wer_by_app[key] = []
+            wer_by_app[key].append(wer_crash)
+    
+    # Koreluj Event Log crashes z WER files
+    correlated_crashes = []
+    for event_crash in event_log_crashes:
+        report_id = event_crash.get("report_id", "")
+        timestamp = parse_timestamp(event_crash.get("timestamp", ""))
+        app_name = (event_crash.get("application") or "").lower()
+        app_version = (event_crash.get("app_version") or "").lower()
+        
+        # Spróbuj znaleźć odpowiadający WER file
+        matched_wer = None
+        
+        # 1. Po ReportId
+        if report_id:
+            matched_wer = wer_by_report_id.get(report_id.lower())
+        
+        # 2. Po CreationTime (± 5 sekund)
+        if not matched_wer and timestamp:
+            time_key = timestamp.replace(second=(timestamp.second // 5) * 5, microsecond=0)
+            candidates = wer_by_time.get(time_key, [])
+            if len(candidates) == 1:
+                matched_wer = candidates[0]
+            elif len(candidates) > 1:
+                # Jeśli wiele, wybierz najbliższy czasowo
+                matched_wer = min(candidates, key=lambda w: abs(
+                    (parse_timestamp(w.get("timestamp", "")) or datetime.min) - timestamp
+                ))
+        
+        # 3. Po P1/P2 (AppName + Version)
+        if not matched_wer and app_name:
+            key = (app_name, app_version)
+            candidates = wer_by_app.get(key, [])
+            if len(candidates) == 1:
+                matched_wer = candidates[0]
+            elif len(candidates) > 1 and timestamp:
+                # Jeśli wiele, wybierz najbliższy czasowo
+                matched_wer = min(candidates, key=lambda w: abs(
+                    (parse_timestamp(w.get("timestamp", "")) or datetime.min) - timestamp
+                ))
+        
+        # Jeśli znaleziono dopasowanie, połącz dane
+        if matched_wer:
+            # Uzupełnij brakujące pola z WER file
+            if not event_crash.get("faulting_application_path") and matched_wer.get("faulting_application_path"):
+                event_crash["faulting_application_path"] = matched_wer["faulting_application_path"]
+            if not event_crash.get("faulting_module_path") and matched_wer.get("faulting_module_path"):
+                event_crash["faulting_module_path"] = matched_wer["faulting_module_path"]
+            if not event_crash.get("exception_code") and matched_wer.get("exception_code"):
+                event_crash["exception_code"] = matched_wer["exception_code"]
+                event_crash["severity"] = get_exception_severity(matched_wer["exception_code"])
+            if not event_crash.get("fault_offset") and matched_wer.get("fault_offset"):
+                event_crash["fault_offset"] = matched_wer["fault_offset"]
+            
+            # Dodaj informacje o WER file
+            event_crash["correlated_wer_file"] = matched_wer.get("wer_file_path", "")
+            event_crash["correlated_wer_directory"] = matched_wer.get("wer_directory", "")
+            if matched_wer.get("wer_files"):
+                event_crash["correlated_wer_files"] = matched_wer["wer_files"]
+        
+        correlated_crashes.append(event_crash)
+    
+    # Dodaj WER file crashes, które nie zostały skorelowane
+    correlated_report_ids = {c.get("report_id", "").lower() for c in correlated_crashes if c.get("report_id")}
+    for wer_crash in wer_file_crashes:
+        report_guid = (wer_crash.get("report_guid", "") or "").lower()
+        if not report_guid or report_guid not in correlated_report_ids:
+            correlated_crashes.append(wer_crash)
+    
+    logger.info(f"[WER] Correlated {len(correlated_crashes)} crashes (Event Log + WER files)")
+    return correlated_crashes
+
+
+def normalize_fault_offset(offset_str):
+    """
+    ✅ 4. ASLR-aware grouping - normalizuje offset modulo page alignment (0x1000)
+    Pozwala wykryć takie same crashy mimo różnych ASLR!
+    
+    Args:
+        offset_str (str): Offset jako string (hex lub dec)
+        
+    Returns:
+        int: Znormalizowany offset (offset % 0x1000) lub 0
+    """
+    if not offset_str:
+        return 0
+    
+    try:
+        # Spróbuj sparsować jako hex
+        if isinstance(offset_str, str):
+            offset_str = offset_str.strip()
+            if offset_str.startswith('0x') or offset_str.startswith('0X'):
+                offset = int(offset_str, 16)
+            else:
+                # Spróbuj jako hex bez prefiksu
+                try:
+                    offset = int(offset_str, 16)
+                except ValueError:
+                    # Spróbuj jako decimal
+                    offset = int(offset_str, 10)
+        else:
+            offset = int(offset_str)
+        
+        # Normalizuj modulo 0x1000 (page alignment)
+        return offset % 0x1000
+    except (ValueError, TypeError):
+        return 0
+
+
+def filter_and_deduplicate_crashes(crashes):
+    """
+    ✅ 5. Reguły filtrowania i deduplikacji
+    
+    5.1. Crash'e systemowe z pustymi polami - oznacz jako Unknown, ale NIE USUWAJ (statystyka)
+    5.2. Powtarzające się identyczne crash'e w ciągu 5 sekund - łącz w jeden
+    
+    Args:
+        crashes (list): Lista crash events
+        
+    Returns:
+        list: Filtrowane i deduplikowane crashy
+    """
+    if not crashes:
+        return []
+    
+    filtered = []
+    seen_recent = {}  # {(app, module, exception): last_timestamp}
+    now = datetime.now()
+    dedup_window = timedelta(seconds=5)  # 5 sekund okno deduplikacji
+    
+    for crash in crashes:
+        if not isinstance(crash, dict):
+            continue
+        
+        # 5.1. Oznacz jako Unknown dla pustych pól, ale NIE USUWAJ
+        app = crash.get("application") or crash.get("faulting_application_name") or "Unknown"
+        module = crash.get("module_name") or crash.get("faulting_module_name") or ""
+        exception = crash.get("exception_code") or ""
+        
+        if not app or app == "Unknown":
+            if not module and not exception:
+                # Oznacz jako Unknown dla statystyki
+                crash["application"] = "Unknown"
+                crash["faulting_application_name"] = "Unknown"
+        
+        # 5.2. Deduplikacja - powtarzające się identyczne crash'e w ciągu 5 sekund
+        crash_time = parse_timestamp(crash.get("timestamp", ""))
+        if crash_time:
+            key = (app.lower(), module.lower(), exception.upper())
+            last_seen = seen_recent.get(key)
+            
+            if last_seen and (crash_time - last_seen) < dedup_window:
+                # Ten sam crash w ciągu 5 sekund - pomiń (lub zwiększ licznik)
+                # Można tutaj dodać licznik, ale na razie pomijamy
+                continue
+            
+            seen_recent[key] = crash_time
+        
+        filtered.append(crash)
+    
+    return filtered
 
 
 def group_and_analyze_crashes(crashes):
     """
-    3️⃣ Grupowanie crashy - zgrupuj po AppName, ExceptionCode, Module.
-    Zlicza wystąpienia w ostatnich 30 minutach i 24 godzinach.
+    ✅ 4. Reguły grupowania crashy - ASLR-aware grouping
     
-    Grupowanie po:
-    - AppName (application)
-    - ExceptionCode
-    - Module (module_name) - opcjonalnie
+    Twórz GroupID wg:
+    (faulting_app, faulting_module, exception_code, fault_offset_normalized)
+    
+    Gdzie:
+    fault_offset_normalized to offset modulo page alignment (0x1000)
+    Pozwala wykryć takie same crashy mimo różnych ASLR!
+    
+    ASLR-aware grouping = MUST HAVE
     
     Args:
         crashes (list): Lista crash events
@@ -1056,42 +2015,52 @@ def group_and_analyze_crashes(crashes):
     Returns:
         list: Zgrupowane crashy z occurrences
     """
+    # 5. Filtrowanie i deduplikacja
+    crashes = filter_and_deduplicate_crashes(crashes)
+    
     grouped = defaultdict(list)
     now = datetime.now()
     last_30min = now - timedelta(minutes=30)
     last_24h = now - timedelta(hours=24)
     
-    # 3️⃣ Grupuj crashy - po AppName, ExceptionCode, Module
+    # ✅ 4. ASLR-aware grouping
     for crash in crashes:
         # Upewnij się, że crash jest słownikiem
         if not isinstance(crash, dict):
             logger.debug(f"[WER] Skipping non-dict crash: {type(crash)}")
             continue
         
-        app = crash.get("application", "Unknown")
-        module = crash.get("module_name", "")
-        exception = crash.get("exception_code", "")
+        app = crash.get("application") or crash.get("faulting_application_name") or "Unknown"
+        module = crash.get("module_name") or crash.get("faulting_module_name") or ""
+        exception = crash.get("exception_code") or ""
+        fault_offset = crash.get("fault_offset") or ""
         
-        # Klucz grupowania: (AppName, Module, ExceptionCode)
         # Normalizuj wartości dla lepszego grupowania
         app_normalized = app.lower().strip() if app else "unknown"
+        # Usuwanie .exe, .dll dla grupowania, ale przechowanie w oryginale
+        app_normalized = app_normalized.replace('.exe', '').replace('.dll', '').strip()
         module_normalized = module.lower().strip() if module else ""
+        module_normalized = module_normalized.replace('.exe', '').replace('.dll', '').strip()
         exception_normalized = exception.upper().strip() if exception else ""
         
-        key = (app_normalized, module_normalized, exception_normalized)
+        # ✅ 4. ASLR-aware: normalizuj offset modulo 0x1000
+        offset_normalized = normalize_fault_offset(fault_offset)
+        
+        # Klucz grupowania: (AppName, Module, ExceptionCode, OffsetNormalized)
+        key = (app_normalized, module_normalized, exception_normalized, offset_normalized)
         
         crash_time = parse_timestamp(crash.get("timestamp", ""))
-        # Dodaj do grupy nawet jeśli timestamp jest None - użyj pustego stringa jako fallback
+        # Dodaj do grupy nawet jeśli timestamp jest None
         grouped[key].append({
             "crash": crash,
-            "timestamp": crash_time if crash_time is not None else None  # None jest OK, będzie konwertowane później
+            "timestamp": crash_time if crash_time is not None else None
         })
     
     # Utwórz zgrupowane wyniki
     grouped_results = []
     
     for key, crash_list in grouped.items():
-        app, module, exception = key
+        app, module, exception, offset_normalized = key
         
         # Upewnij się, że crash_list nie jest puste
         if not crash_list:
@@ -1108,31 +2077,72 @@ def group_and_analyze_crashes(crashes):
         # Zlicz wystąpienia w oknach czasowych
         crashes_30min = []
         crashes_24h = []
+        crashes_1h = []
+        crashes_6h = []
+        timestamps = []
+        
         for c in crash_list:
             if not isinstance(c, dict):
                 continue
             timestamp = c.get("timestamp")
             if timestamp and isinstance(timestamp, datetime):
+                timestamps.append(timestamp)
                 if timestamp >= last_30min:
                     crashes_30min.append(c)
+                if timestamp >= (now - timedelta(hours=1)):
+                    crashes_1h.append(c)
+                if timestamp >= (now - timedelta(hours=6)):
+                    crashes_6h.append(c)
                 if timestamp >= last_24h:
                     crashes_24h.append(c)
         
-        # Określ czy to powtarzający się crash (≥3 w 30 min)
-        is_repeating = len(crashes_30min) >= 3
+        # 2️⃣ Analiza powtarzalności - lepsze liczenie z rozróżnieniem czasu
+        # Powtarzający się crash: ≥3 w 30 min LUB ≥5 w 1h LUB ≥10 w 24h
+        is_repeating_30min = len(crashes_30min) >= 3
+        is_repeating_1h = len(crashes_1h) >= 5
+        is_repeating_24h = len(crashes_24h) >= 10
+        is_repeating = is_repeating_30min or is_repeating_1h or is_repeating_24h
+        
+        # 4️⃣ Czasy między crashami - średni interwał
+        avg_interval_seconds = None
+        avg_interval_hours = None
+        if len(timestamps) > 1:
+            # Sortuj timestamps
+            timestamps_sorted = sorted(timestamps)
+            intervals = []
+            for i in range(1, len(timestamps_sorted)):
+                interval = (timestamps_sorted[i] - timestamps_sorted[i-1]).total_seconds()
+                intervals.append(interval)
+            if intervals:
+                avg_interval_seconds = sum(intervals) / len(intervals)
+                avg_interval_hours = avg_interval_seconds / 3600
         
         # Bezpieczne pobranie pierwszego i ostatniego crasha
         first_crash = crash_list[-1].get("crash", {}) if crash_list and isinstance(crash_list[-1], dict) else {}
         last_crash = crash_list[0].get("crash", {}) if crash_list and isinstance(crash_list[0], dict) else {}
         
+        # 3️⃣ Severity / Criticality - automatyczna ocena
+        severity = last_crash.get("severity", "Unknown") if isinstance(last_crash, dict) else "Unknown"
+        criticality = calculate_crash_criticality(last_crash) if isinstance(last_crash, dict) else "Unknown"
+        
         grouped_result = {
             "application": app,
             "module_name": module,
             "exception_code": exception,
+            "fault_offset_normalized": offset_normalized,
             "total_occurrences": len(crash_list),
             "occurrences_30min": len(crashes_30min),
+            "occurrences_1h": len(crashes_1h),
+            "occurrences_6h": len(crashes_6h),
             "occurrences_24h": len(crashes_24h),
             "is_repeating": is_repeating,
+            "is_repeating_30min": is_repeating_30min,
+            "is_repeating_1h": is_repeating_1h,
+            "is_repeating_24h": is_repeating_24h,
+            "severity": severity,
+            "criticality": criticality,
+            "avg_interval_seconds": avg_interval_seconds,
+            "avg_interval_hours": avg_interval_hours,
             "first_occurrence": first_crash.get("timestamp", "") if isinstance(first_crash, dict) else "",
             "last_occurrence": last_crash.get("timestamp", "") if isinstance(last_crash, dict) else "",
             "latest_crash": last_crash if isinstance(last_crash, dict) else {}

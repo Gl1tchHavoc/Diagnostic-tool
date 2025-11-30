@@ -1,14 +1,21 @@
 # Core dependencies
-psutil>=5.9.0
+psutil>=5.9.0  # System and process utilities
 
 # Windows-specific dependencies
-pywin32>=305; sys_platform == "win32"
-WMI>=1.5.1; sys_platform == "win32"
+pywin32>=305; sys_platform == "win32"  # Windows API access (registry, services, etc.)
+WMI>=1.5.1; sys_platform == "win32"  # Windows Management Instrumentation
 
 # Optional dependencies
-GPUtil>=1.4.0; sys_platform == "win32"
+GPUtil>=1.4.0; sys_platform == "win32"  # GPU monitoring
 
 # Testing and utilities
-pytest>=7.0.0
-chardet>=5.0.0
-python-dateutil>=2.8.0
+pytest>=7.0.0  # Testing framework
+chardet>=5.0.0  # Character encoding detection
+python-dateutil>=2.8.0  # Advanced date/time parsing
+
+# Note: The following are part of Python standard library and don't need to be installed:
+# - winreg (Windows registry access)
+# - configparser (INI file parsing)
+# - xml.etree.ElementTree (XML parsing)
+# - tkinter (GUI framework)
+# - subprocess, os, sys, re, pathlib, datetime, collections (standard library)

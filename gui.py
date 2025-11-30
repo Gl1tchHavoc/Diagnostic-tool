@@ -4,6 +4,7 @@ from threading import Thread
 import json
 import sys
 import time
+from datetime import timedelta
 
 # Sprawdź uprawnienia administratora
 from utils.admin_check import is_admin, require_admin, restart_as_admin
@@ -819,25 +820,53 @@ class DiagnosticsGUI:
             )
             return f"❌ Error: WER data is {type(data).__name__} instead of dict\n"
         
-        # Recent Crashes
+        # ✅ Informacje o LocalDumps - wyświetl na początku
+        local_dumps = data.get('local_dumps', {})
+        if isinstance(local_dumps, dict):
+            output += "📋 LOCALDUMPS STATUS:\n"
+            if local_dumps.get('enabled', False):
+                output += "  ✅ LocalDumps: ENABLED\n"
+                if local_dumps.get('dump_folder'):
+                    output += f"  📁 Dump Folder: {local_dumps['dump_folder']}\n"
+                if local_dumps.get('dump_type') is not None:
+                    dump_type_names = {0: "None", 1: "Mini", 2: "Full", 3: "Kernel"}
+                    dump_type = dump_type_names.get(local_dumps['dump_type'], f"Unknown ({local_dumps['dump_type']})")
+                    output += f"  🔧 Dump Type: {dump_type}\n"
+                if local_dumps.get('dump_count') is not None:
+                    output += f"  📊 Dump Count: {local_dumps['dump_count']}\n"
+                if local_dumps.get('warnings'):
+                    output += f"  ⚠️ Warnings: {', '.join(local_dumps['warnings'])}\n"
+            else:
+                output += "  ❌ LocalDumps: DISABLED\n"
+                if local_dumps.get('warnings'):
+                    output += f"  ⚠️ Issues: {', '.join(local_dumps['warnings'])}\n"
+                output += "  💡 Recommendation: Enable LocalDumps for complete crash diagnostics.\n"
+                output += "     Run the program as administrator to enable automatically.\n"
+            output += "\n"
+        
+        # Sprawdź czy jest za mało danych
         recent_crashes = data.get('recent_crashes', [])
         if not isinstance(recent_crashes, list):
             logger.warning(f"[GUI] format_wer: recent_crashes is not a list: {type(recent_crashes)}")
             recent_crashes = []
+        
+        reports = data.get("reports", [])
+        report_count = len(reports) if isinstance(reports, list) else (reports.get('report_count', 0) if isinstance(reports, dict) else 0)
+        total_crashes = data.get('statistics', {}).get('total_crashes', len(recent_crashes))
+        
+        # Ostrzeżenie jeśli za mało danych
+        if report_count == 0 and total_crashes == 0:
+            output += "⚠️ WARNING: No WER reports found.\n"
+            if isinstance(local_dumps, dict) and not local_dumps.get('enabled', True):
+                output += "  LocalDumps was disabled previously.\n"
+            output += "  If LocalDumps was just enabled, crashes need time to accumulate.\n"
+            output += "  Re-run the tool after the next crash to see full diagnostics.\n\n"
+        
         output += f"Recent Crashes: {len(recent_crashes)}\n"
         
         # Reports - KRYTYCZNE: reports może być listą lub dict!
-        reports = data.get("reports", [])
-        if isinstance(reports, dict):
-            # Jeśli reports jest dict, użyj .get()
-            report_count = reports.get('report_count', len(reports) if reports else 0)
-            output += f"Report Count: {report_count}\n\n"
-        elif isinstance(reports, list):
-            # Jeśli reports jest listą, użyj len()
-            output += f"Report Count: {len(reports)}\n\n"
-        else:
-            logger.warning(f"[GUI] format_wer: reports is unexpected type: {type(reports)}")
-            output += f"Report Count: N/A\n\n"
+        # (report_count już został obliczony wyżej)
+        output += f"Report Count: {report_count}\n\n"
         
         # Grouped Crashes
         grouped_crashes = data.get('grouped_crashes', [])
@@ -847,33 +876,191 @@ class DiagnosticsGUI:
             logger.warning(f"[GUI] format_wer: grouped_crashes is not a list: {type(grouped_crashes)}")
             output += f"Grouped Crashes: N/A\n\n"
         
-        # Statistics
+        # 📌 7.1. Summary
         statistics = data.get('statistics', {})
-        if isinstance(statistics, dict):
-            output += "STATISTICS:\n"
-            output += f"  Total Crashes: {statistics.get('total_crashes', 0)}\n"
-            output += f"  Crashes (30min): {statistics.get('crashes_last_30min', 0)}\n"
-            output += f"  Crashes (24h): {statistics.get('crashes_last_24h', 0)}\n"
-            output += f"  Repeating: {statistics.get('repeating_crashes', 0)}\n\n"
+        if not isinstance(statistics, dict):
+            statistics = {}
         
-        # 5️⃣ Formatowanie raportu - RECENT CRASHES z pełnymi szczegółami
-        if recent_crashes:
-            output += "RECENT CRASHES (first 10):\n"
-            for idx, crash in enumerate(recent_crashes[:10]):
-                try:
-                    if isinstance(crash, dict):
-                        app = crash.get('application', 'N/A')
-                        timestamp = crash.get('timestamp', 'N/A')
-                        module = crash.get('module_name', 'N/A')
-                        exception_code = crash.get('exception_code', 'N/A')
-                        # Format: AppName | Timestamp | Module | ExceptionCode
-                        output += f"  {app} | {timestamp} | {module} | {exception_code}\n"
+        # Zlicz High Severity crashes
+        high_severity_count = sum(1 for group in grouped_crashes 
+                                 if isinstance(group, dict) and group.get('severity') == 'High')
+        
+        # Znajdź najczęstszy proces
+        most_frequent_process = "N/A"
+        if grouped_crashes:
+            try:
+                top_group = max(grouped_crashes, 
+                              key=lambda x: x.get('total_occurrences', 0) if isinstance(x, dict) else 0)
+                if isinstance(top_group, dict):
+                    app_name = top_group.get('application', 'N/A')
+                    occurrences = top_group.get('total_occurrences', 0)
+                    most_frequent_process = f"{app_name} ({occurrences} crashes)"
+            except Exception:
+                pass
+        
+        output += "📌 SUMMARY\n"
+        output += f"  Total Crashes: {statistics.get('total_crashes', len(recent_crashes))}\n"
+        output += f"  Unique Crash Groups: {len(grouped_crashes)}\n"
+        output += f"  High Severity Crashes: {high_severity_count}\n"
+        output += f"  Most Frequent Process: {most_frequent_process}\n"
+        output += f"  Crashes (30min): {statistics.get('crashes_last_30min', 0)}\n"
+        output += f"  Crashes (24h): {statistics.get('crashes_last_24h', 0)}\n"
+        output += f"  Repeating Crashes: {statistics.get('repeating_crashes', 0)}\n\n"
+        
+        # 📌 7.2. Top 5 crash groups (z nowymi informacjami)
+        if grouped_crashes:
+            output += "📌 TOP 5 CRASH GROUPS\n"
+            sorted_groups = sorted(
+                [g for g in grouped_crashes if isinstance(g, dict)],
+                key=lambda x: x.get('total_occurrences', 0),
+                reverse=True
+            )[:5]
+            
+            for idx, group in enumerate(sorted_groups, 1):
+                app = group.get('application', 'N/A')
+                module = group.get('module_name', 'N/A')
+                exception = group.get('exception_code', 'N/A')
+                occurrences = group.get('total_occurrences', 0)
+                severity = group.get('severity', 'Unknown')
+                criticality = group.get('criticality', 'Unknown')
+                offset = group.get('fault_offset_normalized', 'N/A')
+                
+                # 2️⃣ Analiza powtarzalności - wyświetl szczegóły
+                is_repeating = group.get('is_repeating', False)
+                is_repeating_30min = group.get('is_repeating_30min', False)
+                is_repeating_1h = group.get('is_repeating_1h', False)
+                is_repeating_24h = group.get('is_repeating_24h', False)
+                
+                # 4️⃣ Średni interwał między crashami
+                avg_interval_hours = group.get('avg_interval_hours')
+                
+                output += f"  [{idx}] {app} | {module} | {exception}"
+                if offset != 'N/A' and offset != 0:
+                    output += f" | offset 0x{offset:03X}"
+                output += f" | {occurrences} occurrences"
+                if severity != 'Unknown':
+                    output += f" | Severity: {severity}"
+                if criticality != 'Unknown':
+                    output += f" | Criticality: {criticality}"
+                if is_repeating:
+                    repeating_info = []
+                    if is_repeating_30min:
+                        repeating_info.append(f"{group.get('occurrences_30min', 0)}x in 30min")
+                    if is_repeating_1h:
+                        repeating_info.append(f"{group.get('occurrences_1h', 0)}x in 1h")
+                    if is_repeating_24h:
+                        repeating_info.append(f"{group.get('occurrences_24h', 0)}x in 24h")
+                    if repeating_info:
+                        output += f" | Repeating: {', '.join(repeating_info)}"
+                if avg_interval_hours is not None:
+                    if avg_interval_hours < 1:
+                        output += f" | Avg interval: {avg_interval_hours * 60:.1f} min"
                     else:
-                        logger.warning(f"[GUI] format_wer: crash[{idx}] is not a dict: {type(crash)}")
-                        output += f"  [Invalid crash data: {type(crash).__name__}]\n"
-                except Exception as e:
-                    logger.warning(f"[GUI] format_wer: Error formatting crash[{idx}]: {e}")
-                    output += f"  [Error formatting crash]\n"
+                        output += f" | Avg interval: {avg_interval_hours:.1f} h"
+                output += "\n"
+            output += "\n"
+        
+        # 📌 7.3. Most recent crashes (z łączeniem duplikatów)
+        if recent_crashes:
+            output += "📌 MOST RECENT CRASHES\n"
+            sorted_recent = sorted(
+                [c for c in recent_crashes if isinstance(c, dict)],
+                key=lambda x: x.get('timestamp', ''),
+                reverse=True
+            )
+            
+            # 5️⃣ Łączenie duplikatów - identyczne crashy w krótkim czasie
+            deduplicated_recent = []
+            seen_crashes = {}  # {(app, module, exception): (count, last_timestamp)}
+            dedup_window = timedelta(minutes=1)  # 1 minuta okno dla duplikatów
+            
+            for crash in sorted_recent[:20]:  # Sprawdź więcej, żeby znaleźć duplikaty
+                app = (crash.get('application') or crash.get('faulting_application_name', 'N/A')).lower()
+                module = (crash.get('module_name') or crash.get('faulting_module_name', 'N/A')).lower()
+                exception = (crash.get('exception_code', 'N/A')).upper()
+                timestamp_str = crash.get('timestamp', '')
+                
+                key = (app, module, exception)
+                crash_time = None
+                try:
+                    if timestamp_str and timestamp_str != 'N/A':
+                        from datetime import datetime
+                        if isinstance(timestamp_str, str):
+                            crash_time = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                except Exception:
+                    pass
+                
+                if crash_time:
+                    last_seen = seen_crashes.get(key)
+                    if last_seen and (crash_time - last_seen[1]) < dedup_window:
+                        # Duplikat - zwiększ licznik
+                        seen_crashes[key] = (last_seen[0] + 1, last_seen[1])
+                    else:
+                        # Nowy crash - dodaj do listy
+                        seen_crashes[key] = (1, crash_time)
+                        deduplicated_recent.append((crash, crash_time))
+            
+            # Wyświetl z licznikami duplikatów
+            for idx, (crash, crash_time) in enumerate(deduplicated_recent[:10], 1):
+                app = crash.get('application') or crash.get('faulting_application_name', 'N/A')
+                exception = crash.get('exception_code', 'N/A')
+                module = crash.get('module_name') or crash.get('faulting_module_name', 'N/A')
+                offset = crash.get('fault_offset', 'N/A')
+                criticality = crash.get('criticality', 'Unknown')
+                
+                # Sprawdź czy to duplikat
+                key = (app.lower(), module.lower(), exception.upper())
+                count, _ = seen_crashes.get(key, (1, None))
+                
+                # Formatuj timestamp
+                if crash_time:
+                    timestamp = crash_time.strftime("%I:%M:%S %p")
+                else:
+                    timestamp = crash.get('timestamp', 'N/A')
+                
+                output += f"  {idx}. {app} | {timestamp} | {exception} | {module}"
+                if count > 1:
+                    output += f" ({count}x)"
+                if offset and offset != 'N/A':
+                    output += f" | offset {offset}"
+                if criticality != 'Unknown':
+                    output += f" | {criticality}"
+                output += "\n"
+            output += "\n"
+        
+        # 📌 7.4. Full WER details for each group (tylko top 3)
+        if grouped_crashes:
+            output += "📌 FULL WER DETAILS (Top 3 Groups)\n"
+            sorted_groups = sorted(
+                [g for g in grouped_crashes if isinstance(g, dict)],
+                key=lambda x: x.get('total_occurrences', 0),
+                reverse=True
+            )[:3]
+            
+            for idx, group in enumerate(sorted_groups, 1):
+                output += f"\n  Group {idx}:\n"
+                output += f"    Application: {group.get('application', 'N/A')}\n"
+                output += f"    Module: {group.get('module_name', 'N/A')}\n"
+                output += f"    Exception Code: {group.get('exception_code', 'N/A')}\n"
+                offset_norm = group.get('fault_offset_normalized', 0)
+                if offset_norm != 'N/A' and offset_norm != 0:
+                    output += f"    Fault Offset (normalized): 0x{offset_norm:03X}\n"
+                output += f"    Total Occurrences: {group.get('total_occurrences', 0)}\n"
+                output += f"    Occurrences (30min): {group.get('occurrences_30min', 0)}\n"
+                output += f"    Occurrences (24h): {group.get('occurrences_24h', 0)}\n"
+                output += f"    Is Repeating: {group.get('is_repeating', False)}\n"
+                output += f"    Severity: {group.get('severity', 'Unknown')}\n"
+                output += f"    First Occurrence: {group.get('first_occurrence', 'N/A')}\n"
+                output += f"    Last Occurrence: {group.get('last_occurrence', 'N/A')}\n"
+                
+                latest_crash = group.get('latest_crash', {})
+                if isinstance(latest_crash, dict) and latest_crash:
+                    output += f"    Latest Crash Details:\n"
+                    output += f"      Timestamp: {latest_crash.get('timestamp', 'N/A')}\n"
+                    output += f"      Source: {latest_crash.get('source', 'N/A')}\n"
+                    if latest_crash.get('wer_file_path'):
+                        output += f"      WER File: {latest_crash.get('wer_file_path', 'N/A')}\n"
+        
         return output
 
     def format_processes(self, data):
