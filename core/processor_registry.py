@@ -112,31 +112,36 @@ def register_all_processors():
     """
     Rejestruje wszystkie dostępne procesory.
     Wywoływane przy starcie aplikacji.
+    
+    NOTE: Processors moved to archive/ - not needed in MVP.
+    This function is kept for backward compatibility but does nothing.
     """
-    from processors import (
-        driver_processor,
-        hardware_processor,
-        registry_txr_processor,
-        storage_health_processor,
-        system_info_processor,
-        system_logs_processor,
-    )
-
-    registry = get_registry()
-
-    # Rejestracja wszystkich procesorów
-    registry.register("hardware_processor", hardware_processor.process,
-                      "Processes hardware data", "hardware")
-    registry.register("driver_processor", driver_processor.process,
-                      "Processes driver data", "drivers")
-    registry.register("system_logs_processor", system_logs_processor.process,
-                      "Processes system logs", "system_logs")
-    registry.register("registry_txr_processor", registry_txr_processor.process,
-                      "Processes Registry TxR errors", "registry_txr")
-    registry.register("storage_health_processor", storage_health_processor.process,
-                      "Processes storage health data", "storage_health")
-    registry.register("system_info_processor", system_info_processor.process,
-                      "Processes system info", "system_info")
+    # Processors moved to archive/ - not needed in MVP
+    # from processors import (
+    #     driver_processor,
+    #     hardware_processor,
+    #     registry_txr_processor,
+    #     storage_health_processor,
+    #     system_info_processor,
+    #     system_logs_processor,
+    # )
+    #
+    # registry = get_registry()
+    #
+    # # Rejestracja wszystkich procesorów
+    # registry.register("hardware_processor", hardware_processor.process,
+    #                   "Processes hardware data", "hardware")
+    # registry.register("driver_processor", driver_processor.process,
+    #                   "Processes driver data", "drivers")
+    # registry.register("system_logs_processor", system_logs_processor.process,
+    #                   "Processes system logs", "system_logs")
+    # registry.register("registry_txr_processor", registry_txr_processor.process,
+    #                   "Processes Registry TxR errors", "registry_txr")
+    # registry.register("storage_health_processor", storage_health_processor.process,
+    #                   "Processes storage health data", "storage_health")
+    # registry.register("system_info_processor", system_info_processor.process,
+    #                   "Processes system info", "system_info")
+    pass
 
     logger.info(
         f"[PROCESSOR_REGISTRY] Registered {len(registry.get_all())} processors")

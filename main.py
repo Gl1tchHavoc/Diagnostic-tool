@@ -8,7 +8,8 @@ from datetime import datetime
 from pathlib import Path
 
 from collectors.collector_master import collect_all
-from processors.analyzer import analyze_all
+# Processors moved to archive/ - not needed in MVP
+# from processors.analyzer import analyze_all
 from utils.admin_check import require_admin
 from utils.logger import get_logger, setup_logger
 from utils.requirements_check import (
@@ -97,12 +98,15 @@ def main():
     print()
 
     # Przetwórz i przeanalizuj
-    logger.info("Step 2: Processing and analyzing data...")
-    logger.debug("Starting data analysis and processing")
-    print("Step 2: Processing and analyzing data...")
+    # Processors moved to archive/ - not needed in MVP
+    logger.info("Step 2: Processing and analyzing data... (disabled - processors in archive)")
+    logger.debug("Data analysis disabled - processors moved to archive")
+    print("Step 2: Processing and analyzing data... (disabled)")
     print("-" * 60)
-    analysis_report = analyze_all(collected_data)
-    logger.info("Data analysis completed")
+    print("Processors moved to archive/ - analysis disabled in MVP")
+    # analysis_report = analyze_all(collected_data)
+    analysis_report = {}  # Placeholder - processors in archive
+    logger.info("Data analysis skipped (processors in archive)")
     print()
 
     # Zapisz przetworzone dane używając wspólnego modułu eksportu

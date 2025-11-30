@@ -96,5 +96,6 @@ exclude =
     .pytest_cache,
     htmlcov,
     .coverage,
-    coverage.xml
+    coverage.xml,
+    archive
 

@@ -1,6 +1,7 @@
 from collectors.collector_master import collect_all
 from learning.updater import update_cases
-from processors.analyzer import analyze_all
+# Processors moved to archive/ - not needed in MVP
+# from processors.analyzer import analyze_all
 from report.generator import generate_report
 
 
@@ -12,7 +13,8 @@ def run_full_scan():
     collected_data = collect_all(save_raw=True, output_dir="output/raw")
 
     # Przetwórz i przeanalizuj
-    analyze_all(collected_data)
+    # Processors moved to archive/ - not needed in MVP
+    # analyze_all(collected_data)
 
     # Generuj raport (używa starego formatu dla kompatybilności)
     # Konwertuj nowy format na stary dla report generatora

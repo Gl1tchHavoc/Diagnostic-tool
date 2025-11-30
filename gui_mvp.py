@@ -18,9 +18,10 @@ import logging
 # Nowa struktura MVP
 from core.config_loader import get_config
 from core.collector_registry import get_registry as get_collector_registry, register_all_collectors
-from core.processor_registry import get_registry as get_processor_registry, register_all_processors
+# Processors moved to archive/ - not needed in MVP
+# from core.processor_registry import get_registry as get_processor_registry, register_all_processors
 from collectors.collector_master import collect_all
-from processors.analyzer import analyze_all
+# from processors.analyzer import analyze_all
 
 logger = get_logger()
 
@@ -63,7 +64,7 @@ class DiagnosticsGUIMVP:
 
         # Zarejestruj wszystkie collectory i procesory
         register_all_collectors()
-        register_all_processors()
+        # register_all_processors()  # Processors moved to archive/ - not needed in MVP
 
         logger.info("[INIT] Collectors and processors registered")
         logger.info("[INIT] Application ready")
@@ -314,9 +315,11 @@ class DiagnosticsGUIMVP:
                     self.update_collector_status(name, status, error, result)
 
             # 3. Walidacja i parsowanie danych
+            # Processors moved to archive/ - not needed in MVP
             self.update_status("Processing data...")
-            processed_data = analyze_all(
-                collected_data, progress_callback=self.update_progress)
+            # processed_data = analyze_all(
+            #     collected_data, progress_callback=self.update_progress)
+            processed_data = {}  # Placeholder - processors in archive
             self.last_processed_data = processed_data
 
             # 4. Prezentacja wyników - wyświetl surowe dane

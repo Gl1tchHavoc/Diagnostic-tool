@@ -19,7 +19,8 @@ from collectors import (
     services, bsod_dumps, performance_counters, wer, processes
 )
 from collectors.collector_master import collect_all
-from processors.analyzer import analyze_all
+# Processors moved to archive/ - not needed in MVP
+# from processors.analyzer import analyze_all
 # Nowy system skanów
 from scans.scan_manager import QuickScan, FullScan
 # bsod_analyzer importowany lokalnie w funkcji, żeby nie blokować uruchomienia
@@ -258,7 +259,9 @@ class DiagnosticsGUI:
             self.root.update()
             
             # Analizuj wyniki
-            analysis_report = analyze_all(collected_data)
+            # Processors moved to archive/ - not needed in MVP
+            # analysis_report = analyze_all(collected_data)
+            analysis_report = {}  # Placeholder - processors in archive
             self.display_analysis_results(analysis_report)
             
             scan_duration = time.time() - scan_start_time
@@ -397,7 +400,9 @@ class DiagnosticsGUI:
                 self.output_text.see(tk.END)
                 self.root.update()
             
-            analysis_report = analyze_all(collected_data, progress_callback=analysis_callback)
+            # Processors moved to archive/ - not needed in MVP
+            # analysis_report = analyze_all(collected_data, progress_callback=analysis_callback)
+            analysis_report = {}  # Placeholder - processors in archive
             
             self.output_text.insert(tk.END, "✓ Data collection completed\n\n")
             self.root.update()
@@ -419,7 +424,9 @@ class DiagnosticsGUI:
                 self.output_text.see(tk.END)
                 self.root.update()
             
-            analysis_report = analyze_all(collected_data, progress_callback=analysis_callback)
+            # Processors moved to archive/ - not needed in MVP
+            # analysis_report = analyze_all(collected_data, progress_callback=analysis_callback)
+            analysis_report = {}  # Placeholder - processors in archive
             
             self.output_text.insert(tk.END, "✓ Analysis completed\n\n")
             self.progress_bar['value'] = 100
@@ -1323,11 +1330,15 @@ class DiagnosticsGUI:
             self.output_text.insert(tk.END, "-" * 70 + "\n")
             self.root.update()
             
-            from processors import system_logs_processor, hardware_processor, driver_processor
-            
-            system_logs_processed = system_logs_processor.process(collected_data["system_logs"])
-            hardware_processed = hardware_processor.process(collected_data["hardware"])
-            drivers_processed = driver_processor.process(collected_data["drivers"])
+            # Processors moved to archive/ - not needed in MVP
+            # from processors import system_logs_processor, hardware_processor, driver_processor
+            #
+            # system_logs_processed = system_logs_processor.process(collected_data["system_logs"])
+            # hardware_processed = hardware_processor.process(collected_data["hardware"])
+            # drivers_processed = driver_processor.process(collected_data["drivers"])
+            system_logs_processed = {}  # Placeholder
+            hardware_processed = {}  # Placeholder
+            drivers_processed = []  # Placeholder
             
             self.progress_bar['value'] = 75
             self.progress_percent.config(text="75%")
@@ -1339,15 +1350,17 @@ class DiagnosticsGUI:
             self.root.update()
             
             # Import lokalnie, żeby nie blokować uruchomienia GUI
-            from processors.bsod_analyzer import analyze_bsod_with_timeline
-            bsod_analysis = analyze_bsod_with_timeline(
-                system_logs_processed.get("data", {}),
-                hardware_processed.get("data", {}),
-                drivers_processed.get("data", []),
-                collected_data.get("bsod_dumps", {}),
-                time_window_minutes=15,
-                max_timeline_events=30
-            )
+            # Processors moved to archive/ - not needed in MVP
+            # from processors.bsod_analyzer import analyze_bsod_with_timeline
+            bsod_analysis = {}  # Placeholder - processors in archive
+            # bsod_analysis = analyze_bsod_with_timeline(
+            #     system_logs_processed.get("data", {}),
+            #     hardware_processed.get("data", {}),
+            #     drivers_processed.get("data", []),
+            #     collected_data.get("bsod_dumps", {}),
+            #     time_window_minutes=15,
+            #     max_timeline_events=30
+            # )
             
             self.progress_bar['value'] = 100
             self.progress_percent.config(text="100%")
