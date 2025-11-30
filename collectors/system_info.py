@@ -37,16 +37,27 @@ def collect():
             version = run_powershell_hidden('(Get-CimInstance Win32_OperatingSystem).Version').strip()
             system_data["windows_version"]["version"] = version
             
-            caption = run_powershell_hidden('(Get-CimInstance Win32_OperatingSystem).Caption').strip()
-            system_data["windows_version"]["caption"] = caption
+            try:
+                caption = run_powershell_hidden('(Get-CimInstance Win32_OperatingSystem).Caption').strip()
+                if caption:
+                    system_data["windows_version"]["caption"] = caption
+            except Exception as e:
+                logger.warning(f"[SYSTEM_INFO] Failed to get Windows caption: {e}")
             
-            build = run_powershell_hidden('(Get-CimInstance Win32_OperatingSystem).BuildNumber').strip()
-            system_data["windows_version"]["build"] = build
+            try:
+                build = run_powershell_hidden('(Get-CimInstance Win32_OperatingSystem).BuildNumber').strip()
+                if build:
+                    system_data["windows_version"]["build"] = build
+            except Exception as e:
+                logger.warning(f"[SYSTEM_INFO] Failed to get Windows build: {e}")
             
             # Boot time
-            boot_str = run_powershell_hidden('(Get-CimInstance Win32_OperatingSystem).LastBootUpTime').strip()
-            if boot_str:
-                system_data["boot_time"] = boot_str
+            try:
+                    boot_str = run_powershell_hidden('(Get-CimInstance Win32_OperatingSystem).LastBootUpTime').strip()
+                if boot_str:
+                    system_data["boot_time"] = boot_str
+            except Exception as e:
+                logger.warning(f"[SYSTEM_INFO] Failed to get boot time: {e}")
             
             # Uptime
             import psutil

@@ -82,7 +82,14 @@ def parse_xml_logs(xml_data, filter_levels=None):
             logger.warning("[SYSTEM_LOGS] XML data is empty or too short")
             return logs
         
-        root = ET.fromstring(xml_data)
+        try:
+            root = ET.fromstring(xml_data)
+        except ET.ParseError as e:
+            logger.warning(f"[SYSTEM_LOGS] XML parse error: {e}")
+            return logs
+        except Exception as e:
+            logger.warning(f"[SYSTEM_LOGS] Unexpected error parsing XML: {e}")
+            return logs
         objects = root.findall(".//Object")
         logger.debug(f"[SYSTEM_LOGS] Found {len(objects)} Object elements in XML")
         
