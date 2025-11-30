@@ -1,22 +1,60 @@
 # collectors/drivers.py
 import os
-import sys
 
 
-def collect():
+def _is_ci_environment():
     """
-    Zbiera informacje o sterownikach systemowych.
-    Zwraca listę słowników z danymi driverów.
+    Sprawdza czy środowisko to CI.
+
+    Returns:
+        bool: True jeśli jest to środowisko CI
     """
-    # W CI zwróć pustą listę - WMI może powodować access violation
-    IS_CI = (
+    return (
         os.environ.get("CI") in ("true", "1", "True") or
         os.environ.get("GITHUB_ACTIONS") == "true" or
         os.environ.get("TF_BUILD") == "True"
     )
-    if IS_CI:
-        return []
-    
+
+
+def _get_driver_attributes(drv):
+    """
+    Wyciąga atrybuty z obiektu driver.
+
+    Args:
+        drv: Obiekt WMI driver
+
+    Returns:
+        dict: Atrybuty driver lub None w przypadku błędu
+    """
+    try:
+        name = (
+            getattr(drv, "DeviceName", None) or
+            getattr(drv, "FriendlyName", None) or
+            "Unknown"
+        )
+        provider = getattr(drv, "DriverProviderName", None) or "Unknown"
+        version = getattr(drv, "DriverVersion", None) or "Unknown"
+        date = getattr(drv, "DriverDate", None) or "Unknown"
+        status = getattr(drv, "Status", None) or "Unknown"
+
+        return {
+            'name': str(name).strip(),
+            'provider': str(provider).strip(),
+            'version': str(version).strip(),
+            'date': str(date),
+            'status': str(status)
+        }
+    except Exception:
+        return None
+
+
+def _collect_drivers_from_wmi():
+    """
+    Zbiera informacje o driverach z WMI.
+
+    Returns:
+        list: Lista driverów
+    """
     try:
         import wmi
     except ImportError as e:
@@ -25,34 +63,28 @@ def collect():
     results = []
     try:
         c = wmi.WMI()
-        # Bezpieczny dostęp do Win32_PnPSignedDriver
         try:
             drivers = c.Win32_PnPSignedDriver()
-        except Exception as wmi_error:
-            # Jeśli access violation - zwróć pustą listę zamiast crashować
+        except Exception:
             return []
-        
+
         for drv in drivers:
-            try:
-                name = getattr(
-                    drv, "DeviceName", None) or getattr(
-                    drv, "FriendlyName", None) or "Unknown"
-                provider = getattr(
-                    drv, "DriverProviderName", None) or "Unknown"
-                version = getattr(drv, "DriverVersion", None) or "Unknown"
-                date = getattr(drv, "DriverDate", None) or "Unknown"
-                status = getattr(drv, "Status", None) or "Unknown"
-                results.append({
-                    'name': str(name).strip(),
-                    'provider': str(provider).strip(),
-                    'version': str(version).strip(),
-                    'date': str(date),
-                    'status': str(status)
-                })
-            except Exception as driver_error:
-                # Pomiń problematyczny driver i kontynuuj
-                continue
-    except Exception as e:
-        # W przypadku błędów WMI zwróć pustą listę zamiast crashować
+            driver_info = _get_driver_attributes(drv)
+            if driver_info:
+                results.append(driver_info)
+
+    except Exception:
         return []
+
     return results
+
+
+def collect():
+    """
+    Zbiera informacje o sterownikach systemowych.
+    Zwraca listę słowników z danymi driverów.
+    """
+    if _is_ci_environment():
+        return []
+
+    return _collect_drivers_from_wmi()

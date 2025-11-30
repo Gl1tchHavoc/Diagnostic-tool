@@ -1,6 +1,8 @@
 """
 Procesor informacji systemowych - analizuje konfigurację systemu.
 """
+
+
 def process(system_info_data):
     """
     Przetwarza informacje o systemie.
@@ -46,7 +48,7 @@ def process(system_info_data):
                     "message": f"System uptime is very low: {uptime} - may indicate recent crashes",
                     "component": "System"
                 })
-        except:
+        except Exception:
             pass
 
     return {
@@ -58,4 +60,3 @@ def process(system_info_data):
             "total_warnings": len(warnings)
         }
     }
-

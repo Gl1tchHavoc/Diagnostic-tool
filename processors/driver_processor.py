@@ -58,7 +58,6 @@ def process(drivers_data):
             })
 
     # Sprawdź stare wersje driverów (można rozszerzyć o sprawdzanie dat)
-    old_drivers = []
     for driver in drivers_data:
         date_str = driver.get("date", "")
         if date_str and date_str != "Unknown":

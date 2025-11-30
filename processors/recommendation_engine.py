@@ -1,7 +1,6 @@
 """
 Recommendation Engine - dobiera zalecenia na podstawie wykrytych problemów.
 """
-from collections import defaultdict
 
 # Mapowanie typów problemów na rekomendacje
 RECOMMENDATIONS = {
@@ -216,13 +215,14 @@ RECOMMENDATIONS = {
     ]
 }
 
+
 def generate_recommendations(processed_data):
     """
     Generuje rekomendacje na podstawie wykrytych problemów.
-    
+
     Args:
         processed_data (dict): Przetworzone dane z wszystkich procesorów
-    
+
     Returns:
         list: Lista rekomendacji posortowanych według priorytetu
     """
@@ -279,4 +279,3 @@ def generate_recommendations(processed_data):
     )
 
     return all_recommendations[:15]  # Max 15 rekomendacji
-

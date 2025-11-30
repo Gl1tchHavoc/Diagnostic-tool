@@ -348,7 +348,7 @@ def extract_msr_status(message):
 def determine_error_type(event_id, message):
     """Określa typ błędu na podstawie Event ID i message."""
     event_id = str(event_id)
-    message_lower = message.lower()
+    _message_lower = message.lower()
 
     if event_id == "18":
         return "Uncorrectable Hardware Error"

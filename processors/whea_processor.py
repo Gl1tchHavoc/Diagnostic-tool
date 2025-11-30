@@ -3,7 +3,7 @@ WHEA Processor - analizuje błędy WHEA i stosuje Golden Rules do wykrywania prz
 Implementuje wszystkie Golden Rules z 95-100% pewnością.
 """
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from utils.logger import get_logger
 
@@ -13,12 +13,12 @@ logger = get_logger()
 def process(whea_data, bsod_data=None, hardware_data=None):
     """
     Przetwarza dane WHEA i stosuje Golden Rules do wykrywania przyczyn.
-    
+
     Args:
         whea_data (dict): Dane z collectors.whea_analyzer
         bsod_data (dict, optional): Dane z collectors.bsod_dumps dla korelacji
         hardware_data (dict, optional): Dane z collectors.hardware dla kontekstu
-        
+
     Returns:
         dict: Przetworzone dane z wykrytymi przyczynami i confidence scores
     """
@@ -194,7 +194,6 @@ def apply_golden_rule_6(whea_events):
         return causes
 
     # Grupuj po czasie (okno 10 minut)
-    now = datetime.now()
     time_windows = defaultdict(list)
 
     for event in event_19_events:
@@ -454,7 +453,7 @@ def get_affected_components(whea_events, root_causes):
         if bank:
             components.add(f"Bank {bank}")
 
-    return sorted(list(components))
+    return sorted(components)
 
 
 def calculate_aggregated_confidence(aggregated_causes):
@@ -488,7 +487,6 @@ def generate_summary(top_cause, affected_components, confidence_score, whea_even
 
     root_cause = top_cause.get("root_cause", "UNKNOWN")
     confidence = top_cause.get("confidence", 0.0)
-    occurrences = top_cause.get("occurrences", 0)
 
     # Znajdź przykładowy event dla szczegółów
     example_event = None
@@ -514,7 +512,7 @@ def generate_summary(top_cause, affected_components, confidence_score, whea_even
         if mca_cod:
             summary_parts.append(f"MCACOD {mca_cod} wskazuje na {root_cause}.")
 
-    summary_parts.append(f"Jest to silnie powiązane z awarią sprzętową.")
+    summary_parts.append("Jest to silnie powiązane z awarią sprzętową.")
     summary_parts.append(f"Confidence: {confidence}%")
 
     if affected_components:
@@ -559,8 +557,7 @@ def parse_timestamp(timestamp_str):
 
     try:
         return datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
-    except:
+    except Exception:
         pass
 
     return None
-

@@ -1,5 +1,8 @@
 import subprocess
-import sys
+
+from utils.logger import get_logger
+
+logger = get_logger()
 
 
 def collect(max_events=200):

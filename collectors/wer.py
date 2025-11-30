@@ -1685,7 +1685,6 @@ def calculate_crash_criticality(crash):
 
     app_name = (crash.get("application") or crash.get(
         "faulting_application_name") or "").lower()
-    exception_code = crash.get("exception_code", "")
     crash_type = crash.get("type", "")
     severity = crash.get("severity", "Unknown")
 
@@ -3158,7 +3157,6 @@ def filter_and_deduplicate_crashes(crashes):
 
     filtered = []
     seen_recent = {}  # {(app, module, exception): last_timestamp}
-    now = datetime.now()
     dedup_window = timedelta(seconds=5)  # 5 sekund okno deduplikacji
 
     for crash in crashes:

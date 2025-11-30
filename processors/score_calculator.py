@@ -2,15 +2,15 @@
 Score Calculator - ujednolicony scoring engine.
 Skala 0-100 z kategoriami: Healthy, Slight Issues, Warning, Unhealthy, Critical.
 """
-from utils.confidence_normalizer import normalize_confidence
 from utils.logger import get_logger
 
 logger = get_logger()
 
+
 def calculate_score(processed_data):
     """
     Oblicza System Score na podstawie wykrytych problemów.
-    
+
     Ujednolicony model:
     RAW events → Normalized Score (0-100) → Category → Final Status
     
@@ -20,10 +20,10 @@ def calculate_score(processed_data):
     - 51-75 → Warning
     - 76-90 → Unhealthy
     - 91-100 → Critical
-    
+
     Args:
         processed_data (dict): Przetworzone dane z wszystkich procesorów
-    
+
     Returns:
         dict: Wyniki scoringu z normalized score i category
     """
@@ -44,7 +44,7 @@ def calculate_score(processed_data):
     logger.debug("[SCORE_CALCULATOR] Starting score calculation")
 
     # Zbierz wszystkie problemy z wszystkich procesorów
-    for processor_name, processor_data in processed_data.items():
+    for _processor_name, processor_data in processed_data.items():
         if isinstance(processor_data, dict):
             # Critical issues
             critical = processor_data.get("critical_issues", [])
@@ -151,4 +151,3 @@ def calculate_score(processed_data):
             "warning_points": warning_count * POINTS["WARNING"]
         }
     }
-

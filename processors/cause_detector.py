@@ -1,17 +1,13 @@
 """
 Cause Detector - wykrywa konkretne przyczyny problemów systemowych na podstawie wzorców.
 """
-from collections import defaultdict
 from datetime import datetime
 
 from utils.error_analyzer import (
-    analyze_attribute_error,
-    analyze_data_structure,
     log_error_with_analysis,
     safe_get_with_analysis,
 )
 from utils.logger import get_logger
-from utils.shadowcopy_helper import is_shadowcopy_path
 
 logger = get_logger()
 

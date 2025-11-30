@@ -2,13 +2,13 @@
 Status Calculator - oblicza Health Status systemu na podstawie normalized score.
 Status musi pochodzić bezpośrednio z Category (score_calculator).
 """
-from collections import defaultdict
 
 from utils.logger import get_logger
 
 from .score_calculator import calculate_score
 
 logger = get_logger()
+
 
 def calculate_status(processed_data):
     """
@@ -44,7 +44,7 @@ def calculate_status(processed_data):
     all_errors = []
     all_warnings = []
 
-    for processor_name, processor_data in processed_data.items():
+    for _processor_name, processor_data in processed_data.items():
         if isinstance(processor_data, dict):
             critical = processor_data.get("critical_issues", [])
             if critical:
@@ -81,4 +81,3 @@ def calculate_status(processed_data):
             "warnings": len(all_warnings)
         }
     }
-

@@ -733,8 +733,10 @@ def _collect_sensors():
                 temp_celsius = (sensor.CurrentTemperature / 10.0 - 273.15)
                 sensors_data['cpu_temp'] = round(temp_celsius, 2)
                 sensors_data['cpu_temp_raw'] = sensor.CurrentTemperature
-                sensors_data['thermal_zone'] = sensor.InstanceName.strip()
-                if sensor.InstanceName else None
+                sensors_data['thermal_zone'] = (
+                    sensor.InstanceName.strip()
+                    if sensor.InstanceName else None
+                )
         except Exception as e:
             logger.debug(f"[HARDWARE] Could not get CPU temperature: {e}")
             sensors_data['cpu_temp'] = f'Unavailable: {e}'

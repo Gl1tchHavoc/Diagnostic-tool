@@ -1,6 +1,5 @@
 import re
 import subprocess
-import sys
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from datetime import datetime
@@ -179,30 +178,6 @@ def _get_event_message(record):
     return message
 
 
-def _convert_level_id_to_name(level):
-    """
-    Konwertuje level ID (liczba) na nazwę poziomu.
-
-    Args:
-        level: Level jako int lub string reprezentujący liczbę
-
-    Returns:
-        str: Nazwa poziomu
-    """
-    if not isinstance(level, (int, str)) or not str(level).isdigit():
-        return level
-
-    level_id = int(level)
-    level_map = {
-        1: "Critical",
-        2: "Error",
-        3: "Warning",
-        4: "Information",
-        0: "Information"
-    }
-    return level_map.get(level_id, "Information")
-
-
 def _get_event_level(record):
     """
     Pobiera i konwertuje level event z rekordu.
@@ -221,7 +196,6 @@ def _get_event_level(record):
         "Information"
     )
 
-    level = _convert_level_id_to_name(level)
     return normalize_level(str(level))
 
 

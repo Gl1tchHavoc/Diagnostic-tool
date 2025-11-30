@@ -6,10 +6,11 @@ from utils.logger import get_logger
 
 logger = get_logger()
 
+
 def process(hardware_data):
     """
     Przetwarza dane hardware i wykrywa potencjalne problemy.
-    
+
     Args:
         hardware_data (dict): Dane z collectors.hardware
     
@@ -185,4 +186,3 @@ def process(hardware_data):
             "total_warnings": len(warnings)
         }
     }
-

@@ -102,6 +102,7 @@ PROBLEM_PATTERNS = {
     }
 }
 
+
 def score_issues(processed_data):
     """
     Ocenia wszystkie wykryte problemy i przypisuje im wyniki.
@@ -117,7 +118,7 @@ def score_issues(processed_data):
     all_critical = []
 
     # Zbierz wszystkie problemy z wszystkich procesorów
-    for processor_name, processor_data in processed_data.items():
+    for _processor_name, processor_data in processed_data.items():
         if isinstance(processor_data, dict):
             # Issues
             issues = processor_data.get("issues", [])
@@ -166,6 +167,7 @@ def score_issues(processed_data):
         }
     }
 
+
 def calculate_score(issue):
     """Oblicza wynik dla pojedynczego problemu."""
     score = 0
@@ -196,6 +198,7 @@ def calculate_score(issue):
         score += pattern["confidence"] * 50
 
     return score
+
 
 def analyze_causes(issues):
     """Analizuje prawdopodobne przyczyny na podstawie wykrytych problemów."""
@@ -229,6 +232,7 @@ def analyze_causes(issues):
         "all_causes": dict(cause_scores)
     }
 
+
 def calculate_system_score(issues, warnings):
     """Oblicza ogólny wynik systemu (0-100)."""
     if not issues and not warnings:
@@ -243,6 +247,7 @@ def calculate_system_score(issues, warnings):
 
     return round(normalized, 2)
 
+
 def count_by_severity(issues):
     """Liczy problemy według severity."""
     counts = defaultdict(int)
@@ -250,4 +255,3 @@ def count_by_severity(issues):
         severity = issue.get("severity", "INFO")
         counts[severity] += 1
     return dict(counts)
-

@@ -5,6 +5,10 @@ from datetime import datetime
 
 import psutil
 
+from utils.logger import get_logger
+
+logger = get_logger()
+
 
 def collect():
     """

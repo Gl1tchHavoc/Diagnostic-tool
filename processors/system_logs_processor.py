@@ -2,12 +2,12 @@
 Procesor logów systemowych - analizuje logi i wykrywa wzorce problemów.
 Z filtrowaniem fałszywych DISK_WARNING.
 """
-from datetime import datetime
 
 from utils.logger import get_logger
 from utils.warning_classifier import classify_warning, is_false_disk_warning
 
 logger = get_logger()
+
 
 def process(logs_data):
     """
@@ -123,4 +123,3 @@ def process(logs_data):
             "total_critical": len(critical_events)
         }
     }
-

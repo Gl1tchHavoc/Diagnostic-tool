@@ -13,6 +13,7 @@ from utils.warning_classifier import classify_warning, is_false_disk_warning
 
 logger = get_logger()
 
+
 def process(storage_data):
     """
     Przetwarza dane o zdrowiu dysków i wykrywa problemy.
@@ -159,4 +160,3 @@ def process(storage_data):
             "io_errors_count": len(io_errors)
         }
     }
-

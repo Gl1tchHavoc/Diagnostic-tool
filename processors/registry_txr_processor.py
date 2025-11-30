@@ -8,6 +8,7 @@ from utils.shadowcopy_helper import categorize_txr_errors
 
 logger = get_logger()
 
+
 def process(txr_data):
     """
     Przetwarza błędy Registry TxR - bardzo poważne błędy systemowe.
@@ -92,4 +93,3 @@ def process(txr_data):
             "all_shadowcopy": len(shadowcopy_issues) > 0 and len(critical_issues) == 0
         }
     }
-

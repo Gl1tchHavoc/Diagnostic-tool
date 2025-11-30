@@ -1249,7 +1249,7 @@ def collect():
     """
     Zbiera szczegółowe informacje o sprzęcie systemowym.
     Zwraca kompleksowy słownik z danymi hardware.
-    
+
     Refaktoryzowana wersja - używa mniejszych funkcji dla zmniejszenia
     złożoności cyklomatycznej.
     """
@@ -1355,4 +1355,3 @@ def get_pcie_info(device_id):
     except Exception as e:
         logger.debug(f"[HARDWARE] Error getting PCIe info: {e}")
     return None
-

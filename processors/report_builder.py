@@ -12,6 +12,7 @@ from .status_calculator import calculate_status
 
 logger = get_logger()
 
+
 def build_report(processed_data):
     """
     Buduje kompleksowy raport diagnostyczny.
@@ -43,7 +44,7 @@ def build_report(processed_data):
     registry_txr_real = []
     registry_txr_shadowcopy = []
 
-    for processor_name, processor_data in processed_data.items():
+    for _processor_name, processor_data in processed_data.items():
         if isinstance(processor_data, dict):
             critical = processor_data.get("critical_issues", [])
             if critical:
@@ -191,4 +192,3 @@ def build_report(processed_data):
     # BSOD analysis jest już w final_report, więc nie trzeba jej tutaj dodawać
 
     return report
-

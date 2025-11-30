@@ -6,10 +6,7 @@ import re
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from utils.confidence_normalizer import (
-    calculate_weighted_confidence,
-    normalize_confidence,
-)
+from utils.confidence_normalizer import normalize_confidence
 from utils.event_deduplicator import deduplicate_events
 from utils.logger import get_logger
 
@@ -88,7 +85,6 @@ def extract_bugcheck_from_event(event):
 
     # Event ID 1001 zawiera bugcheck code
     if event_id == "1001" or "bugcheck" in message.lower():
-        import re
         patterns = [
             r'BugCheck\s+([0-9A-Fa-f]+)',
             r'0x([0-9A-Fa-f]{8})',
@@ -122,7 +118,6 @@ def extract_bugcheck_parameters(event):
     message = event.get("message", "")
     params = {}
 
-    import re
     for i in range(1, 5):
         pattern = rf'Parameter{i}:\s*([0-9A-Fa-f]+)'
         match = re.search(pattern, message, re.IGNORECASE)
@@ -136,7 +131,6 @@ def extract_dump_file(event):
     """Wyciąga ścieżkę do pliku dump z eventu."""
     message = event.get("message", "")
 
-    import re
     patterns = [
         r'DumpFile:\s*([^\s]+)',
         r'C:\\Windows\\[^\\]+\.dmp',
@@ -178,7 +172,7 @@ def analyze_minidumps(bsod_data):
                 if latest_time is None or dump_time > latest_time:
                     latest_time = dump_time
                     latest_dump = dump
-            except BaseException:
+            except Exception:
                 pass
 
     if latest_dump:
@@ -468,7 +462,7 @@ def find_last_bsod(system_logs_data, bsod_data=None):
 
     # Sprawdź system_logs_data
     if isinstance(system_logs_data, dict):
-        for category, logs in system_logs_data.items():
+        for _category, logs in system_logs_data.items():
             if isinstance(logs, list):
                 for log in logs:
                     if isinstance(log, dict):
@@ -650,7 +644,7 @@ def categorize_events(events):
     for event in events:
         message = event.get("message", "").lower()
         event_id = str(event.get("event_id", "")).lower()
-        level = event.get("level", "").lower()
+        _level = event.get("level", "").lower()
 
         category = "OTHER"
 
@@ -771,7 +765,6 @@ def correlate_with_hardware(scored_events, hardware_data):
     # Znajdź eventy związane z hardware
     for event in scored_events:
         category = event.get("detected_category", "")
-        message = event.get("message", "").lower()
 
         if category == "GPU_DRIVER" and gpu_issues:
             correlations.append({

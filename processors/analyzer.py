@@ -20,7 +20,6 @@ from . import (
     system_logs_processor,
     whea_processor,
 )
-from .bsod_analyzer import analyze_bsod
 from .cause_detector import detect_all_causes
 from .report_builder import build_report
 
