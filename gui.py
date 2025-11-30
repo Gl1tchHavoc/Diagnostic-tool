@@ -800,15 +800,80 @@ class DiagnosticsGUI:
 
     def format_wer(self, data):
         """Formatuje dane WER."""
+        logger = get_logger()
         output = "=== WINDOWS ERROR REPORTING ===\n\n"
-        output += f"Recent Crashes: {len(data.get('recent_crashes', []))}\n"
-        if data.get("reports"):
-            output += f"Report Count: {data['reports'].get('report_count', 0)}\n\n"
         
-        if data.get("recent_crashes"):
-            output += "RECENT CRASHES:\n"
-            for crash in data["recent_crashes"][:10]:
-                output += f"  {crash.get('application', 'N/A')}: {crash.get('timestamp', 'N/A')}\n"
+        # ZABEZPIECZENIE: Sprawdź typ data przed użyciem
+        if not isinstance(data, dict):
+            logger.error(f"[GUI] format_wer: data is not a dict: {type(data)}")
+            from utils.error_analyzer import log_error_with_analysis
+            log_error_with_analysis(
+                TypeError(f"data is {type(data).__name__} instead of dict"),
+                data,
+                {
+                    'variable_name': 'data',
+                    'location': 'gui.py:801',
+                    'function': 'format_wer'
+                },
+                continue_execution=True
+            )
+            return f"❌ Error: WER data is {type(data).__name__} instead of dict\n"
+        
+        # Recent Crashes
+        recent_crashes = data.get('recent_crashes', [])
+        if not isinstance(recent_crashes, list):
+            logger.warning(f"[GUI] format_wer: recent_crashes is not a list: {type(recent_crashes)}")
+            recent_crashes = []
+        output += f"Recent Crashes: {len(recent_crashes)}\n"
+        
+        # Reports - KRYTYCZNE: reports może być listą lub dict!
+        reports = data.get("reports", [])
+        if isinstance(reports, dict):
+            # Jeśli reports jest dict, użyj .get()
+            report_count = reports.get('report_count', len(reports) if reports else 0)
+            output += f"Report Count: {report_count}\n\n"
+        elif isinstance(reports, list):
+            # Jeśli reports jest listą, użyj len()
+            output += f"Report Count: {len(reports)}\n\n"
+        else:
+            logger.warning(f"[GUI] format_wer: reports is unexpected type: {type(reports)}")
+            output += f"Report Count: N/A\n\n"
+        
+        # Grouped Crashes
+        grouped_crashes = data.get('grouped_crashes', [])
+        if isinstance(grouped_crashes, list):
+            output += f"Grouped Crashes: {len(grouped_crashes)} groups\n\n"
+        else:
+            logger.warning(f"[GUI] format_wer: grouped_crashes is not a list: {type(grouped_crashes)}")
+            output += f"Grouped Crashes: N/A\n\n"
+        
+        # Statistics
+        statistics = data.get('statistics', {})
+        if isinstance(statistics, dict):
+            output += "STATISTICS:\n"
+            output += f"  Total Crashes: {statistics.get('total_crashes', 0)}\n"
+            output += f"  Crashes (30min): {statistics.get('crashes_last_30min', 0)}\n"
+            output += f"  Crashes (24h): {statistics.get('crashes_last_24h', 0)}\n"
+            output += f"  Repeating: {statistics.get('repeating_crashes', 0)}\n\n"
+        
+        # 5️⃣ Formatowanie raportu - RECENT CRASHES z pełnymi szczegółami
+        if recent_crashes:
+            output += "RECENT CRASHES (first 10):\n"
+            for idx, crash in enumerate(recent_crashes[:10]):
+                try:
+                    if isinstance(crash, dict):
+                        app = crash.get('application', 'N/A')
+                        timestamp = crash.get('timestamp', 'N/A')
+                        module = crash.get('module_name', 'N/A')
+                        exception_code = crash.get('exception_code', 'N/A')
+                        # Format: AppName | Timestamp | Module | ExceptionCode
+                        output += f"  {app} | {timestamp} | {module} | {exception_code}\n"
+                    else:
+                        logger.warning(f"[GUI] format_wer: crash[{idx}] is not a dict: {type(crash)}")
+                        output += f"  [Invalid crash data: {type(crash).__name__}]\n"
+                except Exception as e:
+                    logger.warning(f"[GUI] format_wer: Error formatting crash[{idx}]: {e}")
+                    output += f"  [Error formatting crash]\n"
         return output
 
     def format_processes(self, data):

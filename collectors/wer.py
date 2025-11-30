@@ -66,6 +66,22 @@ def collect():
         logger.info("[WER] Grouping and analyzing repeating crashes")
         grouped = group_and_analyze_crashes(wer_data["recent_crashes"])
         
+        # DEBUG: Szczegółowe logowanie typu zwracanego przez group_and_analyze_crashes()
+        logger.debug(f"[WER] group_and_analyze_crashes() returned type: {type(grouped)}")
+        logger.debug(f"[WER] group_and_analyze_crashes() is list: {isinstance(grouped, list)}")
+        logger.debug(f"[WER] group_and_analyze_crashes() is dict: {isinstance(grouped, dict)}")
+        if isinstance(grouped, list):
+            logger.debug(f"[WER] group_and_analyze_crashes() length: {len(grouped)}")
+            if len(grouped) > 0:
+                logger.debug(f"[WER] group_and_analyze_crashes() first element type: {type(grouped[0])}")
+                logger.debug(f"[WER] group_and_analyze_crashes() first element is dict: {isinstance(grouped[0], dict)}")
+                if isinstance(grouped[0], dict):
+                    logger.debug(f"[WER] group_and_analyze_crashes() first element keys: {list(grouped[0].keys())[:10]}")
+                logger.debug(f"[WER] group_and_analyze_crashes() content sample (first 3): {grouped[:3]}")
+        elif isinstance(grouped, dict):
+            logger.debug(f"[WER] group_and_analyze_crashes() dict keys: {list(grouped.keys())[:10]}")
+        sys.stdout.flush()
+        
         # KRYTYCZNE: Upewnij się, że grouped jest ZAWSZE listą (group_and_analyze_crashes zwraca listę)
         # Konsumenci oczekują listy i iterują po niej - NIE słownika!
         if not isinstance(grouped, list):
@@ -81,14 +97,17 @@ def collect():
         if isinstance(grouped, list):
             validated_grouped = []
             for i, item in enumerate(grouped):
+                # DEBUG: Logowanie typu każdego elementu
+                logger.debug(f"[WER] grouped_crashes[{i}] type: {type(item)}, is_dict: {isinstance(item, dict)}")
                 if isinstance(item, dict):
                     validated_grouped.append(item)
                 else:
-                    logger.warning(f"[WER] grouped_crashes[{i}] is not a dict: {type(item)}, skipping")
+                    logger.warning(f"[WER] grouped_crashes[{i}] is not a dict: {type(item)}, value sample: {str(item)[:100]}, skipping")
             grouped = validated_grouped
         
         wer_data["grouped_crashes"] = grouped
         logger.debug(f"[WER] Final grouped_crashes type: {type(wer_data['grouped_crashes'])}, length: {len(wer_data['grouped_crashes'])}")
+        sys.stdout.flush()
         
         # Krok 4: Oblicz statystyki
         now = datetime.now()
@@ -111,12 +130,52 @@ def collect():
         # Bezpieczne filtrowanie powtarzających się crashy
         # grouped to LISTA, więc iterujemy po niej
         repeating = []
+        # DEBUG: Sprawdź typ grouped przed iteracją
+        logger.debug(f"[WER] Before filtering repeating - grouped type: {type(grouped)}, is_list: {isinstance(grouped, list)}")
         if isinstance(grouped, list):
-            for g in grouped:
+            logger.debug(f"[WER] Before filtering repeating - grouped length: {len(grouped)}")
+            for idx, g in enumerate(grouped):
+                # DEBUG: Logowanie typu każdego elementu
+                logger.debug(f"[WER] Processing group[{idx}] for repeating check: type={type(g)}, is_dict={isinstance(g, dict)}")
+                
                 if isinstance(g, dict):
-                    occurrences_30min = g.get("occurrences_30min", 0)
-                    if isinstance(occurrences_30min, (int, float)) and occurrences_30min >= 3:
-                        repeating.append(g)
+                    # Bezpieczne użycie .get() - g jest dict
+                    try:
+                        occurrences_30min = g.get("occurrences_30min", 0)
+                        if isinstance(occurrences_30min, (int, float)) and occurrences_30min >= 3:
+                            repeating.append(g)
+                    except Exception as e:
+                        logger.warning(f"[WER] Error processing group[{idx}] for repeating check: {e}")
+                        from utils.error_analyzer import log_error_with_analysis
+                        log_error_with_analysis(
+                            e,
+                            g,
+                            {
+                                'variable_name': f'grouped[{idx}]',
+                                'location': 'wer.py:134',
+                                'function': 'collect'
+                            },
+                            continue_execution=True
+                        )
+                        continue
+                elif isinstance(g, list):
+                    # BŁĄD: g jest listą zamiast dict
+                    logger.error(f"[WER] CRITICAL: group[{idx}] is list instead of dict in repeating check! Skipping...")
+                    from utils.error_analyzer import log_error_with_analysis
+                    log_error_with_analysis(
+                        TypeError(f"group[{idx}] is list instead of dict"),
+                        g,
+                        {
+                            'variable_name': f'grouped[{idx}]',
+                            'location': 'wer.py:134',
+                            'function': 'collect'
+                        },
+                        continue_execution=True
+                    )
+                    continue
+                else:
+                    logger.warning(f"[WER] Unexpected type in grouped[{idx}] for repeating check: {type(g)}")
+                    continue
         else:
             logger.warning(f"[WER] grouped is not a list: {type(grouped)}")
         
@@ -174,39 +233,102 @@ def collect():
             logger.info(f"[WER] Limited and simplified recent_crashes: {original_recent_count} -> {len(simplified_crashes)}")
         
         # 2. Uprość grouped_crashes - usuń pełne obiekty crash, zostaw tylko statystyki
-        if wer_data["grouped_crashes"]:
+        # DEBUG: Sprawdź typ grouped_crashes przed iteracją
+        logger.debug(f"[WER] Before simplification - grouped_crashes type: {type(wer_data.get('grouped_crashes'))}")
+        logger.debug(f"[WER] Before simplification - grouped_crashes is list: {isinstance(wer_data.get('grouped_crashes'), list)}")
+        if isinstance(wer_data.get('grouped_crashes'), list):
+            logger.debug(f"[WER] Before simplification - grouped_crashes length: {len(wer_data.get('grouped_crashes', []))}")
+        sys.stdout.flush()
+        
+        if wer_data.get("grouped_crashes"):
+            # ZABEZPIECZENIE: Upewnij się, że grouped_crashes jest listą przed iteracją
+            grouped_crashes = wer_data.get("grouped_crashes", [])
+            if not isinstance(grouped_crashes, list):
+                logger.error(f"[WER] CRITICAL: grouped_crashes is not a list before simplification! Type: {type(grouped_crashes)}")
+                # Użyj error_analyzer do kompleksowej analizy
+                from utils.error_analyzer import log_error_with_analysis
+                log_error_with_analysis(
+                    TypeError(f"grouped_crashes is {type(grouped_crashes).__name__} instead of list"),
+                    grouped_crashes,
+                    {
+                        'variable_name': 'grouped_crashes',
+                        'location': 'wer.py:177',
+                        'function': 'collect'
+                    },
+                    continue_execution=True
+                )
+                grouped_crashes = []
+            
             simplified_groups = []
-            for group in wer_data["grouped_crashes"][:MAX_GROUPED_CRASHES_DETAIL]:
+            for idx, group in enumerate(grouped_crashes[:MAX_GROUPED_CRASHES_DETAIL]):
+                # DEBUG: Logowanie typu każdego elementu przed użyciem .get()
+                logger.debug(f"[WER] Processing group[{idx}]: type={type(group)}, is_dict={isinstance(group, dict)}")
+                
                 if isinstance(group, dict):
-                    # Zachowaj tylko kluczowe pola, usuń pełne obiekty crash
-                    simplified = {
-                        "application": group.get("application", ""),
-                        "module_name": group.get("module_name", ""),
-                        "exception_code": group.get("exception_code", ""),
-                        "total_occurrences": group.get("total_occurrences", 0),
-                        "occurrences_30min": group.get("occurrences_30min", 0),
-                        "occurrences_24h": group.get("occurrences_24h", 0),
-                        "is_repeating": group.get("is_repeating", False),
-                        "first_occurrence": group.get("first_occurrence", ""),
-                        "last_occurrence": group.get("last_occurrence", "")
-                    }
-                    # Usuń latest_crash - może zawierać duże obiekty
-                    # Jeśli latest_crash istnieje, wyciągnij tylko podstawowe pola (bez pełnego obiektu)
-                    latest_crash = group.get("latest_crash", {})
-                    if latest_crash and isinstance(latest_crash, dict):
-                        # Zachowaj tylko podstawowe pola z latest_crash (bez zagnieżdżonych obiektów)
-                        simplified["latest_crash"] = {
-                            "timestamp": latest_crash.get("timestamp", ""),
-                            "application": latest_crash.get("application", ""),
-                            "module_name": latest_crash.get("module_name", ""),
-                            "exception_code": latest_crash.get("exception_code", "")
+                    # Bezpieczne użycie .get() - group jest dict
+                    try:
+                        # Zachowaj tylko kluczowe pola, usuń pełne obiekty crash
+                        simplified = {
+                            "application": group.get("application", ""),
+                            "module_name": group.get("module_name", ""),
+                            "exception_code": group.get("exception_code", ""),
+                            "total_occurrences": group.get("total_occurrences", 0),
+                            "occurrences_30min": group.get("occurrences_30min", 0),
+                            "occurrences_24h": group.get("occurrences_24h", 0),
+                            "is_repeating": group.get("is_repeating", False),
+                            "first_occurrence": group.get("first_occurrence", ""),
+                            "last_occurrence": group.get("last_occurrence", "")
                         }
-                    else:
-                        simplified["latest_crash"] = {}
-                    
-                    simplified_groups.append(simplified)
+                        # Usuń latest_crash - może zawierać duże obiekty
+                        # Jeśli latest_crash istnieje, wyciągnij tylko podstawowe pola (bez pełnego obiektu)
+                        latest_crash = group.get("latest_crash", {})
+                        if latest_crash and isinstance(latest_crash, dict):
+                            # Zachowaj tylko podstawowe pola z latest_crash (bez zagnieżdżonych obiektów)
+                            simplified["latest_crash"] = {
+                                "timestamp": latest_crash.get("timestamp", ""),
+                                "application": latest_crash.get("application", ""),
+                                "module_name": latest_crash.get("module_name", ""),
+                                "exception_code": latest_crash.get("exception_code", "")
+                            }
+                        else:
+                            simplified["latest_crash"] = {}
+                        
+                        simplified_groups.append(simplified)
+                    except Exception as e:
+                        logger.error(f"[WER] Error processing group[{idx}]: {e}")
+                        from utils.error_analyzer import log_error_with_analysis
+                        log_error_with_analysis(
+                            e,
+                            group,
+                            {
+                                'variable_name': f'grouped_crashes[{idx}]',
+                                'location': 'wer.py:179',
+                                'function': 'collect'
+                            },
+                            continue_execution=True
+                        )
+                        # Pomiń ten element, kontynuuj z następnym
+                        continue
+                elif isinstance(group, list):
+                    # BŁĄD: group jest listą zamiast dict - to nie powinno się zdarzyć
+                    logger.error(f"[WER] CRITICAL: group[{idx}] is list (length: {len(group)}) instead of dict! Skipping...")
+                    from utils.error_analyzer import log_error_with_analysis
+                    log_error_with_analysis(
+                        TypeError(f"group[{idx}] is list instead of dict"),
+                        group,
+                        {
+                            'variable_name': f'grouped_crashes[{idx}]',
+                            'location': 'wer.py:179',
+                            'function': 'collect'
+                        },
+                        continue_execution=True
+                    )
+                    # Pomiń ten element
+                    continue
                 else:
-                    simplified_groups.append(group)
+                    logger.warning(f"[WER] Unexpected type in grouped_crashes[{idx}]: {type(group)}, value sample: {str(group)[:100]}")
+                    # Pomiń ten element
+                    continue
             
             wer_data["grouped_crashes"] = simplified_groups
             if original_grouped_count > MAX_GROUPED_CRASHES_DETAIL:
@@ -469,11 +591,14 @@ def extract_crash_details(record):
         timestamp = record.get("TimeCreated") or record.get("Time", "")
         provider = record.get("ProviderName", "") or ""
         
-        # Wyciągnij szczegółowe informacje z message
+        # 1️⃣ Pobranie crashy z Event Log - Event ID 1000, 1001
+        # Wyciągnij AppName z różnych formatów
         app_name = extract_field_from_message(message, [
             r'Application\s+Name:\s*([^\r\n]+)',
             r'Faulting\s+application\s+name:\s*([^\r\n]+)',
-            r'Application:\s*([^\r\n,]+)'
+            r'Application:\s*([^\r\n,]+)',
+            r'AppName:\s*([^\r\n]+)',
+            r'Faulting\s+Application\s+Name:\s*([^\r\n]+)'
         ])
         
         app_version = extract_field_from_message(message, [
@@ -483,8 +608,22 @@ def extract_crash_details(record):
         
         module_name = extract_field_from_message(message, [
             r'Faulting\s+module\s+name:\s*([^\r\n]+)',
-            r'Module\s+Name:\s*([^\r\n]+)'
+            r'Module\s+Name:\s*([^\r\n]+)',
+            r'Faulting\s+Module\s+Name:\s*([^\r\n]+)',
+            r'Module:\s*([^\r\n]+)'
         ])
+        
+        # 6️⃣ Dodatkowe usprawnienia: Jeśli AppName == None → spróbuj Faulting module name
+        if not app_name or app_name == "Unknown":
+            if module_name:
+                logger.debug(f"[WER] AppName is None/Unknown, using module_name as fallback: {module_name}")
+                app_name = module_name
+            else:
+                # Jeśli nadal Unknown → spróbuj wyciągnąć z ProviderName
+                if provider and provider != "Application Error":
+                    app_name = provider
+                else:
+                    app_name = "Unknown"
         
         module_version = extract_field_from_message(message, [
             r'Faulting\s+module\s+version:\s*([^\r\n]+)',
@@ -512,6 +651,9 @@ def extract_crash_details(record):
             r'OS\s+Version:\s*([^\r\n]+)',
             r'Operating\s+System\s+Version:\s*([^\r\n]+)'
         ])
+        
+        # 6️⃣ Dodatkowe usprawnienia: Walidacja i logowanie
+        logger.debug(f"[WER] Extracted crash - AppName: {app_name}, Module: {module_name}, ExceptionCode: {exception_code}")
         
         crash = {
             "event_id": event_id,
@@ -655,8 +797,13 @@ def collect_from_wer_directories():
 
 def group_and_analyze_crashes(crashes):
     """
-    Grupuje crashy po kombinacji: application + faulting_module + exception_code.
+    3️⃣ Grupowanie crashy - zgrupuj po AppName, ExceptionCode, Module.
     Zlicza wystąpienia w ostatnich 30 minutach i 24 godzinach.
+    
+    Grupowanie po:
+    - AppName (application)
+    - ExceptionCode
+    - Module (module_name) - opcjonalnie
     
     Args:
         crashes (list): Lista crash events
@@ -669,7 +816,7 @@ def group_and_analyze_crashes(crashes):
     last_30min = now - timedelta(minutes=30)
     last_24h = now - timedelta(hours=24)
     
-    # Grupuj crashy
+    # 3️⃣ Grupuj crashy - po AppName, ExceptionCode, Module
     for crash in crashes:
         # Upewnij się, że crash jest słownikiem
         if not isinstance(crash, dict):
@@ -680,8 +827,13 @@ def group_and_analyze_crashes(crashes):
         module = crash.get("module_name", "")
         exception = crash.get("exception_code", "")
         
-        # Klucz grupowania
-        key = (app.lower(), module.lower() if module else "", exception.upper() if exception else "")
+        # Klucz grupowania: (AppName, Module, ExceptionCode)
+        # Normalizuj wartości dla lepszego grupowania
+        app_normalized = app.lower().strip() if app else "unknown"
+        module_normalized = module.lower().strip() if module else ""
+        exception_normalized = exception.upper().strip() if exception else ""
+        
+        key = (app_normalized, module_normalized, exception_normalized)
         
         crash_time = parse_timestamp(crash.get("timestamp", ""))
         # Dodaj do grupy nawet jeśli timestamp jest None - użyj pustego stringa jako fallback
@@ -744,7 +896,41 @@ def group_and_analyze_crashes(crashes):
         grouped_results.append(grouped_result)
     
     # Sortuj po liczbie wystąpień (najczęstsze pierwsze)
-    grouped_results.sort(key=lambda x: x["total_occurrences"], reverse=True)
+    # DEBUG: Sprawdź typ każdego elementu przed sortowaniem
+    logger.debug(f"[WER] Before sorting - grouped_results type: {type(grouped_results)}, length: {len(grouped_results)}")
+    for idx, result in enumerate(grouped_results[:3]):  # Tylko pierwsze 3 dla logowania
+        logger.debug(f"[WER] grouped_results[{idx}] type: {type(result)}, is_dict: {isinstance(result, dict)}")
+        if isinstance(result, dict):
+            logger.debug(f"[WER] grouped_results[{idx}] keys: {list(result.keys())[:10]}")
+    sys.stdout.flush()
+    
+    try:
+        grouped_results.sort(key=lambda x: x.get("total_occurrences", 0) if isinstance(x, dict) else 0, reverse=True)
+    except Exception as e:
+        logger.warning(f"[WER] Error sorting grouped_results: {e}")
+        from utils.error_analyzer import log_error_with_analysis
+        log_error_with_analysis(
+            e,
+            grouped_results,
+            {
+                'variable_name': 'grouped_results',
+                'location': 'wer.py:868',
+                'function': 'group_and_analyze_crashes'
+            },
+            continue_execution=True
+        )
+        # Kontynuuj mimo błędu
+    
+    # DEBUG: Szczegółowe logowanie zwracanego wyniku
+    logger.debug(f"[WER] group_and_analyze_crashes() returning type: {type(grouped_results)}")
+    logger.debug(f"[WER] group_and_analyze_crashes() returning is list: {isinstance(grouped_results, list)}")
+    logger.debug(f"[WER] group_and_analyze_crashes() returning length: {len(grouped_results)}")
+    if len(grouped_results) > 0:
+        logger.debug(f"[WER] group_and_analyze_crashes() first result type: {type(grouped_results[0])}")
+        logger.debug(f"[WER] group_and_analyze_crashes() first result is dict: {isinstance(grouped_results[0], dict)}")
+        if isinstance(grouped_results[0], dict):
+            logger.debug(f"[WER] group_and_analyze_crashes() first result keys: {list(grouped_results[0].keys())}")
+    sys.stdout.flush()
     
     logger.info(f"[WER] Grouped {len(crashes)} crashes into {len(grouped_results)} groups")
     

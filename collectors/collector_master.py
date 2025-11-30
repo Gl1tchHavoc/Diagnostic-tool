@@ -5,13 +5,62 @@ import json
 from datetime import datetime
 from pathlib import Path
 import time
+import os
 
 from . import (
     hardware, drivers, system_logs, registry_txr, storage_health, system_info,
     services, bsod_dumps, performance_counters, wer, processes
 )
+import collectors.whea_analyzer as whea_analyzer
 
 from utils.logger import get_logger, log_collector_start, log_collector_end, log_performance
+
+def cleanup_old_raw_files(output_dir="output/raw", keep_last=5):
+    """
+    Czyści stare pliki raw_data, zostawiając tylko ostatnie N plików.
+    
+    Args:
+        output_dir (str): Katalog z plikami raw_data
+        keep_last (int): Liczba ostatnich plików do zachowania (domyślnie 5)
+    """
+    logger = get_logger()
+    output_path = Path(output_dir)
+    
+    if not output_path.exists():
+        return
+    
+    try:
+        # Znajdź wszystkie pliki raw_data_*.json
+        raw_files = sorted(
+            output_path.glob("raw_data_*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True
+        )
+        
+        if len(raw_files) <= keep_last:
+            logger.debug(f"[COLLECTOR_MASTER] No cleanup needed: {len(raw_files)} files (limit: {keep_last})")
+            return
+        
+        # Usuń stare pliki (zostaw tylko ostatnie N)
+        files_to_delete = raw_files[keep_last:]
+        deleted_count = 0
+        freed_space = 0
+        
+        for file_path in files_to_delete:
+            try:
+                file_size = file_path.stat().st_size
+                file_path.unlink()
+                deleted_count += 1
+                freed_space += file_size
+                logger.debug(f"[COLLECTOR_MASTER] Deleted old raw file: {file_path.name}")
+            except Exception as e:
+                logger.warning(f"[COLLECTOR_MASTER] Failed to delete {file_path.name}: {e}")
+        
+        if deleted_count > 0:
+            freed_mb = freed_space / (1024 * 1024)
+            logger.info(f"[COLLECTOR_MASTER] Cleaned up {deleted_count} old raw files, freed {freed_mb:.2f} MB")
+    except Exception as e:
+        logger.warning(f"[COLLECTOR_MASTER] Error during cleanup: {e}")
 
 def collect_all(save_raw=True, output_dir="output/raw", progress_callback=None):
     """
@@ -86,6 +135,10 @@ def collect_all(save_raw=True, output_dir="output/raw", progress_callback=None):
     if save_raw:
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
+        
+        # Wyczyść stare pliki przed zapisem nowego (zostaw tylko ostatnie 5)
+        cleanup_old_raw_files(output_dir, keep_last=5)
+        
         timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = output_path / f"raw_data_{timestamp_str}.json"
         
@@ -94,7 +147,9 @@ def collect_all(save_raw=True, output_dir="output/raw", progress_callback=None):
             # Ale dla zapisu używamy standardowego open z utf-8
             with open(filename, "w", encoding="utf-8") as f:
                 json.dump(results, f, indent=2, ensure_ascii=False, default=str)
-            logger.info(f"[COLLECTOR_MASTER] Raw data saved to: {filename}")
+            
+            file_size_mb = filename.stat().st_size / (1024 * 1024)
+            logger.info(f"[COLLECTOR_MASTER] Raw data saved to: {filename} ({file_size_mb:.2f} MB)")
         except Exception as e:
             logger.error(f"[COLLECTOR_MASTER] Failed to save raw data: {e}")
     

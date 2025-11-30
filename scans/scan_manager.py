@@ -141,11 +141,48 @@ class ScanManager:
             # Zapisz wyniki - upewnij się, że collector_result jest słownikiem
             try:
                 self._logger.debug(f"[SCAN_MANAGER] DEBUG: About to save results for {collector.name}")
-                if isinstance(collector_result, dict):
+                
+                # KRYTYCZNE ZABEZPIECZENIE: collector_result może być listą zamiast dict!
+                if isinstance(collector_result, list):
+                    self._logger.error(f"[SCAN_MANAGER] CRITICAL: collector_result for {collector.name} is list (length: {len(collector_result)}) instead of dict!")
+                    from utils.error_analyzer import log_error_with_analysis
+                    log_error_with_analysis(
+                        TypeError(f"collector_result is list instead of dict"),
+                        collector_result,
+                        {
+                            'variable_name': 'collector_result',
+                            'location': 'scan_manager.py:144',
+                            'function': 'ScanManager.run'
+                        },
+                        continue_execution=True
+                    )
+                    collector_data = {'error': f'Collector result is list instead of dict (length: {len(collector_result)})'}
+                elif isinstance(collector_result, dict):
                     collector_data = collector_result.get('data', {})
                     
+                    # KRYTYCZNE ZABEZPIECZENIE: collector_data może być listą zamiast dict!
+                    # Jeśli jest listą, to błąd - konwertuj na dict z błędem
+                    if isinstance(collector_data, list):
+                        self._logger.error(f"[SCAN_MANAGER] CRITICAL: collector_data for {collector.name} is list (length: {len(collector_data)}) instead of dict! Converting...")
+                        # Użyj error_analyzer do kompleksowej analizy
+                        from utils.error_analyzer import log_error_with_analysis
+                        log_error_with_analysis(
+                            TypeError(f"collector_data is list instead of dict"),
+                            collector_data,
+                            {
+                                'variable_name': f'collector_result["data"]',
+                                'location': 'scan_manager.py:145',
+                                'function': 'ScanManager.run'
+                            },
+                            continue_execution=True
+                        )
+                        collector_data = {'error': f'Data is list instead of dict (length: {len(collector_data)})'}
+                    elif not isinstance(collector_data, dict):
+                        self._logger.warning(f"[SCAN_MANAGER] collector_data for {collector.name} is not a dict: {type(collector_data)}")
+                        collector_data = {'error': f'Data is {type(collector_data).__name__} instead of dict'}
+                    
                     # ZABEZPIECZENIE: Upewnij się, że collector_data jest bezpieczny do zapisania
-                    if collector.name == "wer":
+                    if collector.name == "wer" and isinstance(collector_data, dict):
                         collector_data = self._sanitize_wer_data(collector_data)
                     
                     # DEBUG: Szczegółowe logowanie dla WER (tylko podstawowe info, nie pełne dane)
@@ -223,9 +260,37 @@ class ScanManager:
         Returns:
             dict: Zsanityzowane dane WER
         """
-        if not isinstance(wer_data, dict):
+        # KRYTYCZNE ZABEZPIECZENIE: wer_data może być listą zamiast dict!
+        if isinstance(wer_data, list):
+            self._logger.error(f"[SCAN_MANAGER] CRITICAL: WER data is list (length: {len(wer_data)}) instead of dict! Converting...")
+            # Użyj error_analyzer do kompleksowej analizy
+            from utils.error_analyzer import log_error_with_analysis
+            log_error_with_analysis(
+                TypeError(f"wer_data is list instead of dict"),
+                wer_data,
+                {
+                    'variable_name': 'wer_data',
+                    'location': 'scan_manager.py:226',
+                    'function': '_sanitize_wer_data'
+                },
+                continue_execution=True
+            )
+            return {'error': f'WER data is list instead of dict (length: {len(wer_data)})'}
+        elif not isinstance(wer_data, dict):
             self._logger.warning(f"[SCAN_MANAGER] WER data is not a dict: {type(wer_data)}")
-            return {}
+            # Użyj error_analyzer do kompleksowej analizy
+            from utils.error_analyzer import log_error_with_analysis
+            log_error_with_analysis(
+                TypeError(f"wer_data is {type(wer_data).__name__} instead of dict"),
+                wer_data,
+                {
+                    'variable_name': 'wer_data',
+                    'location': 'scan_manager.py:232',
+                    'function': '_sanitize_wer_data'
+                },
+                continue_execution=True
+            )
+            return {'error': f'WER data is {type(wer_data).__name__} instead of dict'}
         
         try:
             sanitized = {}

@@ -5,6 +5,12 @@ from collections import defaultdict
 from datetime import datetime
 from utils.logger import get_logger
 from utils.shadowcopy_helper import is_shadowcopy_path
+from utils.error_analyzer import (
+    safe_get_with_analysis, 
+    log_error_with_analysis, 
+    analyze_data_structure,
+    analyze_attribute_error
+)
 
 logger = get_logger()
 
@@ -825,36 +831,104 @@ def detect_wer_causes(processed_data, collected_data):
     bsod_data = collected_data.get('collectors', {}).get('bsod_dumps', {})
     
     # Golden Rule 1: FaultingModule = ntdll.dll + EventID=1000 → crash systemowy (≥95%)
-    for crash in recent_crashes:
-        # ZABEZPIECZENIE: Upewnij się, że crash jest dict
-        if not isinstance(crash, dict):
-            logger.debug(f"[CAUSE_DETECTOR] Skipping non-dict crash: {type(crash)}")
-            continue
-        
-        try:
-            event_id = str(crash.get('event_id', ''))
-            module_name = (crash.get('module_name', '') or '').lower()
-            app_name = (crash.get('application', '') or '').lower()
-            
-            if event_id == '1000' and 'ntdll.dll' in module_name:
-                causes.append({
-                    'category': 'System',
-                    'cause': 'SYSTEM_CRASH_NTDLL',
-                    'confidence': 95.0,
-                    'description': f'System crash detected: FaultingModule=ntdll.dll with EventID=1000. Application: {app_name}',
-                    'evidence': {
-                        'event_id': event_id,
-                        'module_name': crash.get('module_name', ''),
-                        'application': crash.get('application', ''),
-                        'exception_code': crash.get('exception_code', ''),
-                        'timestamp': crash.get('timestamp', '')
-                    },
-                    'recommendation': 'System crash indicates serious system instability. Check for hardware failures, update drivers, run system file checker (sfc /scannow), check for malware'
-                })
-                break  # Tylko jeden raz
-        except Exception as e:
-            logger.warning(f"[CAUSE_DETECTOR] Error processing crash in Golden Rule 1: {e}")
-            continue
+    try:
+        # ZABEZPIECZENIE: Upewnij się, że recent_crashes jest iterowalne
+        if not isinstance(recent_crashes, (list, tuple)):
+            logger.error(f"[CAUSE_DETECTOR] CRITICAL: recent_crashes is not iterable! Type: {type(recent_crashes)}")
+            log_error_with_analysis(
+                TypeError(f"recent_crashes is not iterable: {type(recent_crashes)}"),
+                recent_crashes,
+                {
+                    'variable_name': 'recent_crashes',
+                    'location': 'cause_detector.py:834',
+                    'function': 'detect_wer_causes'
+                },
+                continue_execution=True
+            )
+        else:
+            for idx, crash in enumerate(recent_crashes):
+                # ZABEZPIECZENIE: Upewnij się, że crash jest dict
+                if not isinstance(crash, dict):
+                    logger.warning(f"[CAUSE_DETECTOR] Crash[{idx}] is not a dict: {type(crash)}")
+                    log_error_with_analysis(
+                        TypeError(f"Crash[{idx}] is not a dict: {type(crash)}"),
+                        crash,
+                        {
+                            'variable_name': f'recent_crashes[{idx}]',
+                            'location': 'cause_detector.py:837',
+                            'function': 'detect_wer_causes'
+                        },
+                        continue_execution=True
+                    )
+                    continue
+                
+                try:
+                    event_id = str(safe_get_with_analysis(crash, 'event_id', '', {
+                        'variable_name': f'crash[{idx}].event_id',
+                        'location': 'cause_detector.py:841'
+                    }))
+                    module_name = (str(safe_get_with_analysis(crash, 'module_name', '', {
+                        'variable_name': f'crash[{idx}].module_name',
+                        'location': 'cause_detector.py:842'
+                    })) or '').lower()
+                    app_name = (str(safe_get_with_analysis(crash, 'application', '', {
+                        'variable_name': f'crash[{idx}].application',
+                        'location': 'cause_detector.py:843'
+                    })) or '').lower()
+                    
+                    if event_id == '1000' and 'ntdll.dll' in module_name:
+                        causes.append({
+                            'category': 'System',
+                            'cause': 'SYSTEM_CRASH_NTDLL',
+                            'confidence': 95.0,
+                            'description': f'System crash detected: FaultingModule=ntdll.dll with EventID=1000. Application: {app_name}',
+                            'evidence': {
+                                'event_id': event_id,
+                                'module_name': safe_get_with_analysis(crash, 'module_name', '', {
+                                    'variable_name': f'crash[{idx}].module_name',
+                                    'location': 'cause_detector.py:853'
+                                }),
+                                'application': safe_get_with_analysis(crash, 'application', '', {
+                                    'variable_name': f'crash[{idx}].application',
+                                    'location': 'cause_detector.py:854'
+                                }),
+                                'exception_code': safe_get_with_analysis(crash, 'exception_code', '', {
+                                    'variable_name': f'crash[{idx}].exception_code',
+                                    'location': 'cause_detector.py:855'
+                                }),
+                                'timestamp': safe_get_with_analysis(crash, 'timestamp', '', {
+                                    'variable_name': f'crash[{idx}].timestamp',
+                                    'location': 'cause_detector.py:856'
+                                })
+                            },
+                            'recommendation': 'System crash indicates serious system instability. Check for hardware failures, update drivers, run system file checker (sfc /scannow), check for malware'
+                        })
+                        break  # Tylko jeden raz
+                except Exception as e:
+                    # Kompleksowa analiza błędu z kontynuacją wykonania
+                    log_error_with_analysis(
+                        e,
+                        crash,
+                        {
+                            'variable_name': f'recent_crashes[{idx}]',
+                            'location': 'cause_detector.py:861',
+                            'function': 'detect_wer_causes'
+                        },
+                        continue_execution=True
+                    )
+                    continue
+    except Exception as e:
+        # Kompleksowa analiza błędu na poziomie iteracji
+        log_error_with_analysis(
+            e,
+            recent_crashes,
+            {
+                'variable_name': 'recent_crashes',
+                'location': 'cause_detector.py:834',
+                'function': 'detect_wer_causes'
+            },
+            continue_execution=True
+        )
     
     # Golden Rule 2: Crash >=3 w 30 min dla tej samej aplikacji → prawdopodobny błąd aplikacji (≥95%)
     for group in grouped_crashes:
@@ -899,79 +973,242 @@ def detect_wer_causes(processed_data, collected_data):
             continue
     
     # Golden Rule 3: Crash w tym samym czasie co BSOD EventID=41 → prawdopodobna awaria sprzętowa (≥95%)
-    if bsod_data:
-        recent_crashes_bsod = bsod_data.get('recent_crashes', [])
-        
-        # Znajdź BSOD EventID 41
-        bsod_41_times = []
-        for bsod in recent_crashes_bsod:
-            if str(bsod.get('event_id', '')) == '41':
-                bsod_time = parse_bsod_timestamp(bsod.get('timestamp', ''))
-                if bsod_time:
-                    bsod_41_times.append(bsod_time)
-        
-        # Sprawdź czy crashy systemowe wystąpiły w tym samym czasie (±5 minut)
-        if bsod_41_times:
-            for crash in recent_crashes:
-                crash_type = crash.get('type', '')
-                crash_time = parse_wer_timestamp(crash.get('timestamp', ''))
-                
-                if crash_type == 'SYSTEM_CRASH' and crash_time:
-                    # Sprawdź czy crash jest w oknie ±5 minut od BSOD
-                    for bsod_time in bsod_41_times:
-                        time_diff = abs((crash_time - bsod_time).total_seconds())
-                        if time_diff <= 300:  # 5 minut
-                            app = crash.get('application', 'Unknown')
-                            module = crash.get('module_name', '')
-                            
-                            causes.append({
-                                'category': 'Hardware',
-                                'cause': 'HARDWARE_FAILURE_WER_BSOD_CORRELATION',
-                                'confidence': 95.0,
-                                'description': f'System crash ({app}) occurred at the same time as BSOD EventID 41, indicating probable hardware failure',
-                                'evidence': {
-                                    'system_crash': {
-                                        'application': app,
-                                        'module_name': module,
-                                        'exception_code': crash.get('exception_code', ''),
-                                        'timestamp': crash.get('timestamp', '')
-                                    },
-                                    'bsod_timestamp': bsod_time.isoformat(),
-                                    'time_difference_seconds': time_diff
-                                },
-                                'recommendation': 'System crash correlated with BSOD indicates hardware failure. Check CPU, RAM, motherboard, power supply. Run hardware diagnostics, check temperatures, verify all connections'
-                            })
-                            break
-    
-    # Dodatkowa reguła: Systemowe procesy (winlogon.exe, csrss.exe) crashują + WHEA → hardware failure
-    if bsod_data:
-        whea_errors = bsod_data.get('whea_errors', [])
-        if whea_errors:
-            system_processes = ['winlogon.exe', 'csrss.exe', 'lsass.exe']
-            for crash in recent_crashes:
-                app = (crash.get('application', '') or '').lower()
-                if any(proc in app for proc in system_processes):
-                    crash_time = parse_wer_timestamp(crash.get('timestamp', ''))
-                    if crash_time:
-                        # Sprawdź czy WHEA error jest w oknie ±10 minut
-                        for whea in whea_errors:
-                            whea_time = parse_bsod_timestamp(whea.get('timestamp', ''))
-                            if whea_time:
-                                time_diff = abs((crash_time - whea_time).total_seconds())
-                                if time_diff <= 600:  # 10 minut
+    try:
+        if bsod_data:
+            recent_crashes_bsod = safe_get_with_analysis(
+                bsod_data, 'recent_crashes', [],
+                context={
+                    'variable_name': 'bsod_data.recent_crashes',
+                    'location': 'cause_detector.py:903',
+                    'function': 'detect_wer_causes'
+                }
+            )
+            
+            # Upewnij się, że recent_crashes_bsod jest listą
+            if not isinstance(recent_crashes_bsod, list):
+                logger.warning(f"[CAUSE_DETECTOR] recent_crashes_bsod is not a list: {type(recent_crashes_bsod)}")
+                recent_crashes_bsod = []
+            
+            # Znajdź BSOD EventID 41
+            bsod_41_times = []
+            for idx, bsod in enumerate(recent_crashes_bsod):
+                try:
+                    if not isinstance(bsod, dict):
+                        logger.debug(f"[CAUSE_DETECTOR] BSOD[{idx}] is not a dict: {type(bsod)}")
+                        continue
+                    
+                    event_id = str(safe_get_with_analysis(bsod, 'event_id', '', {
+                        'variable_name': f'bsod[{idx}].event_id',
+                        'location': 'cause_detector.py:909'
+                    }))
+                    if event_id == '41':
+                        timestamp = safe_get_with_analysis(bsod, 'timestamp', '', {
+                            'variable_name': f'bsod[{idx}].timestamp',
+                            'location': 'cause_detector.py:910'
+                        })
+                        bsod_time = parse_bsod_timestamp(timestamp)
+                        if bsod_time:
+                            bsod_41_times.append(bsod_time)
+                except Exception as e:
+                    log_error_with_analysis(
+                        e,
+                        bsod,
+                        {
+                            'variable_name': f'recent_crashes_bsod[{idx}]',
+                            'location': 'cause_detector.py:908',
+                            'function': 'detect_wer_causes'
+                        },
+                        continue_execution=True
+                    )
+                    continue
+            
+            # Sprawdź czy crashy systemowe wystąpiły w tym samym czasie (±5 minut)
+            if bsod_41_times:
+                for idx, crash in enumerate(recent_crashes):
+                    try:
+                        if not isinstance(crash, dict):
+                            logger.debug(f"[CAUSE_DETECTOR] Crash[{idx}] is not a dict: {type(crash)}")
+                            continue
+                        
+                        crash_type = str(safe_get_with_analysis(crash, 'type', '', {
+                            'variable_name': f'crash[{idx}].type',
+                            'location': 'cause_detector.py:916'
+                        }))
+                        timestamp = safe_get_with_analysis(crash, 'timestamp', '', {
+                            'variable_name': f'crash[{idx}].timestamp',
+                            'location': 'cause_detector.py:917'
+                        })
+                        crash_time = parse_wer_timestamp(timestamp)
+                        
+                        if crash_type == 'SYSTEM_CRASH' and crash_time:
+                            # Sprawdź czy crash jest w oknie ±5 minut od BSOD
+                            for bsod_time in bsod_41_times:
+                                time_diff = abs((crash_time - bsod_time).total_seconds())
+                                if time_diff <= 300:  # 5 minut
+                                    app = str(safe_get_with_analysis(crash, 'application', 'Unknown', {
+                                        'variable_name': f'crash[{idx}].application',
+                                        'location': 'cause_detector.py:980'
+                                    }))
+                                    module = str(safe_get_with_analysis(crash, 'module_name', '', {
+                                        'variable_name': f'crash[{idx}].module_name',
+                                        'location': 'cause_detector.py:981'
+                                    }))
+                                    
                                     causes.append({
                                         'category': 'Hardware',
-                                        'cause': 'HARDWARE_FAILURE_SYSTEM_CRASH_WHEA',
+                                        'cause': 'HARDWARE_FAILURE_WER_BSOD_CORRELATION',
                                         'confidence': 95.0,
-                                        'description': f'System process ({app}) crash correlated with WHEA hardware error, indicating hardware failure',
+                                        'description': f'System crash ({app}) occurred at the same time as BSOD EventID 41, indicating probable hardware failure',
                                         'evidence': {
-                                            'system_process': app,
-                                            'whea_error': whea.get('message', '')[:200],
+                                            'system_crash': {
+                                                'application': app,
+                                                'module_name': module,
+                                                'exception_code': safe_get_with_analysis(crash, 'exception_code', '', {
+                                                    'variable_name': f'crash[{idx}].exception_code',
+                                                    'location': 'cause_detector.py:992'
+                                                }),
+                                                'timestamp': safe_get_with_analysis(crash, 'timestamp', '', {
+                                                    'variable_name': f'crash[{idx}].timestamp',
+                                                    'location': 'cause_detector.py:993'
+                                                })
+                                            },
+                                            'bsod_timestamp': bsod_time.isoformat() if hasattr(bsod_time, 'isoformat') else str(bsod_time),
                                             'time_difference_seconds': time_diff
                                         },
-                                        'recommendation': 'System process crash with WHEA error indicates severe hardware failure. Check CPU, RAM, motherboard, run hardware diagnostics immediately'
+                                        'recommendation': 'System crash correlated with BSOD indicates hardware failure. Check CPU, RAM, motherboard, power supply. Run hardware diagnostics, check temperatures, verify all connections'
                                     })
-                                    break
+                                    break  # Tylko jeden raz
+                    except Exception as e:
+                        log_error_with_analysis(
+                            e,
+                            crash,
+                            {
+                                'variable_name': f'recent_crashes[{idx}]',
+                                'location': 'cause_detector.py:1028',
+                                'function': 'detect_wer_causes'
+                            },
+                            continue_execution=True
+                        )
+                        continue
+    except Exception as e:
+        # Kompleksowa analiza błędu na poziomie Golden Rule 3
+        log_error_with_analysis(
+            e,
+            bsod_data if 'bsod_data' in locals() else None,
+            {
+                'variable_name': 'bsod_data',
+                'location': 'cause_detector.py:976',
+                'function': 'detect_wer_causes'
+            },
+            continue_execution=True
+        )
+    
+    # Dodatkowa reguła: Systemowe procesy (winlogon.exe, csrss.exe) crashują + WHEA → hardware failure
+    try:
+        if bsod_data and isinstance(bsod_data, dict):
+            whea_errors = safe_get_with_analysis(
+                bsod_data, 'whea_errors', [],
+                context={
+                    'variable_name': 'bsod_data.whea_errors',
+                    'location': 'cause_detector.py:1108',
+                    'function': 'detect_wer_causes'
+                }
+            )
+            
+            # Upewnij się, że whea_errors jest listą
+            if not isinstance(whea_errors, list):
+                logger.warning(f"[CAUSE_DETECTOR] whea_errors is not a list: {type(whea_errors)}")
+                whea_errors = []
+            
+            if whea_errors:
+                system_processes = ['winlogon.exe', 'csrss.exe', 'lsass.exe']
+                for idx, crash in enumerate(recent_crashes):
+                    try:
+                        if not isinstance(crash, dict):
+                            logger.debug(f"[CAUSE_DETECTOR] Crash[{idx}] is not a dict: {type(crash)}")
+                            continue
+                        
+                        app = (str(safe_get_with_analysis(crash, 'application', '', {
+                            'variable_name': f'crash[{idx}].application',
+                            'location': 'cause_detector.py:1112'
+                        })) or '').lower()
+                        
+                        if any(proc in app for proc in system_processes):
+                            timestamp = safe_get_with_analysis(crash, 'timestamp', '', {
+                                'variable_name': f'crash[{idx}].timestamp',
+                                'location': 'cause_detector.py:1114'
+                            })
+                            crash_time = parse_wer_timestamp(timestamp)
+                            if crash_time:
+                                # Sprawdź czy WHEA error jest w oknie ±10 minut
+                                for whea_idx, whea in enumerate(whea_errors):
+                                    try:
+                                        if not isinstance(whea, dict):
+                                            logger.debug(f"[CAUSE_DETECTOR] WHEA[{whea_idx}] is not a dict: {type(whea)}")
+                                            continue
+                                        
+                                        whea_timestamp = safe_get_with_analysis(whea, 'timestamp', '', {
+                                            'variable_name': f'whea[{whea_idx}].timestamp',
+                                            'location': 'cause_detector.py:1118'
+                                        })
+                                        whea_time = parse_bsod_timestamp(whea_timestamp)
+                                        if whea_time:
+                                            time_diff = abs((crash_time - whea_time).total_seconds())
+                                            if time_diff <= 600:  # 10 minut
+                                                whea_message = str(safe_get_with_analysis(whea, 'message', '', {
+                                                    'variable_name': f'whea[{whea_idx}].message',
+                                                    'location': 'cause_detector.py:1129'
+                                                }))[:200]
+                                                
+                                                causes.append({
+                                                    'category': 'Hardware',
+                                                    'cause': 'HARDWARE_FAILURE_SYSTEM_CRASH_WHEA',
+                                                    'confidence': 95.0,
+                                                    'description': f'System process ({app}) crash correlated with WHEA hardware error, indicating hardware failure',
+                                                    'evidence': {
+                                                        'system_process': app,
+                                                        'whea_error': whea_message,
+                                                        'time_difference_seconds': time_diff
+                                                    },
+                                                    'recommendation': 'System process crash with WHEA error indicates severe hardware failure. Check CPU, RAM, motherboard, run hardware diagnostics immediately'
+                                                })
+                                                break  # Tylko jeden raz
+                                    except Exception as e:
+                                        log_error_with_analysis(
+                                            e,
+                                            whea,
+                                            {
+                                                'variable_name': f'whea_errors[{whea_idx}]',
+                                                'location': 'cause_detector.py:1145',
+                                                'function': 'detect_wer_causes'
+                                            },
+                                            continue_execution=True
+                                        )
+                                        continue
+                    except Exception as e:
+                        log_error_with_analysis(
+                            e,
+                            crash,
+                            {
+                                'variable_name': f'recent_crashes[{idx}]',
+                                'location': 'cause_detector.py:1126',
+                                'function': 'detect_wer_causes'
+                            },
+                            continue_execution=True
+                        )
+                        continue
+    except Exception as e:
+        # Kompleksowa analiza błędu na poziomie dodatkowej reguły
+        log_error_with_analysis(
+            e,
+            bsod_data if 'bsod_data' in locals() else None,
+            {
+                'variable_name': 'bsod_data',
+                'location': 'cause_detector.py:1107',
+                'function': 'detect_wer_causes'
+            },
+            continue_execution=True
+        )
     
     logger.info(f"[CAUSE_DETECTOR] WER golden rules detected {len(causes)} causes")
     return causes
