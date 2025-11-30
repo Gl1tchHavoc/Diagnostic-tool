@@ -4,6 +4,10 @@ import os
 import subprocess
 from datetime import datetime
 
+from utils.logger import get_logger
+
+logger = get_logger()
+
 
 def collect():
     """
@@ -59,12 +63,14 @@ def collect():
 
             # Boot time
             try:
-                    boot_str = run_powershell_hidden(
-                        '(Get-CimInstance Win32_OperatingSystem).LastBootUpTime').strip()
+                boot_str = run_powershell_hidden(
+                    '(Get-CimInstance Win32_OperatingSystem).LastBootUpTime'
+                ).strip()
                 if boot_str:
                     system_data["boot_time"] = boot_str
             except Exception as e:
-                logger.warning(f"[SYSTEM_INFO] Failed to get boot time: {e}")
+                logger.warning(
+                    f"[SYSTEM_INFO] Failed to get boot time: {e}")
             
             # Uptime
             import psutil
