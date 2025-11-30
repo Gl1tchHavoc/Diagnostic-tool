@@ -152,24 +152,11 @@ class WERCollector(BaseCollector):
                 sys.stdout.flush()
                 raise
             
-            # ZABEZPIECZENIE: Utwórz kopię danych zamiast referencji, aby uniknąć problemów z pamięcią
-            try:
-                import copy
-                self._logger.debug("[wer] DEBUG: Creating deep copy of data")
-                sys.stdout.flush()
-                data_copy = copy.deepcopy(data)
-                self._logger.debug("[wer] DEBUG: Deep copy completed")
-                sys.stdout.flush()
-                data = data_copy
-            except Exception as e:
-                self._logger.warning(f"[wer] DEBUG: Failed to create deep copy: {e}, using original data")
-                sys.stdout.flush()
-                # Jeśli deepcopy nie działa, spróbuj shallow copy
-                try:
-                    import copy
-                    data = copy.copy(data)
-                except Exception:
-                    pass  # Użyj oryginalnych danych
+            # ZABEZPIECZENIE: NIE używaj deepcopy - może zawiesić się na dużych danych!
+            # Zamiast tego, dane są już bezpieczne po konwersji datetime w wer.collect()
+            # Deepcopy może powodować zawieszenie na dużych obiektach z zagnieżdżonymi strukturami
+            self._logger.debug("[wer] DEBUG: Skipping deep copy (data already sanitized in wer.collect())")
+            sys.stdout.flush()
             
             self._logger.debug("[wer] DEBUG: About to set progress to 100.0")
             sys.stdout.flush()

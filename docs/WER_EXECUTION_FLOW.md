@@ -267,3 +267,4 @@ group.get('is_repeating', False) - linia 802
    logger.debug(f"[DEBUG] grouped_crashes value: {grouped_crashes}")
    ```
 
+

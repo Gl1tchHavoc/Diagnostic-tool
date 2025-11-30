@@ -252,13 +252,24 @@ class ScanManager:
             else:
                 sanitized['reports'] = []
             
-            # grouped_crashes - upewnij się, że to lista
+            # grouped_crashes - KRYTYCZNE: musi być ZAWSZE listą (konsumenci iterują po niej)
             if 'grouped_crashes' in wer_data:
                 grouped = wer_data['grouped_crashes']
                 if isinstance(grouped, list):
-                    sanitized['grouped_crashes'] = grouped
+                    # Dodatkowa walidacja: upewnij się, że wszystkie elementy są dict
+                    validated_grouped = []
+                    for i, item in enumerate(grouped):
+                        if isinstance(item, dict):
+                            validated_grouped.append(item)
+                        else:
+                            self._logger.warning(f"[SCAN_MANAGER] grouped_crashes[{i}] is not a dict: {type(item)}, skipping")
+                    sanitized['grouped_crashes'] = validated_grouped
+                elif isinstance(grouped, dict):
+                    # BŁĄD: grouped_crashes jest dict zamiast listy - konwertuj
+                    self._logger.error(f"[SCAN_MANAGER] CRITICAL: grouped_crashes is dict (keys: {list(grouped.keys())[:5]}) instead of list! Converting...")
+                    sanitized['grouped_crashes'] = [grouped] if grouped else []
                 else:
-                    self._logger.warning(f"[SCAN_MANAGER] WER grouped_crashes is not a list: {type(grouped)}")
+                    self._logger.warning(f"[SCAN_MANAGER] WER grouped_crashes is not a list: {type(grouped)}, converting to empty list")
                     sanitized['grouped_crashes'] = []
             else:
                 sanitized['grouped_crashes'] = []

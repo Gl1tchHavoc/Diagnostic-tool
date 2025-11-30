@@ -66,12 +66,29 @@ def collect():
         logger.info("[WER] Grouping and analyzing repeating crashes")
         grouped = group_and_analyze_crashes(wer_data["recent_crashes"])
         
-        # Upewnij się, że grouped jest listą (group_and_analyze_crashes zwraca listę)
+        # KRYTYCZNE: Upewnij się, że grouped jest ZAWSZE listą (group_and_analyze_crashes zwraca listę)
+        # Konsumenci oczekują listy i iterują po niej - NIE słownika!
         if not isinstance(grouped, list):
-            logger.warning(f"[WER] group_and_analyze_crashes returned {type(grouped)}, expected list. Converting...")
-            grouped = [grouped] if grouped is not None else []
+            logger.error(f"[WER] CRITICAL: group_and_analyze_crashes returned {type(grouped)}, expected list! Converting...")
+            if isinstance(grouped, dict):
+                # Jeśli to dict, zamień na listę z jednym elementem
+                logger.warning(f"[WER] grouped is dict with keys: {list(grouped.keys())[:5] if grouped else 'empty'}")
+                grouped = [grouped] if grouped else []
+            else:
+                grouped = [grouped] if grouped is not None else []
+        
+        # DODATKOWA WALIDACJA: Upewnij się, że wszystkie elementy są dict
+        if isinstance(grouped, list):
+            validated_grouped = []
+            for i, item in enumerate(grouped):
+                if isinstance(item, dict):
+                    validated_grouped.append(item)
+                else:
+                    logger.warning(f"[WER] grouped_crashes[{i}] is not a dict: {type(item)}, skipping")
+            grouped = validated_grouped
         
         wer_data["grouped_crashes"] = grouped
+        logger.debug(f"[WER] Final grouped_crashes type: {type(wer_data['grouped_crashes'])}, length: {len(wer_data['grouped_crashes'])}")
         
         # Krok 4: Oblicz statystyki
         now = datetime.now()
@@ -277,13 +294,20 @@ def collect():
         logger.info("[WER] Converting datetime objects to strings for serialization...")
         sys.stdout.flush()
         try:
-            wer_data = convert_datetime_to_string(wer_data)
-            logger.info("[WER] Datetime conversion completed successfully")
-            sys.stdout.flush()
+            # ZABEZPIECZENIE: Konwersja może być wolna - wykonaj tylko jeśli dane nie są zbyt duże
+            # Sprawdź rozmiar danych przed konwersją
+            total_items = len(wer_data.get('recent_crashes', [])) + len(wer_data.get('reports', [])) + len(wer_data.get('grouped_crashes', []))
+            if total_items > 200:  # Jeśli więcej niż 200 elementów, pomin konwersję (może być wolna)
+                logger.warning(f"[WER] Skipping datetime conversion - too many items ({total_items}), data already simplified")
+                sys.stdout.flush()
+            else:
+                wer_data = convert_datetime_to_string(wer_data)
+                logger.info("[WER] Datetime conversion completed successfully")
+                sys.stdout.flush()
         except Exception as e:
             logger.warning(f"[WER] Error converting datetime objects: {e}")
             sys.stdout.flush()
-            # Nie przerywaj - kontynuuj z oryginalnymi danymi
+            # Nie przerywaj - kontynuuj z oryginalnymi danymi (które są już uproszczone)
         
         logger.info(f"[WER] Optimized data: {original_recent_count}->{len(wer_data.get('recent_crashes', []))} crashes, "
                    f"{original_reports_count}->{len(wer_data.get('reports', []))} reports, "

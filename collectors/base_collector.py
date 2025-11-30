@@ -119,15 +119,11 @@ class BaseCollector(ABC):
                     self._logger.debug(f"[{self.name}] DEBUG: WER - About to assign data to self.data")
                 
                 # ZABEZPIECZENIE: Dla WER, upewnij się, że dane są bezpieczne przed przypisaniem
+                # NIE używaj json.dumps() jako testu - może zawiesić się na dużych danych!
+                # Dane są już sanityzowane w wer.collect() (datetime -> string, ograniczone rozmiary)
                 if self.name == "wer" and isinstance(collected_data, dict):
-                    # Sprawdź czy dane nie są zbyt duże lub problematyczne
-                    try:
-                        # Próba serializacji do JSON jako test
-                        import json
-                        json.dumps(collected_data, default=str)
-                        self._logger.debug(f"[{self.name}] DEBUG: WER data is JSON-serializable")
-                    except Exception as e:
-                        self._logger.warning(f"[{self.name}] DEBUG: WER data may not be JSON-serializable: {e}")
+                    # Tylko podstawowa walidacja typu, bez pełnej serializacji
+                    self._logger.debug(f"[{self.name}] DEBUG: WER data type validated (skipping JSON test to avoid hang)")
                 
                 self.data = collected_data
                 self._logger.debug(f"[{self.name}] DEBUG: self.data assigned successfully")

@@ -800,34 +800,23 @@ def detect_wer_causes(processed_data, collected_data):
     recent_crashes = wer_data.get('recent_crashes', [])
     grouped_crashes = wer_data.get('grouped_crashes', [])
     
-    # ZABEZPIECZENIE: Upewnij się, że są to listy
-    if not isinstance(recent_crashes, list):
-        logger.warning(f"[CAUSE_DETECTOR] recent_crashes is not a list: {type(recent_crashes)}")
-        recent_crashes = []
-    
-    if not isinstance(grouped_crashes, list):
-        logger.warning(f"[CAUSE_DETECTOR] grouped_crashes is not a list: {type(grouped_crashes)}")
-        grouped_crashes = []
-    
-    # DEBUG: Sprawdź typy przed konwersją
-    logger.debug(f"[CAUSE_DETECTOR] DEBUG: recent_crashes type: {type(recent_crashes)}")
-    logger.debug(f"[CAUSE_DETECTOR] DEBUG: recent_crashes is list: {isinstance(recent_crashes, list)}")
-    logger.debug(f"[CAUSE_DETECTOR] DEBUG: grouped_crashes type: {type(grouped_crashes)}")
-    logger.debug(f"[CAUSE_DETECTOR] DEBUG: grouped_crashes is list: {isinstance(grouped_crashes, list)}")
-    logger.debug(f"[CAUSE_DETECTOR] DEBUG: grouped_crashes is dict: {isinstance(grouped_crashes, dict)}")
-    
-    # Upewnij się, że grouped_crashes jest listą (nie dict)
-    if not isinstance(grouped_crashes, list):
+    # KRYTYCZNE ZABEZPIECZENIE: grouped_crashes MUSI być listą (konsumenci iterują po niej, NIE używają .get())
+    # Jeśli jest dict, to błąd - konwertuj na listę
+    if isinstance(grouped_crashes, dict):
+        logger.error(f"[CAUSE_DETECTOR] CRITICAL: grouped_crashes is dict (keys: {list(grouped_crashes.keys())[:5]}) instead of list! Converting...")
+        grouped_crashes = [grouped_crashes] if grouped_crashes else []
+    elif not isinstance(grouped_crashes, list):
         logger.warning(f"[CAUSE_DETECTOR] grouped_crashes is not a list: {type(grouped_crashes)}, converting...")
-        logger.debug(f"[CAUSE_DETECTOR] DEBUG: grouped_crashes value (first 200 chars): {str(grouped_crashes)[:200]}")
         grouped_crashes = [grouped_crashes] if grouped_crashes is not None else []
-        logger.debug(f"[CAUSE_DETECTOR] DEBUG: After conversion, grouped_crashes type: {type(grouped_crashes)}")
-        logger.debug(f"[CAUSE_DETECTOR] DEBUG: After conversion, grouped_crashes is list: {isinstance(grouped_crashes, list)}")
     
-    # Upewnij się, że recent_crashes jest listą
+    # ZABEZPIECZENIE: Upewnij się, że recent_crashes jest listą
     if not isinstance(recent_crashes, list):
         logger.warning(f"[CAUSE_DETECTOR] recent_crashes is not a list: {type(recent_crashes)}, converting...")
         recent_crashes = [recent_crashes] if recent_crashes is not None else []
+    
+    # DEBUG: Sprawdź typy po konwersji
+    logger.debug(f"[CAUSE_DETECTOR] DEBUG: recent_crashes type: {type(recent_crashes)}, is_list: {isinstance(recent_crashes, list)}")
+    logger.debug(f"[CAUSE_DETECTOR] DEBUG: grouped_crashes type: {type(grouped_crashes)}, is_list: {isinstance(grouped_crashes, list)}, length: {len(grouped_crashes) if isinstance(grouped_crashes, list) else 'N/A'}")
     
     # DEBUG: Sprawdź typy po konwersji
     logger.debug(f"[CAUSE_DETECTOR] DEBUG: After conversion - recent_crashes type: {type(recent_crashes)}, length: {len(recent_crashes) if isinstance(recent_crashes, list) else 'N/A'}")
