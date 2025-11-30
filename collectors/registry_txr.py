@@ -17,7 +17,12 @@ def collect(max_events=200):
 
     try:
         # Szukamy błędów TxR w logach System (ukryte okno)
-        cmd = f"Get-WinEvent -LogName System -MaxEvents {max_events} | Where-Object {{$_.Message -like '*TxR*' -or $_.Message -like '*0xc00000a2*' -or $_.Id -eq 8193}} | ConvertTo-Xml -As String -Depth 3"
+        cmd = (
+            f"Get-WinEvent -LogName System -MaxEvents {max_events} | "
+            "Where-Object {$_.Message -like '*TxR*' -or "
+            "$_.Message -like '*0xc00000a2*' -or $_.Id -eq 8193} | "
+            "ConvertTo-Xml -As String -Depth 3"
+        )
 
         from utils.subprocess_helper import run_powershell_hidden
         output = run_powershell_hidden(cmd)

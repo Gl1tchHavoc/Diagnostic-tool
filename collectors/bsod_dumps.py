@@ -25,7 +25,13 @@ def collect():
     try:
         # Sprawdź Event ID 1001 (Bugcheck) i 41 (Unexpected shutdown) - ukryte
         # okno
-        cmd = "Get-WinEvent -LogName System -MaxEvents 200 | Where-Object {$_.Id -in @(41,1001,6008,1074,1076) -or $_.Message -like '*bugcheck*' -or $_.Message -like '*blue screen*' -or $_.Message -like '*stop error*'} | ConvertTo-Xml -As String -Depth 3"
+        cmd = (
+            "Get-WinEvent -LogName System -MaxEvents 200 | "
+            "Where-Object {$_.Id -in @(41,1001,6008,1074,1076) -or "
+            "$_.Message -like '*bugcheck*' -or $_.Message -like '*blue screen*' "
+            "-or $_.Message -like '*stop error*'} | "
+            "ConvertTo-Xml -As String -Depth 3"
+        )
 
         from utils.subprocess_helper import run_powershell_hidden
         output = run_powershell_hidden(cmd)
@@ -118,7 +124,10 @@ def collect():
                                 "parameters": parsed_info.get('parameters', {})
                             })
                             logger.info(
-                                f"[BSOD_DUMPS] Parsed minidump: {dump_file.name}, STOP: {parsed_info.get('stop_code')}, Driver: {parsed_info.get('offending_driver')}")
+                                f"[BSOD_DUMPS] Parsed minidump: {dump_file.name}, "
+                                f"STOP: {parsed_info.get('stop_code')}, "
+                                f"Driver: {parsed_info.get('offending_driver')}"
+                            )
 
                         bsod_data["minidumps"].append(dump_info)
                     except Exception as e:

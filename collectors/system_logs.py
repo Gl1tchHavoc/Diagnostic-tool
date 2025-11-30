@@ -34,7 +34,11 @@ def collect(max_events=100, filter_levels=None):
             # Wywołanie PowerShell do pobrania logów w formacie XML (ukryte okno)
             # Użyj -ErrorAction SilentlyContinue żeby nie przerywać przy
             # błędach
-            cmd = f"Get-WinEvent -LogName {category} -MaxEvents {max_events} -ErrorAction SilentlyContinue | ConvertTo-Xml -As String -Depth 3"
+            cmd = (
+                f"Get-WinEvent -LogName {category} -MaxEvents {max_events} "
+                "-ErrorAction SilentlyContinue | "
+                "ConvertTo-Xml -As String -Depth 3"
+            )
 
             # Użyj bezpiecznej funkcji z obsługą różnych kodowań
             from utils.subprocess_helper import run_powershell_hidden
@@ -157,7 +161,10 @@ def parse_xml_logs(xml_data, filter_levels=None):
             # Loguj pierwsze kilka eventów dla debugowania
             if parsed_count <= 5:
                 logger.debug(
-                    f"[SYSTEM_LOGS] Event {parsed_count}: raw_level='{level}', normalized='{level_normalized}', event_id={event_id}, filter_levels={filter_levels_lower}")
+                    f"[SYSTEM_LOGS] Event {parsed_count}: "
+                    f"raw_level='{level}', normalized='{level_normalized}', "
+                    f"event_id={event_id}, filter_levels={filter_levels_lower}"
+                )
 
             # Filtrowanie po poziomie (sprawdź znormalizowany level)
             if filter_levels_lower and level_normalized.lower() not in filter_levels_lower:

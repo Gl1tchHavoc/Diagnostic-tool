@@ -42,7 +42,13 @@ def collect():
 
         # Sprawdź błędy dysków w Event Logs (ukryte okno)
         try:
-            cmd = "Get-WinEvent -LogName System -MaxEvents 200 | Where-Object {$_.Id -in @(7,51,52,55,57,129) -or $_.Message -like '*disk*' -or $_.Message -like '*ntfs*' -or $_.Message -like '*bad block*'} | ConvertTo-Xml -As String -Depth 3"
+            cmd = (
+                "Get-WinEvent -LogName System -MaxEvents 200 | "
+                "Where-Object {$_.Id -in @(7,51,52,55,57,129) -or "
+                "$_.Message -like '*disk*' -or $_.Message -like '*ntfs*' "
+                "-or $_.Message -like '*bad block*'} | "
+                "ConvertTo-Xml -As String -Depth 3"
+            )
 
             from utils.subprocess_helper import run_powershell_hidden
             output = run_powershell_hidden(cmd)
