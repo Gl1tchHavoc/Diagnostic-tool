@@ -21,6 +21,22 @@ def main():
     logger.info("=" * 60)
     logger.debug("Logger initialized with DEBUG level")
     
+    # Sprawdź wymagane pakiety
+    logger.info("Checking requirements...")
+    requirements_status = check_all_requirements()
+    if not requirements_status['all_installed']:
+        logger.warning("Some required packages are missing or have version mismatches")
+        print_requirements_status(requirements_status)
+        print("\n⚠️  Some required packages are missing. The application may not work correctly.")
+        print("Press Enter to continue anyway, or Ctrl+C to exit and install missing packages...")
+        try:
+            input()
+        except KeyboardInterrupt:
+            logger.info("User cancelled - exiting")
+            sys.exit(1)
+    else:
+        logger.info("All requirements are satisfied")
+    
     # Sprawdź uprawnienia administratora (automatycznie próbuje uruchomić jako admin)
     if not require_admin(auto_restart=True):
         logger.error("Administrator privileges required")

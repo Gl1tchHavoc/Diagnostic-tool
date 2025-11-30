@@ -4,7 +4,8 @@ Główny analyzer - łączy wszystkie procesory i nowy system scoringu w komplek
 import time
 from . import (
     hardware_processor, driver_processor, system_logs_processor,
-    registry_txr_processor, storage_health_processor, system_info_processor
+    registry_txr_processor, storage_health_processor, system_info_processor,
+    whea_processor
 )
 from .report_builder import build_report
 from .bsod_analyzer import analyze_bsod
@@ -26,7 +27,18 @@ def analyze_all(collected_data, progress_callback=None):
     logger.info("[ANALYSIS] Starting full system analysis")
     analysis_start_time = time.time()
     
+    # Upewnij się, że collected_data jest słownikiem
+    if not isinstance(collected_data, dict):
+        logger.error(f"[ANALYSIS] collected_data is not a dict: {type(collected_data)}")
+        return {"error": "Invalid collected_data format"}
+    
     collectors_data = collected_data.get("collectors", {})
+    
+    # Upewnij się, że collectors_data jest słownikiem
+    if not isinstance(collectors_data, dict):
+        logger.error(f"[ANALYSIS] collectors_data is not a dict: {type(collectors_data)}")
+        collectors_data = {}
+    
     processed_data = {}
     
     # Lista procesorów do wykonania
@@ -53,7 +65,13 @@ def analyze_all(collected_data, progress_callback=None):
         
         if key in collectors_data:
             try:
-                processor_result = processor_func(collectors_data[key])
+                # Upewnij się, że collectors_data[key] jest odpowiedniego typu
+                collector_data = collectors_data[key]
+                if not isinstance(collector_data, dict) and not isinstance(collector_data, list):
+                    logger.warning(f"[ANALYSIS] collectors_data['{key}'] is not dict/list: {type(collector_data)}")
+                    collector_data = {}
+                
+                processor_result = processor_func(collector_data)
                 duration = time.time() - processor_start_time
                 
                 # Policz znalezione problemy
@@ -103,7 +121,32 @@ def analyze_all(collected_data, progress_callback=None):
     if progress_callback:
         progress_callback(total_processors + 3, total_processors + 4, "Analysis completed")
     
-    # 6. Analiza BSOD (jeśli dostępne dane)
+    # 6. Analiza WHEA (przed BSOD, bo może być użyte w korelacji)
+    logger.info("[ANALYSIS] Starting WHEA analysis")
+    whea_analysis = None
+    if "whea_analyzer" in collectors_data:
+        try:
+            whea_data = collectors_data.get("whea_analyzer", {})
+            # Upewnij się, że whea_data jest słownikiem
+            if not isinstance(whea_data, dict):
+                logger.warning(f"[ANALYSIS] whea_data is not a dict: {type(whea_data)}, using empty dict")
+                whea_data = {}
+            
+            bsod_data = collectors_data.get("bsod_dumps", {})
+            if not isinstance(bsod_data, dict):
+                bsod_data = {}
+            
+            hardware_data = collectors_data.get("hardware", {})
+            if not isinstance(hardware_data, dict):
+                hardware_data = {}
+            
+            whea_analysis = whea_processor.process(whea_data, bsod_data, hardware_data)
+            processed_data["whea"] = whea_analysis
+        except Exception as e:
+            logger.exception("WHEA analysis raised exception")
+            whea_analysis = {"error": f"WHEA analysis failed: {e}"}
+    
+    # 7. Analiza BSOD (jeśli dostępne dane)
     bsod_analysis = None
     if "system_logs" in collectors_data and "hardware" in collectors_data and "drivers" in collectors_data:
         try:
@@ -155,6 +198,7 @@ def analyze_all(collected_data, progress_callback=None):
         "timestamp": collected_data.get("timestamp"),
         "processed_data": processed_data,
         "report": report,
+        "whea_analysis": whea_analysis,
         "bsod_analysis": bsod_analysis,
         "detected_causes": detected_causes
     }

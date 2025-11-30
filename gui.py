@@ -10,6 +10,7 @@ from utils.admin_check import is_admin, require_admin, restart_as_admin
 
 # Logger
 from utils.logger import get_logger, log_performance, log_exception
+from utils.requirements_check import check_all_requirements, print_requirements_status
 
 # Nowa struktura - wszystkie collectory
 from collectors import (
@@ -230,12 +231,29 @@ class DiagnosticsGUI:
             scan_results = quick_scan.run()
             
             # Konwertuj wyniki do formatu oczekiwanego przez analyzer
+            # Upewnij się, że scan_results jest słownikiem
+            if not isinstance(scan_results, dict):
+                raise ValueError(f"scan_results is not a dict: {type(scan_results)}")
+            
+            results = scan_results.get('results', {})
+            if not isinstance(results, dict):
+                results = {}
+            
+            collectors = results.get('collectors', {})
+            if not isinstance(collectors, dict):
+                collectors = {}
+            
             collected_data = {
-                "timestamp": scan_results['timestamp'],
-                "collectors": scan_results['results']['collectors']
+                "timestamp": scan_results.get('timestamp', ''),
+                "collectors": collectors
             }
             
-            self.output_text.insert(tk.END, f"✓ Quick scan completed ({scan_results['progress_info']['global_progress']:.1f}%)\n\n")
+            # Bezpieczne pobranie progress_info
+            progress_info = scan_results.get('progress_info', {})
+            if not isinstance(progress_info, dict):
+                progress_info = {}
+            global_progress = progress_info.get('global_progress', 100.0)
+            self.output_text.insert(tk.END, f"✓ Quick scan completed ({global_progress:.1f}%)\n\n")
             self.root.update()
             
             # Analizuj wyniki
@@ -295,12 +313,29 @@ class DiagnosticsGUI:
             scan_results = full_scan.run()
             
             # Konwertuj wyniki do formatu oczekiwanego przez analyzer
+            # Upewnij się, że scan_results jest słownikiem
+            if not isinstance(scan_results, dict):
+                raise ValueError(f"scan_results is not a dict: {type(scan_results)}")
+            
+            results = scan_results.get('results', {})
+            if not isinstance(results, dict):
+                results = {}
+            
+            collectors = results.get('collectors', {})
+            if not isinstance(collectors, dict):
+                collectors = {}
+            
             collected_data = {
-                "timestamp": scan_results['timestamp'],
-                "collectors": scan_results['results']['collectors']
+                "timestamp": scan_results.get('timestamp', ''),
+                "collectors": collectors
             }
             
-            self.output_text.insert(tk.END, f"✓ Data collection completed ({scan_results['progress_info']['global_progress']:.1f}%)\n\n")
+            # Bezpieczne pobranie progress_info
+            progress_info = scan_results.get('progress_info', {})
+            if not isinstance(progress_info, dict):
+                progress_info = {}
+            global_progress = progress_info.get('global_progress', 100.0)
+            self.output_text.insert(tk.END, f"✓ Data collection completed ({global_progress:.1f}%)\n\n")
             self.root.update()
             
             # Krok 2: Analizuj
@@ -353,8 +388,10 @@ class DiagnosticsGUI:
             self.display_analysis_results(analysis_report)
             
             # Wyświetl analizę BSOD jeśli dostępna
+            if not isinstance(analysis_report, dict):
+                analysis_report = {}
             bsod_analysis = analysis_report.get("bsod_analysis")
-            if bsod_analysis and bsod_analysis.get("bsod_found", False):
+            if bsod_analysis and isinstance(bsod_analysis, dict) and bsod_analysis.get("bsod_found", False):
                 self.output_text.insert(tk.END, "\n" + "=" * 70 + "\n")
                 self.output_text.insert(tk.END, "BSOD ANALYSIS (from full scan)\n")
                 self.output_text.insert(tk.END, "=" * 70 + "\n\n")
@@ -1046,6 +1083,10 @@ class DiagnosticsGUI:
             self.output_text.insert(tk.END, "No BSOD analysis data available.\n")
             return
         
+        if not isinstance(bsod_analysis, dict):
+            self.output_text.insert(tk.END, f"Invalid BSOD analysis data format: {type(bsod_analysis)}\n")
+            return
+        
         if not bsod_analysis.get("bsod_found", False):
             self.output_text.insert(tk.END, "=" * 70 + "\n")
             self.output_text.insert(tk.END, "BSOD ANALYSIS RESULTS\n")
@@ -1234,6 +1275,18 @@ if __name__ == "__main__":
     logger.info("=" * 70)
     logger.info("Diagnostic Tool - Application Started")
     logger.info("=" * 70)
+    
+    # Sprawdź wymagane pakiety
+    logger.info("Checking requirements...")
+    requirements_status = check_all_requirements()
+    if not requirements_status['all_installed']:
+        logger.warning("Some required packages are missing or have version mismatches")
+        # Wyświetl ostrzeżenie w konsoli (przed uruchomieniem GUI)
+        print_requirements_status(requirements_status)
+        print("\n⚠️  Some required packages are missing. The application may not work correctly.")
+        print("Continuing anyway...\n")
+    else:
+        logger.info("All requirements are satisfied")
     
     # Sprawdź uprawnienia - jeśli brak, od razu próbuj uruchomić jako admin
     if not is_admin():

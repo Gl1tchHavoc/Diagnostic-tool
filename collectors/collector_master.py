@@ -40,6 +40,7 @@ def collect_all(save_raw=True, output_dir="output/raw", progress_callback=None):
         ("system_info", "Collecting system info...", lambda: system_info.collect()),
         ("services", "Collecting services data...", lambda: services.collect()),
         ("bsod_dumps", "Collecting BSOD/dumps data...", lambda: bsod_dumps.collect()),
+        ("whea_analyzer", "Collecting WHEA hardware errors...", lambda: whea_analyzer.collect()),
         ("performance_counters", "Collecting performance counters...", lambda: performance_counters.collect()),
         ("wer", "Collecting Windows Error Reporting data...", lambda: wer.collect()),
         ("processes", "Collecting processes data...", lambda: processes.collect()),

@@ -7,8 +7,8 @@ from utils.progress import ProgressCalculator
 from collectors.wrapper_collectors import (
     HardwareCollector, DriversCollector, SystemLogsCollector,
     RegistryTxRCollector, StorageHealthCollector, SystemInfoCollector,
-    ServicesCollector, BSODDumpsCollector, PerformanceCountersCollector,
-    WERCollector, ProcessesCollector
+    ServicesCollector, BSODDumpsCollector, WHEAAnalyzerCollector,
+    PerformanceCountersCollector, WERCollector, ProcessesCollector
 )
 
 logger = get_logger()
@@ -58,6 +58,7 @@ class ScanManager:
                 SystemInfoCollector("system_info"),
                 ServicesCollector("services"),
                 BSODDumpsCollector("bsod_dumps"),
+                WHEAAnalyzerCollector("whea_analyzer"),
                 PerformanceCountersCollector("performance_counters"),
                 WERCollector("wer"),
                 ProcessesCollector("processes")
@@ -74,6 +75,7 @@ class ScanManager:
                 "bsod_dumps": 5.0,
                 "performance_counters": 5.0,
                 "wer": 5.0,
+                "whea_analyzer": 8.0,
                 "processes": 5.0
             }
     
@@ -110,15 +112,44 @@ class ScanManager:
                 self.progress_callback(progress_info['global_progress'], f"Running {collector.name}...")
             
             # Uruchom kolektor
-            collector_result = collector.run()
+            try:
+                collector_result = collector.run()
+                self._logger.debug(f"[SCAN_MANAGER] Collector {collector.name} returned: {type(collector_result)}")
+            except Exception as e:
+                self._logger.exception(f"[SCAN_MANAGER] Collector {collector.name} raised exception: {e}")
+                collector_result = {
+                    'name': collector.name,
+                    'status': 'ERROR',
+                    'progress': 0.0,
+                    'data': {'error': str(e)},
+                    'error': str(e)
+                }
             
-            # Zapisz wyniki
-            results["collectors"][collector.name] = collector_result.get('data', {})
+            # Zapisz wyniki - upewnij się, że collector_result jest słownikiem
+            try:
+                if isinstance(collector_result, dict):
+                    collector_data = collector_result.get('data', {})
+                    results["collectors"][collector.name] = collector_data
+                    self._logger.debug(f"[SCAN_MANAGER] Saved data for {collector.name}, type: {type(collector_data)}")
+                else:
+                    # Jeśli kolektor zwrócił listę lub coś innego, zapisz jako data
+                    results["collectors"][collector.name] = collector_result if collector_result is not None else {}
+                    self._logger.warning(f"[SCAN_MANAGER] Collector {collector.name} returned non-dict: {type(collector_result)}")
+            except Exception as e:
+                self._logger.exception(f"[SCAN_MANAGER] Error saving results for {collector.name}: {e}")
+                results["collectors"][collector.name] = {'error': f"Failed to save results: {e}"}
             
             # Raportuj postęp po zakończeniu
             if self.progress_callback:
-                progress_info = progress_calc.get_progress()
-                self.progress_callback(progress_info['global_progress'], f"Completed {collector.name}")
+                try:
+                    progress_info = progress_calc.get_progress()
+                    if isinstance(progress_info, dict) and 'global_progress' in progress_info:
+                        self.progress_callback(progress_info['global_progress'], f"Completed {collector.name}")
+                    else:
+                        self._logger.warning(f"[SCAN_MANAGER] Invalid progress_info: {progress_info}")
+                        self.progress_callback(100.0, f"Completed {collector.name}")
+                except Exception as e:
+                    self._logger.exception(f"[SCAN_MANAGER] Error in progress callback for {collector.name}: {e}")
         
         # Pobierz finalne informacje o postępie
         progress_info = progress_calc.get_detailed_progress()

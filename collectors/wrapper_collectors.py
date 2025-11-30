@@ -90,6 +90,16 @@ class PerformanceCountersCollector(BaseCollector):
         self.set_progress(100.0, "Complete")
         return data
 
+class WHEAAnalyzerCollector(BaseCollector):
+    """Kolektor WHEA (Windows Hardware Error Architecture)."""
+    
+    def collect(self):
+        self.set_progress(10.0, "Initializing")
+        import collectors.whea_analyzer as whea_analyzer
+        data = whea_analyzer.collect()
+        self.set_progress(100.0, "Complete")
+        return data
+
 class WERCollector(BaseCollector):
     """Kolektor Windows Error Reporting."""
     

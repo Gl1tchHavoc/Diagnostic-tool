@@ -72,12 +72,26 @@ def collect():
         last_30min = now - timedelta(minutes=30)
         last_24h = now - timedelta(hours=24)
         
-        crashes_30min = [c for c in wer_data["recent_crashes"] 
-                        if parse_timestamp(c.get("timestamp", "")) >= last_30min]
-        crashes_24h = [c for c in wer_data["recent_crashes"] 
-                    if parse_timestamp(c.get("timestamp", "")) >= last_24h]
+        # Bezpieczne filtrowanie crashy z timestampami
+        crashes_30min = []
+        crashes_24h = []
+        for c in wer_data["recent_crashes"]:
+            if not isinstance(c, dict):
+                continue
+            timestamp = parse_timestamp(c.get("timestamp", ""))
+            if timestamp is not None:
+                if timestamp >= last_30min:
+                    crashes_30min.append(c)
+                if timestamp >= last_24h:
+                    crashes_24h.append(c)
         
-        repeating = [g for g in grouped if g.get("occurrences", 0) >= 3]
+        # Bezpieczne filtrowanie powtarzających się crashy
+        repeating = []
+        for g in grouped:
+            if isinstance(g, dict):
+                occurrences_30min = g.get("occurrences_30min", 0)
+                if isinstance(occurrences_30min, (int, float)) and occurrences_30min >= 3:
+                    repeating.append(g)
         
         wer_data["statistics"] = {
             "total_crashes": len(wer_data["recent_crashes"]),
@@ -384,6 +398,11 @@ def group_and_analyze_crashes(crashes):
     
     # Grupuj crashy
     for crash in crashes:
+        # Upewnij się, że crash jest słownikiem
+        if not isinstance(crash, dict):
+            logger.debug(f"[WER] Skipping non-dict crash: {type(crash)}")
+            continue
+        
         app = crash.get("application", "Unknown")
         module = crash.get("module_name", "")
         exception = crash.get("exception_code", "")
@@ -404,15 +423,37 @@ def group_and_analyze_crashes(crashes):
     for key, crash_list in grouped.items():
         app, module, exception = key
         
+        # Upewnij się, że crash_list nie jest puste
+        if not crash_list:
+            logger.debug(f"[WER] Skipping empty crash_list for key: {key}")
+            continue
+        
         # Sortuj po czasie (najnowsze pierwsze)
-        crash_list.sort(key=lambda x: x["timestamp"], reverse=True)
+        try:
+            crash_list.sort(key=lambda x: x.get("timestamp") if isinstance(x, dict) and "timestamp" in x else datetime.min, reverse=True)
+        except Exception as e:
+            logger.warning(f"[WER] Error sorting crash_list for {key}: {e}")
+            continue
         
         # Zlicz wystąpienia w oknach czasowych
-        crashes_30min = [c for c in crash_list if c["timestamp"] >= last_30min]
-        crashes_24h = [c for c in crash_list if c["timestamp"] >= last_24h]
+        crashes_30min = []
+        crashes_24h = []
+        for c in crash_list:
+            if not isinstance(c, dict):
+                continue
+            timestamp = c.get("timestamp")
+            if timestamp and isinstance(timestamp, datetime):
+                if timestamp >= last_30min:
+                    crashes_30min.append(c)
+                if timestamp >= last_24h:
+                    crashes_24h.append(c)
         
         # Określ czy to powtarzający się crash (≥3 w 30 min)
         is_repeating = len(crashes_30min) >= 3
+        
+        # Bezpieczne pobranie pierwszego i ostatniego crasha
+        first_crash = crash_list[-1].get("crash", {}) if crash_list and isinstance(crash_list[-1], dict) else {}
+        last_crash = crash_list[0].get("crash", {}) if crash_list and isinstance(crash_list[0], dict) else {}
         
         grouped_result = {
             "application": app,
@@ -422,9 +463,9 @@ def group_and_analyze_crashes(crashes):
             "occurrences_30min": len(crashes_30min),
             "occurrences_24h": len(crashes_24h),
             "is_repeating": is_repeating,
-            "first_occurrence": crash_list[-1]["crash"].get("timestamp", ""),
-            "last_occurrence": crash_list[0]["crash"].get("timestamp", ""),
-            "latest_crash": crash_list[0]["crash"]
+            "first_occurrence": first_crash.get("timestamp", "") if isinstance(first_crash, dict) else "",
+            "last_occurrence": last_crash.get("timestamp", "") if isinstance(last_crash, dict) else "",
+            "latest_crash": last_crash if isinstance(last_crash, dict) else {}
         }
         
         grouped_results.append(grouped_result)

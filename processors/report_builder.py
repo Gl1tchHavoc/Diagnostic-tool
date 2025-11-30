@@ -174,6 +174,18 @@ def build_report(processed_data):
         }
     }
     
+    # Dodaj analizę WHEA jeśli dostępna
+    whea_analysis = processed_data.get("whea_analysis", {})
+    if whea_analysis and not whea_analysis.get("error"):
+        report["whea_analysis"] = {
+            "top_root_cause": whea_analysis.get("top_root_cause", {}),
+            "summary": whea_analysis.get("summary", ""),
+            "confidence_score": whea_analysis.get("confidence_score", 0.0),
+            "affected_components": whea_analysis.get("affected_components", []),
+            "total_events": whea_analysis.get("total_events", 0),
+            "root_causes": whea_analysis.get("root_causes", [])[:10]  # Top 10
+        }
+    
     # Dodaj analizę BSOD jeśli dostępna (będzie dodana w analyzer.py)
     # BSOD analysis jest już w final_report, więc nie trzeba jej tutaj dodawać
     
