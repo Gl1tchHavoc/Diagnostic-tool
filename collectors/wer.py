@@ -7,6 +7,7 @@ import sys
 import os
 import re
 import xml.etree.ElementTree as ET
+import configparser
 from pathlib import Path
 from datetime import datetime, timedelta
 from collections import defaultdict
@@ -57,10 +58,19 @@ def collect():
         event_crashes = collect_from_event_log()
         wer_data["recent_crashes"].extend(event_crashes)
         
-        # Krok 2: Zbieranie z katalogów WER
-        logger.info("[WER] Collecting crash data from WER directories")
-        wer_reports = collect_from_wer_directories()
-        wer_data["reports"].extend(wer_reports)
+        # 2️⃣ Parsowanie .wer files z ReportQueue i ReportArchive
+        logger.info("[WER] Collecting crash data from WER directories (ReportQueue, ReportArchive)")
+        wer_crashes = collect_from_wer_directories()
+        # wer_crashes to lista crash events wyciągniętych z plików .wer
+        wer_data["recent_crashes"].extend(wer_crashes)
+        # Dla kompatybilności, zapisz informacje o liczbie sparsowanych plików .wer
+        # reports jest listą, więc dodajemy dict z informacjami
+        if wer_crashes:
+            wer_data["reports"].append({
+                "source": "wer_file",
+                "count": len(wer_crashes),
+                "description": f"Parsed {len(wer_crashes)} .wer files from ReportQueue/ReportArchive"
+            })
         
         # Krok 3: Grupowanie i analiza powtarzających się crashy
         logger.info("[WER] Grouping and analyzing repeating crashes")
@@ -735,17 +745,236 @@ def determine_crash_type(app_name, module_name, exception_code):
     return "APPLICATION_CRASH"
 
 
+def parse_wer_file(wer_file_path):
+    """
+    Parsuje plik .wer (może być w formacie INI lub XML).
+    Wyciąga: AppName, Module, ExceptionCode, Timestamp.
+    
+    Args:
+        wer_file_path (Path): Ścieżka do pliku .wer
+        
+    Returns:
+        dict: Wyciągnięte dane o crashu lub None jeśli nie można sparsować
+    """
+    try:
+        if not wer_file_path.exists():
+            return None
+        
+        # Spróbuj najpierw jako INI
+        try:
+            config = configparser.ConfigParser()
+            # configparser wymaga sekcji, więc musimy obsłużyć pliki bez sekcji
+            with open(wer_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            
+            # Sprawdź czy to XML (zaczyna się od <?xml lub <)
+            if content.strip().startswith('<?xml') or content.strip().startswith('<'):
+                return parse_wer_xml(wer_file_path, content)
+            else:
+                # To jest INI-like format
+                return parse_wer_ini(wer_file_path, content)
+                
+        except Exception as e:
+            logger.debug(f"[WER] Error parsing .wer file {wer_file_path}: {e}")
+            return None
+            
+    except Exception as e:
+        logger.debug(f"[WER] Error reading .wer file {wer_file_path}: {e}")
+        return None
+
+
+def parse_wer_ini(wer_file_path, content):
+    """
+    Parsuje plik .wer w formacie INI.
+    
+    Args:
+        wer_file_path (Path): Ścieżka do pliku
+        content (str): Zawartość pliku
+        
+    Returns:
+        dict: Wyciągnięte dane o crashu lub None
+    """
+    try:
+        # Pliki .wer w formacie INI często nie mają sekcji, więc parsujemy ręcznie
+        app_name = None
+        module = None
+        exception_code = None
+        timestamp = None
+        
+        # Wyciągnij wartości używając regex
+        # AppName → Faulting application
+        app_match = re.search(r'Faulting\s+application[:\s]+([^\r\n]+)', content, re.IGNORECASE)
+        if not app_match:
+            app_match = re.search(r'AppName[:\s]+([^\r\n]+)', content, re.IGNORECASE)
+        if app_match:
+            app_name = app_match.group(1).strip()
+        
+        # Module → Faulting module
+        module_match = re.search(r'Faulting\s+module[:\s]+([^\r\n]+)', content, re.IGNORECASE)
+        if not module_match:
+            module_match = re.search(r'Module[:\s]+([^\r\n]+)', content, re.IGNORECASE)
+        if module_match:
+            module = module_match.group(1).strip()
+        
+        # ExceptionCode → Exception code
+        exception_match = re.search(r'Exception\s+code[:\s]+([^\r\n]+)', content, re.IGNORECASE)
+        if not exception_match:
+            exception_match = re.search(r'ExceptionCode[:\s]+([^\r\n]+)', content, re.IGNORECASE)
+        if exception_match:
+            exception_code = exception_match.group(1).strip()
+        
+        # Timestamp → czas crasha
+        timestamp_match = re.search(r'Time[:\s]+([^\r\n]+)', content, re.IGNORECASE)
+        if not timestamp_match:
+            timestamp_match = re.search(r'Timestamp[:\s]+([^\r\n]+)', content, re.IGNORECASE)
+        if not timestamp_match:
+            # Spróbuj wyciągnąć z nazwy pliku lub daty modyfikacji
+            timestamp = datetime.fromtimestamp(wer_file_path.stat().st_mtime)
+        else:
+            timestamp_str = timestamp_match.group(1).strip()
+            timestamp = parse_timestamp(timestamp_str)
+            if not timestamp:
+                # Fallback do daty modyfikacji pliku
+                timestamp = datetime.fromtimestamp(wer_file_path.stat().st_mtime)
+        
+        # Jeśli nie znaleziono timestamp, użyj daty modyfikacji pliku
+        if not timestamp:
+            timestamp = datetime.fromtimestamp(wer_file_path.stat().st_mtime)
+        
+        # Zwróć tylko jeśli znaleziono przynajmniej AppName lub Module
+        if app_name or module:
+            crash = {
+                "event_id": "WER_FILE",
+                "timestamp": timestamp.isoformat() if isinstance(timestamp, datetime) else str(timestamp),
+                "message": f"WER file: {wer_file_path.name}",
+                "provider": "Windows Error Reporting",
+                "application": app_name or "Unknown",
+                "app_version": "",
+                "module_name": module or "",
+                "module_version": "",
+                "exception_code": exception_code or "",
+                "process_id": "",
+                "thread_id": "",
+                "os_version": "",
+                "type": determine_crash_type(app_name, module, exception_code),
+                "source": "wer_file",
+                "wer_file_path": str(wer_file_path)
+            }
+            logger.debug(f"[WER] Parsed .wer file - AppName: {app_name}, Module: {module}, ExceptionCode: {exception_code}")
+            return crash
+        
+        return None
+        
+    except Exception as e:
+        logger.debug(f"[WER] Error parsing INI .wer file {wer_file_path}: {e}")
+        return None
+
+
+def parse_wer_xml(wer_file_path, content):
+    """
+    Parsuje plik .wer w formacie XML.
+    
+    Args:
+        wer_file_path (Path): Ścieżka do pliku
+        content (str): Zawartość pliku
+        
+    Returns:
+        dict: Wyciągnięte dane o crashu lub None
+    """
+    try:
+        root = ET.fromstring(content)
+        
+        app_name = None
+        module = None
+        exception_code = None
+        timestamp = None
+        
+        # Szukaj w różnych miejscach w XML
+        # AppName → Faulting application
+        for elem in root.iter():
+            text = elem.text or ""
+            tag = elem.tag.lower()
+            attrib = elem.attrib
+            
+            # Sprawdź różne możliwe lokalizacje
+            if 'faulting' in tag and 'application' in tag:
+                app_name = text.strip() or attrib.get('value', '').strip()
+            elif 'appname' in tag:
+                app_name = text.strip() or attrib.get('value', '').strip()
+            elif 'application' in tag and text.strip():
+                app_name = text.strip()
+            
+            # Module → Faulting module
+            if 'faulting' in tag and 'module' in tag:
+                module = text.strip() or attrib.get('value', '').strip()
+            elif 'module' in tag and 'name' in tag:
+                module = text.strip() or attrib.get('value', '').strip()
+            
+            # ExceptionCode → Exception code
+            if 'exception' in tag and 'code' in tag:
+                exception_code = text.strip() or attrib.get('value', '').strip()
+            elif 'exceptioncode' in tag:
+                exception_code = text.strip() or attrib.get('value', '').strip()
+            
+            # Timestamp
+            if 'time' in tag or 'timestamp' in tag:
+                timestamp_str = text.strip() or attrib.get('value', '').strip()
+                if timestamp_str:
+                    timestamp = parse_timestamp(timestamp_str)
+        
+        # Jeśli nie znaleziono timestamp, użyj daty modyfikacji pliku
+        if not timestamp:
+            timestamp = datetime.fromtimestamp(wer_file_path.stat().st_mtime)
+        
+        # Zwróć tylko jeśli znaleziono przynajmniej AppName lub Module
+        if app_name or module:
+            crash = {
+                "event_id": "WER_FILE",
+                "timestamp": timestamp.isoformat() if isinstance(timestamp, datetime) else str(timestamp),
+                "message": f"WER file: {wer_file_path.name}",
+                "provider": "Windows Error Reporting",
+                "application": app_name or "Unknown",
+                "app_version": "",
+                "module_name": module or "",
+                "module_version": "",
+                "exception_code": exception_code or "",
+                "process_id": "",
+                "thread_id": "",
+                "os_version": "",
+                "type": determine_crash_type(app_name, module, exception_code),
+                "source": "wer_file",
+                "wer_file_path": str(wer_file_path)
+            }
+            logger.debug(f"[WER] Parsed .wer XML file - AppName: {app_name}, Module: {module}, ExceptionCode: {exception_code}")
+            return crash
+        
+        return None
+        
+    except ET.ParseError as e:
+        logger.debug(f"[WER] XML parse error in {wer_file_path}: {e}")
+        return None
+    except Exception as e:
+        logger.debug(f"[WER] Error parsing XML .wer file {wer_file_path}: {e}")
+        return None
+
+
 def collect_from_wer_directories():
     """
-    Zbiera dane z katalogów Windows Error Reporting.
+    2️⃣ Parsowanie .wer files z ReportQueue i ReportArchive.
+    Zbiera dane z katalogów Windows Error Reporting i parsuje pliki .wer.
     
     Returns:
-        list: Lista raportów WER
+        list: Lista crash events wyciągniętych z plików .wer
     """
+    crashes = []
     reports = []
     
-    # Ścieżki do katalogów WER
+    # 2️⃣ Parsowanie .wer files - lokalizacje:
+    # C:\ProgramData\Microsoft\Windows\WER\ReportQueue
+    # C:\ProgramData\Microsoft\Windows\WER\ReportArchive
     wer_paths = [
+        Path("C:/ProgramData/Microsoft/Windows/WER/ReportQueue"),
+        Path("C:/ProgramData/Microsoft/Windows/WER/ReportArchive"),
         Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "Windows" / "WER",
         Path("C:/ProgramData/Microsoft/Windows/WER")
     ]
@@ -755,13 +984,26 @@ def collect_from_wer_directories():
             continue
         
         try:
-            # Zlicz foldery i pliki *.wer
-            report_dirs = [d for d in wer_path.iterdir() if d.is_dir()]
+            # Znajdź wszystkie pliki *.wer
             wer_files = list(wer_path.rglob("*.wer"))
+            logger.debug(f"[WER] Found {len(wer_files)} .wer files in {wer_path}")
             
-            logger.debug(f"[WER] Found {len(report_dirs)} report directories and {len(wer_files)} .wer files in {wer_path}")
+            # Parsuj pliki .wer (maksymalnie 50 najnowszych)
+            parsed_count = 0
+            for wer_file in sorted(wer_files, key=lambda x: x.stat().st_mtime, reverse=True)[:50]:
+                try:
+                    crash = parse_wer_file(wer_file)
+                    if crash:
+                        crashes.append(crash)
+                        parsed_count += 1
+                except Exception as e:
+                    logger.debug(f"[WER] Error parsing .wer file {wer_file}: {e}")
+                    continue
             
-            # Pobierz info o ostatnich raportach
+            logger.info(f"[WER] Parsed {parsed_count} .wer files from {wer_path}")
+            
+            # Zbierz też informacje o katalogach raportów (dla kompatybilności)
+            report_dirs = [d for d in wer_path.iterdir() if d.is_dir()]
             for report_dir in sorted(report_dirs, key=lambda x: x.stat().st_mtime, reverse=True)[:20]:
                 try:
                     stat = report_dir.stat()
@@ -771,11 +1013,11 @@ def collect_from_wer_directories():
                         "size": stat.st_size
                     }
                     
-                    # Spróbuj wyciągnąć informacje z plików w katalogu
+                    # Sprawdź czy jest plik .wer w katalogu
                     wer_file = report_dir / "Report.wer"
                     if wer_file.exists():
                         report_info["has_wer_file"] = True
-                        # Można tutaj dodać parsowanie pliku .wer jeśli potrzeba
+                        # Plik już został sparsowany powyżej
                     
                     reports.append(report_info)
                     
@@ -783,16 +1025,19 @@ def collect_from_wer_directories():
                     logger.debug(f"[WER] Error processing report directory {report_dir}: {e}")
                     continue
             
-            # Jeśli znaleziono raporty, nie sprawdzaj kolejnej ścieżki
-            if reports:
+            # Jeśli znaleziono crashy, nie sprawdzaj kolejnej ścieżki
+            if crashes:
                 break
                 
         except Exception as e:
             logger.debug(f"[WER] Error accessing WER directory {wer_path}: {e}")
             continue
     
-    logger.info(f"[WER] Collected {len(reports)} WER reports from directories")
-    return reports
+    logger.info(f"[WER] Collected {len(crashes)} crashes from .wer files and {len(reports)} WER report directories")
+    
+    # Zwróć crashy (będą dodane do recent_crashes) oraz informacje o raportach
+    # Dla kompatybilności zwracamy listę, ale crashy są już w crashes
+    return crashes
 
 
 def group_and_analyze_crashes(crashes):

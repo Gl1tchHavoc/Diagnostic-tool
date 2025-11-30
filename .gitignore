@@ -39,10 +39,37 @@ logs/
 # Output
 output/
 reports/
+scan_results/
+scans_output/
+diagnostics/
+crashes/
+temp/
+*.tmp
 
 # Cache
 *.cache
 collectors/drivers_cache.json
+
+# === RAW WER / EVENT LOG DATA ===
+*.wer
+*.dmp
+*.hdmp
+*.mdmp
+*.evtx
+*.etl
+*.cab
+
+# === JSON DATA COLLECTED FROM SYSTEM ===
+*.json
+!config.json           # except if you need config
+!schema.json           # except if you keep schemas in repo
+
+# === WINDOWS SYSTEM DATA EXTRACTED BY THE TOOL ===
+system_info/
+event_logs/
+wer_data/
+registry_dump/
+hardware_dump/
 
 # OS
 .DS_Store
