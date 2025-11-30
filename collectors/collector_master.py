@@ -1,19 +1,18 @@
 """
 Master collector - koordynuje zbieranie danych ze wszystkich collectors.
+MVP: Używa CollectorRegistry i obsługuje równoległe wykonanie.
 """
 import json
 from datetime import datetime
 from pathlib import Path
 import time
 import os
-
-from . import (
-    hardware, drivers, system_logs, registry_txr, storage_health, system_info,
-    services, bsod_dumps, performance_counters, wer, processes
-)
-import collectors.whea_analyzer as whea_analyzer
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Optional, Callable
 
 from utils.logger import get_logger, log_collector_start, log_collector_end, log_performance
+from core.config_loader import get_config
+from core.collector_registry import get_registry as get_collector_registry
 
 def cleanup_old_raw_files(output_dir="output/raw", keep_last=5):
     """
@@ -62,9 +61,96 @@ def cleanup_old_raw_files(output_dir="output/raw", keep_last=5):
     except Exception as e:
         logger.warning(f"[COLLECTOR_MASTER] Error during cleanup: {e}")
 
+def _run_collector(collector_name: str, collector_func: Callable, message: str, 
+                   step: int, total: int, progress_callback: Optional[Callable]) -> tuple:
+    """
+    Uruchamia pojedynczy collector i zwraca zstandaryzowany wynik.
+    
+    Args:
+        collector_name: Nazwa collectora
+        collector_func: Funkcja collect() do wywołania
+        message: Komunikat dla progress callback
+        step: Numer kroku
+        total: Całkowita liczba collectorów
+        progress_callback: Funkcja callback do raportowania postępu
+    
+    Returns:
+        tuple: (collector_name, standardized_result)
+    """
+    logger = get_logger()
+    
+    if progress_callback:
+        progress_callback(step, total, message)
+    
+    log_collector_start(collector_name)
+    start_time = time.time()
+    collector_timestamp = datetime.now()
+    
+    try:
+        collector_result = collector_func()
+        duration_ms = int((time.time() - start_time) * 1000)
+        
+        # MVP: Standaryzuj format zwracany przez collector
+        if isinstance(collector_result, dict) and "status" in collector_result:
+            # Collector już zwraca standardowy format
+            standardized_result = {
+                "status": collector_result.get("status", "Collected"),
+                "data": collector_result.get("data", collector_result),
+                "error": collector_result.get("error"),
+                "timestamp": collector_result.get("timestamp", collector_timestamp.isoformat()),
+                "collector_name": collector_result.get("collector_name", collector_name),
+                "execution_time_ms": collector_result.get("execution_time_ms", duration_ms)
+            }
+        else:
+            # Collector zwraca surowe dane - opakuj w standardowy format
+            standardized_result = {
+                "status": "Collected",
+                "data": collector_result,
+                "error": None,
+                "timestamp": collector_timestamp.isoformat(),
+                "collector_name": collector_name,
+                "execution_time_ms": duration_ms
+            }
+        
+        # Policz elementy w wynikach dla logowania
+        data_count = 0
+        data = standardized_result.get("data", {})
+        if isinstance(data, dict):
+            data_count = sum(len(v) if isinstance(v, (list, dict)) else 1 for v in data.values())
+        elif isinstance(data, list):
+            data_count = len(data)
+        
+        log_collector_end(collector_name, success=True, data_count=data_count)
+        log_performance(f"Collector {collector_name}", duration_ms / 1000, f"collected {data_count} items")
+        
+        return (collector_name, standardized_result)
+        
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        error_msg = f"{type(e).__name__}: {e}"
+        
+        # MVP: Standaryzowany format błędu
+        standardized_result = {
+            "status": "Error",
+            "data": None,
+            "error": error_msg,
+            "timestamp": collector_timestamp.isoformat(),
+            "collector_name": collector_name,
+            "execution_time_ms": duration_ms
+        }
+        
+        log_collector_end(collector_name, success=False, error=error_msg)
+        log_performance(f"Collector {collector_name}", duration_ms / 1000, "FAILED")
+        logger.exception(f"Collector {collector_name} raised exception")
+        
+        return (collector_name, standardized_result)
+
+
 def collect_all(save_raw=True, output_dir="output/raw", progress_callback=None):
     """
     Zbiera wszystkie dane diagnostyczne z wszystkich collectors.
+    
+    MVP: Używa CollectorRegistry i obsługuje równoległe wykonanie.
     
     Args:
         save_raw (bool): Czy zapisać surowe dane do pliku JSON
@@ -72,64 +158,81 @@ def collect_all(save_raw=True, output_dir="output/raw", progress_callback=None):
         progress_callback (callable): Funkcja callback(step, total, message) do raportowania postępu
     
     Returns:
-        dict: Słownik z wszystkimi zebranymi danymi
+        dict: Słownik z wszystkimi zebranymi danymi w formacie MVP
     """
+    config = get_config()
+    registry = get_collector_registry()
+    collection_start_time = datetime.now()
+    
     results = {
-        "timestamp": datetime.now().isoformat(),
-        "collectors": {}
+        "timestamp": collection_start_time.isoformat(),
+        "collectors": {},
+        "summary": {
+            "total_collectors": 0,
+            "collected": 0,
+            "errors": 0
+        }
     }
     
-    # Lista wszystkich collectorów do wykonania
-    collectors_list = [
-        ("hardware", "Collecting hardware data...", lambda: hardware.collect()),
-        ("drivers", "Collecting drivers data...", lambda: drivers.collect()),
-        ("system_logs", "Collecting system logs...", lambda: system_logs.collect(max_events=200, filter_levels=None)),  # None = wszystkie poziomy
-        ("registry_txr", "Collecting Registry TxR errors...", lambda: registry_txr.collect(max_events=200)),
-        ("storage_health", "Collecting storage health data...", lambda: storage_health.collect()),
-        ("system_info", "Collecting system info...", lambda: system_info.collect()),
-        ("services", "Collecting services data...", lambda: services.collect()),
-        ("bsod_dumps", "Collecting BSOD/dumps data...", lambda: bsod_dumps.collect()),
-        ("whea_analyzer", "Collecting WHEA hardware errors...", lambda: whea_analyzer.collect()),
-        ("performance_counters", "Collecting performance counters...", lambda: performance_counters.collect()),
-        ("wer", "Collecting Windows Error Reporting data...", lambda: wer.collect()),
-        ("processes", "Collecting processes data...", lambda: processes.collect()),
-    ]
+    # Pobierz listę collectorów z rejestru (tylko włączone)
+    enabled_collectors = config.get("collectors.enabled", [])
+    collectors_list = []
+    
+    for collector_name in enabled_collectors:
+        collector_info = registry.get(collector_name)
+        if collector_info and registry.is_enabled(collector_name):
+            collectors_list.append((
+                collector_name,
+                f"Collecting {collector_info.get('description', collector_name)}...",
+                collector_info["collect_func"]
+            ))
     
     total = len(collectors_list)
+    results["summary"]["total_collectors"] = total
     
     logger = get_logger()
     logger.info(f"[COLLECTION] Starting collection of {total} collectors")
     
-    for step, (collector_name, message, collector_func) in enumerate(collectors_list, 1):
-        if progress_callback:
-            progress_callback(step, total, message)
-        else:
-            print(message)
-        
-        log_collector_start(collector_name)
-        start_time = time.time()
-        
-        try:
-            collector_result = collector_func()
-            duration = time.time() - start_time
+    # MVP: Równoległe wykonanie jeśli włączone w config
+    parallel = config.get("collectors.parallel_execution", True)
+    
+    if parallel and total > 1:
+        # Równoległe wykonanie
+        logger.info("[COLLECTION] Using parallel execution")
+        with ThreadPoolExecutor(max_workers=min(total, 6)) as executor:
+            # Uruchom wszystkie collectory
+            future_to_collector = {
+                executor.submit(_run_collector, name, func, msg, i+1, total, progress_callback): name
+                for i, (name, msg, func) in enumerate(collectors_list)
+            }
             
-            # Policz elementy w wynikach
-            data_count = 0
-            if isinstance(collector_result, dict):
-                data_count = sum(len(v) if isinstance(v, (list, dict)) else 1 for v in collector_result.values())
-            elif isinstance(collector_result, list):
-                data_count = len(collector_result)
+            # Zbierz wyniki w miarę ich ukończenia
+            completed = 0
+            for future in as_completed(future_to_collector):
+                completed += 1
+                collector_name, standardized_result = future.result()
+                results["collectors"][collector_name] = standardized_result
+                
+                if standardized_result["status"] == "Collected":
+                    results["summary"]["collected"] += 1
+                else:
+                    results["summary"]["errors"] += 1
+                
+                if progress_callback:
+                    progress_callback(completed, total, f"Completed {collector_name}...")
+    else:
+        # Sekwencyjne wykonanie
+        logger.info("[COLLECTION] Using sequential execution")
+        for step, (collector_name, message, collector_func) in enumerate(collectors_list, 1):
+            collector_name, standardized_result = _run_collector(
+                collector_name, collector_func, message, step, total, progress_callback
+            )
+            results["collectors"][collector_name] = standardized_result
             
-            results["collectors"][collector_name] = collector_result
-            log_collector_end(collector_name, success=True, data_count=data_count)
-            log_performance(f"Collector {collector_name}", duration, f"collected {data_count} items")
-        except Exception as e:
-            duration = time.time() - start_time
-            error_msg = f"{type(e).__name__}: {e}"
-            results["collectors"][collector_name] = {"error": f"Collection failed: {error_msg}"}
-            log_collector_end(collector_name, success=False, error=error_msg)
-            log_performance(f"Collector {collector_name}", duration, "FAILED")
-            logger.exception(f"Collector {collector_name} raised exception")
+            if standardized_result["status"] == "Collected":
+                results["summary"]["collected"] += 1
+            else:
+                results["summary"]["errors"] += 1
     
     # Zapisz surowe dane jeśli wymagane
     if save_raw:

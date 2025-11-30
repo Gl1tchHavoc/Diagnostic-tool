@@ -1,13 +1,40 @@
-# Diagnostic Tool
+# Diagnostic Tool - MVP
 
-Zaawansowane narzędzie diagnostyczne systemu Windows do identyfikacji problemów z ~99% skutecznością.
+Narzędzie diagnostyczne systemu Windows do zbierania i prezentacji danych diagnostycznych w sposób spójny, czytelny i łatwy do przetworzenia przez dalsze moduły analityczne.
 
-## Funkcje
+## Cel MVP
 
-- **Kompleksowe zbieranie danych**: Hardware, drivers, logi systemowe, Registry TxR, storage health, services, BSOD/dumps, performance counters, WER, processes
-- **Inteligentna analiza**: System scoring, confidence engine, status classification
-- **Automatyczne rekomendacje**: Dopasowane zalecenia naprawcze na podstawie wykrytych problemów
-- **GUI i CLI**: Interfejs graficzny oraz wiersz poleceń
+Zebrać i zaprezentować dane diagnostyczne Windows w sposób spójny, czytelny i łatwy do przetworzenia przez dalsze moduły analityczne.
+
+## Funkcje MVP
+
+### Collectory (dane źródłowe)
+- **Hardware**: CPU, RAM, dyski, GPU, temperatura, wykorzystanie zasobów
+- **System**: wersja Windows, uptime, aktualizacje, patch level
+- **Procesy i usługi**: uruchomione procesy, autostart, status usług
+- **Logi systemowe**: wybrane Event Logi (System, Application)
+- **Storage**: dostępne dyski, partycje, wolne miejsce, SMART dysków
+- **Sieć**: konfiguracja adapterów, IP, status połączeń
+- **Drivers**: informacje o sterownikach, status, wersje
+- **Registry TxR**: błędy transakcji rejestru
+- **BSOD/Dumps**: analiza zrzutów pamięci
+- **Performance Counters**: liczniki wydajności systemu
+- **WER**: Windows Error Reporting - raporty crashy aplikacji
+- **Processes**: szczegółowe informacje o procesach
+
+### Procesory (MVP - wersja minimalna)
+- **Parser danych**: konwersja na wewnętrzny format JSON
+- **Walidacja danych**: sprawdzanie poprawności typów i wartości
+- **Status**: "Collected" / "Error" dla każdego collectora
+
+### GUI MVP
+- **Lista collectorów**: wyświetlanie statusu każdego collectora (Collected / Error)
+- **Podgląd surowych danych**: czytelna tabela lub drzewo danych
+- **Eksport raportu**: JSON/HTML w łatwej do przetworzenia formie
+
+### CLI MVP (opcjonalnie)
+- **Pełne skanowanie**: uruchomienie wszystkich collectorów
+- **Status collectorów**: wyświetlanie statusu w konsoli
 
 ## Instalacja
 
@@ -72,34 +99,84 @@ python cli.py --full
 │   ├── system_logs.py
 │   ├── registry_txr.py
 │   ├── storage_health.py
+│   ├── system_info.py
 │   ├── services.py
 │   ├── bsod_dumps.py
 │   ├── performance_counters.py
 │   ├── wer.py
-│   └── processes.py
-├── processors/         # Moduły przetwarzające dane
-│   ├── status_calculator.py
-│   ├── score_calculator.py
-│   ├── confidence_engine.py
-│   ├── recommendation_engine.py
-│   └── report_builder.py
+│   ├── processes.py
+│   ├── base_collector.py  # Klasa bazowa dla collectorów
+│   └── collector_master.py  # Orchestrator collectorów
+├── processors/         # Moduły przetwarzające dane (MVP - minimalna wersja)
+│   ├── analyzer.py    # Główny analyzer
+│   ├── hardware_processor.py
+│   ├── driver_processor.py
+│   ├── system_logs_processor.py
+│   ├── registry_txr_processor.py
+│   ├── storage_health_processor.py
+│   ├── system_info_processor.py
+│   └── ... (inne procesory)
 ├── output/             # Wygenerowane raporty
-│   ├── raw/           # Surowe dane
+│   ├── raw/           # Surowe dane z collectorów
 │   └── processed/     # Przetworzone raporty
-└── gui.py             # Interfejs graficzny
+├── gui.py             # Interfejs graficzny (MVP)
+├── main.py            # CLI entry point (MVP)
+└── cli.py             # CLI orchestrator
 ```
 
-## System Scoring
+## Format danych MVP
 
-- **Critical**: 40 pkt
-- **Error**: 20 pkt
-- **Warning**: 10 pkt
-- **Info**: 0 pkt
+### Format zwracany przez Collector
+Każdy collector zwraca standardowy format:
+```json
+{
+    "status": "Collected" | "Error",
+    "data": {
+        // Dane specyficzne dla collectora
+    },
+    "error": null | "error message",
+    "timestamp": "2025-11-30T12:00:00",
+    "collector_name": "hardware",
+    "execution_time_ms": 1234
+}
+```
 
-**Status:**
-- 🟢 HEALTHY (0 Critical)
-- 🟠 DEGRADED (1 Critical)
-- 🔴 UNHEALTHY (2+ Critical lub dysk/rejestr/kernel)
+### Format zwracany przez Processor
+Każdy processor zwraca standardowy format:
+```json
+{
+    "status": "Collected" | "Error",
+    "data": {
+        // Przetworzone dane
+    },
+    "errors": [],
+    "warnings": [],
+    "validation_passed": true,
+    "timestamp": "2025-11-30T12:00:00",
+    "processor_name": "hardware_processor"
+}
+```
+
+### Statusy Collectorów
+- **Collected**: Dane zostały pomyślnie zebrane
+- **Error**: Wystąpił błąd podczas zbierania danych
+
+## Statusy i walidacja
+
+### Statusy Collectorów
+- ✅ **Collected**: Dane zostały pomyślnie zebrane
+- ❌ **Error**: Wystąpił błąd podczas zbierania danych
+
+### Statusy Procesorów
+- ✅ **Collected**: Dane zostały pomyślnie przetworzone
+- ❌ **Error**: Wystąpił błąd podczas przetwarzania danych
+- ⚠️ **Warnings**: Dane przetworzone, ale z ostrzeżeniami
+
+### Walidacja danych
+Każdy processor wykonuje minimalną walidację:
+- Sprawdzenie poprawności typów wartości
+- Sprawdzenie obecności wymaganych pól
+- Wykrywanie błędów w strukturze danych
 
 ## Wymagania
 

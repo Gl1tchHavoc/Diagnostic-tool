@@ -65,24 +65,53 @@ def analyze_all(collected_data, progress_callback=None):
         
         if key in collectors_data:
             try:
-                # Upewnij się, że collectors_data[key] jest odpowiedniego typu
-                collector_data = collectors_data[key]
-                if not isinstance(collector_data, dict) and not isinstance(collector_data, list):
-                    logger.warning(f"[ANALYSIS] collectors_data['{key}'] is not dict/list: {type(collector_data)}")
-                    collector_data = {}
+                # MVP: Obsługa nowego formatu z collector_master
+                collector_result = collectors_data[key]
                 
-                processor_result = processor_func(collector_data)
+                # Sprawdź czy to nowy format MVP (z status, data, error)
+                if isinstance(collector_result, dict) and "status" in collector_result:
+                    # Nowy format MVP - wyciągnij dane
+                    collector_data = collector_result.get("data")
+                    collector_status = collector_result.get("status")
+                    
+                    # Jeśli collector zwrócił błąd, przekaż to do procesora
+                    if collector_status == "Error":
+                        processor_result = {
+                            "status": "Error",
+                            "data": None,
+                            "errors": [collector_result.get("error", "Unknown error")],
+                            "warnings": [],
+                            "validation_passed": False,
+                            "processor_name": name
+                        }
+                    else:
+                        # Przekaż dane do procesora (może być stary format lub nowy)
+                        # Stare procesory oczekują surowych danych, więc przekazujemy collector_data
+                        processor_result = processor_func(collector_data)
+                else:
+                    # Stary format - przekaż bezpośrednio (backward compatibility)
+                    collector_data = collector_result
+                    processor_result = processor_func(collector_data)
+                
                 duration = time.time() - processor_start_time
                 
-                # Policz znalezione problemy
+                # Policz znalezione problemy (dla starego formatu)
                 issues_count = 0
                 if isinstance(processor_result, dict):
-                    issues_count = (
-                        len(processor_result.get("issues", [])) +
-                        len(processor_result.get("critical_issues", [])) +
-                        len(processor_result.get("critical_events", [])) +
-                        len(processor_result.get("warnings", []))
-                    )
+                    # Nowy format MVP
+                    if "status" in processor_result:
+                        issues_count = (
+                            len(processor_result.get("errors", [])) +
+                            len(processor_result.get("warnings", []))
+                        )
+                    else:
+                        # Stary format
+                        issues_count = (
+                            len(processor_result.get("issues", [])) +
+                            len(processor_result.get("critical_issues", [])) +
+                            len(processor_result.get("critical_events", [])) +
+                            len(processor_result.get("warnings", []))
+                        )
                 
                 processed_data[name] = processor_result
                 log_processor_end(name, success=True, issues_found=issues_count)
@@ -93,7 +122,15 @@ def analyze_all(collected_data, progress_callback=None):
                 log_processor_end(name, success=False, error=error_msg)
                 log_performance(f"Processor {name}", duration, "FAILED")
                 logger.exception(f"Processor {name} raised exception")
-                processed_data[name] = {"error": error_msg}
+                # MVP: Zwróć błąd w standardowym formacie
+                processed_data[name] = {
+                    "status": "Error",
+                    "data": None,
+                    "errors": [error_msg],
+                    "warnings": [],
+                    "validation_passed": False,
+                    "processor_name": name
+                }
     
     # Wykryj przyczyny problemów (przed budowaniem raportu)
     if progress_callback:
