@@ -30,6 +30,74 @@ IS_CI = (
 )
 
 
+def mock_wmi_hardware_functions():
+    """Helper do mockowania wszystkich funkcji hardware używających WMI w CI."""
+    patches = {}
+    if IS_CI:
+        patches['memory_spd'] = patch(
+            'collectors.hardware._collect_memory_spd'
+        )
+        patches['pci'] = patch('collectors.hardware._collect_pci')
+        patches['ram_slots'] = patch(
+            'collectors.hardware._collect_ram_slots'
+        )
+        patches['motherboard'] = patch(
+            'collectors.hardware._collect_motherboard'
+        )
+        patches['chassis'] = patch('collectors.hardware._collect_chassis')
+        patches['usb'] = patch('collectors.hardware._collect_usb')
+        patches['gpu'] = patch('collectors.hardware._collect_gpu')
+    return patches
+
+
+def setup_wmi_mocks(patches):
+    """Konfiguruje mocki dla funkcji WMI."""
+    if not IS_CI or not patches:
+        return None
+    
+    mocks = {}
+    for key, patch_obj in patches.items():
+        mock_obj = patch_obj.start()
+        mocks[key] = mock_obj
+        
+        # Ustaw wartości zwracane
+        if key == 'memory_spd':
+            mock_obj.return_value = [
+                {
+                    'manufacturer': 'Test Manufacturer',
+                    'part_number': 'TEST-1234',
+                    'capacity': 8589934592,
+                    'speed': 3200
+                }
+            ]
+        elif key == 'pci':
+            mock_obj.return_value = [
+                {
+                    'name': 'Test PCI Device',
+                    'device_id': 'PCI\\VEN_TEST&DEV_1234',
+                    'manufacturer': 'Test Manufacturer',
+                    'pnp_class': 'PCI'
+                }
+            ]
+        elif key == 'motherboard':
+            mock_obj.return_value = {
+                'boards': [],
+                'bios': [],
+                'chipset': []
+            }
+        else:
+            mock_obj.return_value = []
+    
+    return mocks
+
+
+def teardown_wmi_mocks(patches):
+    """Zatrzymuje mocki."""
+    if patches:
+        for patch_obj in patches.values():
+            patch_obj.stop()
+
+
 class TestCollectors(unittest.TestCase):
     """Testy podstawowe dla wszystkich collectorów."""
     
@@ -97,9 +165,14 @@ class TestCollectors(unittest.TestCase):
     
     def test_drivers_collector(self):
         """Test collectora drivers."""
+        # W CI drivers.collect() zwraca pustą listę automatycznie
+        # (fallback w samej funkcji)
         result = drivers.collect()
         self.assertIsNotNone(result)
         self.assertIsInstance(result, (dict, list))
+        # W CI powinna być pusta lista
+        if IS_CI:
+            self.assertEqual(result, [])
     
     def test_system_info_collector(self):
         """Test collectora system_info."""
@@ -112,13 +185,63 @@ class TestCollectors(unittest.TestCase):
     
     def test_storage_health_collector(self):
         """Test collectora storage_health."""
-        result = storage_health.collect()
+        # W CI mockuj WMI - może powodować access violation
+        if IS_CI:
+            with patch('collectors.storage_health.wmi') as mock_wmi_module:
+                # Stwórz mock obiektu WMI
+                mock_wmi_instance = type('MockWMI', (), {})()
+                mock_disk = type('MockDisk', (), {
+                    'Model': 'Test Disk',
+                    'SerialNumber': 'TEST123456',
+                    'Status': 'OK',
+                    'Size': 1000000000000,
+                    'InterfaceType': 'SATA',
+                    'MediaType': 'Fixed hard disk media'
+                })()
+                mock_wmi_instance.Win32_DiskDrive.return_value = [mock_disk]
+                mock_wmi_module.WMI.return_value = mock_wmi_instance
+                
+                # Mock również PowerShell command
+                with patch(
+                    'utils.subprocess_helper.run_powershell_hidden'
+                ) as mock_ps:
+                    mock_ps.return_value = '<?xml version="1.0"?><Events/>'
+                    result = storage_health.collect()
+        else:
+            result = storage_health.collect()
+        
         self.assertIsNotNone(result)
         self.assertIsInstance(result, dict)
     
     def test_services_collector(self):
         """Test collectora services."""
-        result = services.collect()
+        # W CI mockuj WMI - może powodować access violation
+        if IS_CI:
+            with patch('collectors.services.wmi') as mock_wmi_module:
+                # Stwórz mock obiektu WMI
+                mock_wmi_instance = type('MockWMI', (), {})()
+                mock_service = type('MockService', (), {
+                    'Name': 'TestService',
+                    'DisplayName': 'Test Service',
+                    'State': 'Running',
+                    'StartMode': 'Auto',
+                    'Status': 'OK',
+                    'ProcessId': 1234,
+                    'PathName': 'C:\\test\\service.exe',
+                    'Description': 'Test service description'
+                })()
+                mock_wmi_instance.Win32_Service.return_value = [mock_service]
+                mock_wmi_module.WMI.return_value = mock_wmi_instance
+                
+                # Mock również PowerShell command
+                with patch(
+                    'utils.subprocess_helper.run_powershell_hidden'
+                ) as mock_ps:
+                    mock_ps.return_value = '<?xml version="1.0"?><Events/>'
+                    result = services.collect()
+        else:
+            result = services.collect()
+        
         self.assertIsNotNone(result)
         self.assertIsInstance(result, (dict, list))
     

@@ -438,96 +438,279 @@ def _add_physical_disk_details(disk_info, logical_disk):
         logger.debug(f"[HARDWARE] Error adding physical disk details: {e}")
 
 
+def _create_gputil_gpu_info(gpu):
+    """
+    Tworzy słownik z informacjami o GPU z GPUtil.
+
+    Args:
+        gpu: Obiekt GPU z GPUtil
+
+    Returns:
+        dict: Informacje o GPU
+    """
+    return {
+        'name': gpu.name,
+        'load': gpu.load,
+        'memoryTotal': gpu.memoryTotal,
+        'memoryUsed': gpu.memoryUsed,
+        'memoryFree': gpu.memoryFree,
+        'temperature': gpu.temperature,
+        'driver': gpu.driver,
+        'uuid': gpu.uuid,
+        'display_mode': gpu.display_mode,
+        'display_active': gpu.display_active,
+        'source': 'GPUtil'
+    }
+
+
+def _collect_gpu_from_gputil(gpu_list):
+    """
+    Zbiera informacje o GPU z GPUtil.
+
+    Args:
+        gpu_list: Lista GPU do uzupełnienia
+    """
+    if not GPUtil:
+        return
+
+    try:
+        gpus = GPUtil.getGPUs()
+        for gpu in gpus:
+            gpu_info = _create_gputil_gpu_info(gpu)
+            gpu_list.append(gpu_info)
+
+        if not gpu_list:
+            gpu_list.append({'info': 'No GPU detected by GPUtil'})
+    except Exception as e:
+        logger.debug(f"[HARDWARE] GPUtil detection failed: {e}")
+
+
+def _create_wmi_gpu_info(gpu):
+    """
+    Tworzy słownik z informacjami o GPU z WMI.
+
+    Args:
+        gpu: Obiekt GPU z WMI
+
+    Returns:
+        dict: Informacje o GPU
+    """
+    return {
+        'name': gpu.Name.strip() if gpu.Name else None,
+        'adapter_ram': int(gpu.AdapterRAM) if gpu.AdapterRAM else None,
+        'driver_version': gpu.DriverVersion.strip() if gpu.DriverVersion else None,
+        'driver_date': gpu.DriverDate.strip() if gpu.DriverDate else None,
+        'video_mode_description': (
+            gpu.VideoModeDescription.strip()
+            if gpu.VideoModeDescription else None
+        ),
+        'video_processor': (
+            gpu.VideoProcessor.strip() if gpu.VideoProcessor else None
+        ),
+        'status': gpu.Status,
+        'availability': gpu.Availability,
+        'pnp_device_id': (
+            gpu.PNPDeviceID.strip() if gpu.PNPDeviceID else None
+        ),
+        'device_id': gpu.DeviceID.strip() if gpu.DeviceID else None,
+        'adapter_dac_type': (
+            gpu.AdapterDACType.strip() if gpu.AdapterDACType else None
+        ),
+        'max_memory_supported': (
+            int(gpu.MaxMemorySupported) if gpu.MaxMemorySupported else None
+        ),
+        'max_refresh_rate': (
+            int(gpu.MaxRefreshRate) if gpu.MaxRefreshRate else None
+        ),
+        'min_refresh_rate': (
+            int(gpu.MinRefreshRate) if gpu.MinRefreshRate else None
+        ),
+        'current_refresh_rate': (
+            int(gpu.CurrentRefreshRate) if gpu.CurrentRefreshRate else None
+        ),
+        'current_horizontal_resolution': (
+            int(gpu.CurrentHorizontalResolution)
+            if gpu.CurrentHorizontalResolution else None
+        ),
+        'current_vertical_resolution': (
+            int(gpu.CurrentVerticalResolution)
+            if gpu.CurrentVerticalResolution else None
+        ),
+        'source': 'WMI'
+    }
+
+
+def _merge_or_add_gpu(gpu_list, gpu_info):
+    """
+    Łączy informacje o GPU z istniejącym wpisem lub dodaje nowy.
+
+    Args:
+        gpu_list: Lista GPU
+        gpu_info: Informacje o GPU do dodania/połączenia
+    """
+    for existing_gpu in gpu_list:
+        if existing_gpu.get('name') == gpu_info['name']:
+            existing_gpu.update(gpu_info)
+            return
+
+    gpu_list.append(gpu_info)
+
+
+def _collect_gpu_from_wmi(gpu_list):
+    """
+    Zbiera informacje o GPU z WMI (Windows).
+
+    Args:
+        gpu_list: Lista GPU do uzupełnienia
+    """
+    if sys.platform != "win32" or not wmi:
+        return
+
+    try:
+        c = wmi.WMI()
+        for gpu in c.Win32_VideoController():
+            gpu_info = _create_wmi_gpu_info(gpu)
+            _merge_or_add_gpu(gpu_list, gpu_info)
+    except Exception as e:
+        logger.debug(f"[HARDWARE] WMI GPU detection failed: {e}")
+
+
 def _collect_gpu():
-    """Zbiera informacje o GPU."""
+    """
+    Zbiera informacje o GPU.
+
+    Returns:
+        list: Lista informacji o GPU
+    """
     gpu_list = []
 
-    # GPUtil (jeśli dostępny)
-    if GPUtil:
-        try:
-            gpus = GPUtil.getGPUs()
-            for gpu in gpus:
-                gpu_list.append({
-                    'name': gpu.name,
-                    'load': gpu.load,
-                    'memoryTotal': gpu.memoryTotal,
-                    'memoryUsed': gpu.memoryUsed,
-                    'memoryFree': gpu.memoryFree,
-                    'temperature': gpu.temperature,
-                    'driver': gpu.driver,
-                    'uuid': gpu.uuid,
-                    'display_mode': gpu.display_mode,
-                    'display_active': gpu.display_active,
-                    'source': 'GPUtil'
-                })
-            if not gpu_list:
-                gpu_list.append({'info': 'No GPU detected by GPUtil'})
-        except Exception as e:
-            logger.debug(f"[HARDWARE] GPUtil detection failed: {e}")
-
-    # WMI dla Windows (dodatkowe informacje o GPU)
-    if sys.platform == "win32" and wmi:
-        try:
-            c = wmi.WMI()
-            for gpu in c.Win32_VideoController():
-                gpu_info = {
-                    'name': gpu.Name.strip() if gpu.Name else None,
-                    'adapter_ram': int(gpu.AdapterRAM)
-                    if gpu.AdapterRAM else None,
-                    'driver_version': gpu.DriverVersion.strip()
-                    if gpu.DriverVersion else None,
-                    'driver_date': gpu.DriverDate.strip()
-                    if gpu.DriverDate else None,
-                    'video_mode_description':
-                        gpu.VideoModeDescription.strip()
-                        if gpu.VideoModeDescription else None,
-                    'video_processor': gpu.VideoProcessor.strip()
-                    if gpu.VideoProcessor else None,
-                    'status': gpu.Status,
-                    'availability': gpu.Availability,
-                    'pnp_device_id': gpu.PNPDeviceID.strip()
-                    if gpu.PNPDeviceID else None,
-                    'device_id': gpu.DeviceID.strip()
-                    if gpu.DeviceID else None,
-                    'adapter_dac_type': gpu.AdapterDACType.strip()
-                    if gpu.AdapterDACType else None,
-                    'max_memory_supported': int(gpu.MaxMemorySupported)
-                    if gpu.MaxMemorySupported else None,
-                    'max_refresh_rate': int(gpu.MaxRefreshRate)
-                    if gpu.MaxRefreshRate else None,
-                    'min_refresh_rate': int(gpu.MinRefreshRate)
-                    if gpu.MinRefreshRate else None,
-                    'current_refresh_rate': int(gpu.CurrentRefreshRate)
-                    if gpu.CurrentRefreshRate else None,
-                    'current_horizontal_resolution':
-                        int(gpu.CurrentHorizontalResolution)
-                        if gpu.CurrentHorizontalResolution else None,
-                    'current_vertical_resolution':
-                        int(gpu.CurrentVerticalResolution)
-                        if gpu.CurrentVerticalResolution else None,
-                    'source': 'WMI'
-                }
-
-                # Sprawdź czy to już istnieje w liście (z GPUtil)
-                existing = False
-                for existing_gpu in gpu_list:
-                    if existing_gpu.get('name') == gpu_info['name']:
-                        existing_gpu.update(gpu_info)
-                        existing = True
-                        break
-
-                if not existing:
-                    gpu_list.append(gpu_info)
-        except Exception as e:
-            logger.debug(f"[HARDWARE] WMI GPU detection failed: {e}")
+    _collect_gpu_from_gputil(gpu_list)
+    _collect_gpu_from_wmi(gpu_list)
 
     if not gpu_list:
         gpu_list.append({'info': 'No GPU detected'})
+
     return gpu_list
 
 
+def _create_address_info(addr):
+    """
+    Tworzy słownik z informacjami o adresie sieciowym.
+
+    Args:
+        addr: Obiekt adresu z psutil
+
+    Returns:
+        dict: Informacje o adresie
+    """
+    return {
+        'family': str(addr.family),
+        'address': addr.address,
+        'netmask': addr.netmask if hasattr(addr, 'netmask') else None,
+        'broadcast': addr.broadcast if hasattr(addr, 'broadcast') else None,
+        'ptp': addr.ptp if hasattr(addr, 'ptp') else None
+    }
+
+
+def _process_network_address(addr, interface_info):
+    """
+    Przetwarza adres sieciowy i dodaje do interface_info.
+
+    Args:
+        addr: Obiekt adresu z psutil
+        interface_info: Słownik z informacjami o interfejsie
+    """
+    addr_info = _create_address_info(addr)
+    interface_info['addresses'].append(addr_info)
+
+    if addr.family == psutil.AF_LINK:
+        interface_info['mac'] = addr.address
+    elif addr.family == 2:  # IPv4
+        interface_info['ipv4'].append(addr.address)
+    elif addr.family == 23:  # IPv6
+        interface_info['ipv6'].append(addr.address)
+
+
+def _add_interface_stats(iface, net_stats, interface_info):
+    """
+    Dodaje statystyki interfejsu do interface_info.
+
+    Args:
+        iface: Nazwa interfejsu
+        net_stats: Słownik ze statystykami interfejsów
+        interface_info: Słownik z informacjami o interfejsie
+    """
+    if iface not in net_stats:
+        return
+
+    stats = net_stats[iface]
+    interface_info['stats'] = {
+        'isup': stats.isup,
+        'speed': stats.speed,
+        'mtu': stats.mtu,
+        'duplex': str(stats.duplex) if hasattr(stats, 'duplex') else None
+    }
+
+
+def _add_interface_io(iface, net_io, interface_info):
+    """
+    Dodaje statystyki I/O interfejsu do interface_info.
+
+    Args:
+        iface: Nazwa interfejsu
+        net_io: Słownik ze statystykami I/O interfejsów
+        interface_info: Słownik z informacjami o interfejsie
+    """
+    if iface not in net_io:
+        return
+
+    io = net_io[iface]
+    interface_info['io'] = {
+        'bytes_sent': io.bytes_sent,
+        'bytes_recv': io.bytes_recv,
+        'packets_sent': io.packets_sent,
+        'packets_recv': io.packets_recv,
+        'errin': io.errin,
+        'errout': io.errout,
+        'dropin': io.dropin,
+        'dropout': io.dropout
+    }
+
+
+def _create_network_summary(netcards):
+    """
+    Tworzy podsumowanie sieci.
+
+    Args:
+        netcards: Lista interfejsów sieciowych
+
+    Returns:
+        dict: Podsumowanie sieci
+    """
+    active_interfaces = [
+        n for n in netcards
+        if n.get('stats', {}).get('isup', False)
+    ]
+
+    return {
+        'total_interfaces': len(netcards),
+        'active_interfaces': len(active_interfaces),
+        'total_bytes_sent': sum(
+            n.get('io', {}).get('bytes_sent', 0) for n in netcards
+        ),
+        'total_bytes_recv': sum(
+            n.get('io', {}).get('bytes_recv', 0) for n in netcards
+        )
+    }
+
+
 def _collect_network():
-    """Zbiera informacje o sieci."""
+    """
+    Zbiera informacje o sieci.
+
+    Returns:
+        dict: Dane sieci
+    """
     try:
         netcards = []
         net_stats = psutil.net_if_stats()
@@ -542,67 +725,18 @@ def _collect_network():
                 'ipv6': []
             }
 
-            # Adresy sieciowe
             for addr in addrs:
-                addr_info = {
-                    'family': str(addr.family),
-                    'address': addr.address,
-                    'netmask': addr.netmask if hasattr(addr, 'netmask') else None,
-                    'broadcast': addr.broadcast if hasattr(addr, 'broadcast') else None,
-                    'ptp': addr.ptp if hasattr(addr, 'ptp') else None
-                }
-                interface_info['addresses'].append(addr_info)
+                _process_network_address(addr, interface_info)
 
-                if addr.family == psutil.AF_LINK:
-                    interface_info['mac'] = addr.address
-                elif addr.family == 2:  # IPv4
-                    interface_info['ipv4'].append(addr.address)
-                elif addr.family == 23:  # IPv6
-                    interface_info['ipv6'].append(addr.address)
-
-            # Statystyki interfejsu
-            if iface in net_stats:
-                stats = net_stats[iface]
-                interface_info['stats'] = {
-                    'isup': stats.isup,
-                    'speed': stats.speed,
-                    'mtu': stats.mtu,
-                    'duplex': str(stats.duplex)
-                    if hasattr(stats, 'duplex') else None
-                }
-
-            # I/O statystyki
-            if iface in net_io:
-                io = net_io[iface]
-                interface_info['io'] = {
-                    'bytes_sent': io.bytes_sent,
-                    'bytes_recv': io.bytes_recv,
-                    'packets_sent': io.packets_sent,
-                    'packets_recv': io.packets_recv,
-                    'errin': io.errin,
-                    'errout': io.errout,
-                    'dropin': io.dropin,
-                    'dropout': io.dropout
-                }
+            _add_interface_stats(iface, net_stats, interface_info)
+            _add_interface_io(iface, net_io, interface_info)
 
             netcards.append(interface_info)
 
-        # Dodatkowe informacje z WMI (Windows)
         if sys.platform == "win32" and wmi:
             _add_wmi_network_info(netcards)
 
-        active_interfaces = [
-            n for n in netcards
-            if n.get('stats', {}).get('isup', False)
-        ]
-        network_summary = {
-            'total_interfaces': len(netcards),
-            'active_interfaces': len(active_interfaces),
-            'total_bytes_sent': sum(
-                n.get('io', {}).get('bytes_sent', 0) for n in netcards),
-            'total_bytes_recv': sum(
-                n.get('io', {}).get('bytes_recv', 0) for n in netcards)
-        }
+        network_summary = _create_network_summary(netcards)
 
         return {'interfaces': netcards, 'summary': network_summary}
     except Exception as e:
@@ -643,119 +777,209 @@ def _add_wmi_network_info(netcards):
             f"[HARDWARE] Could not get detailed network info from WMI: {e}")
 
 
+def _create_board_info(board):
+    """
+    Tworzy słownik z informacjami o płycie głównej.
+
+    Args:
+        board: Obiekt WMI Win32_BaseBoard
+
+    Returns:
+        dict: Informacje o płycie głównej
+    """
+    return {
+        'manufacturer': board.Manufacturer.strip() if board.Manufacturer else None,
+        'product': board.Product.strip() if board.Product else None,
+        'serial': board.SerialNumber.strip() if board.SerialNumber else None,
+        'version': board.Version.strip() if board.Version else None,
+        'tag': board.Tag.strip() if board.Tag else None,
+        'part_number': board.PartNumber.strip() if board.PartNumber else None,
+        'status': board.Status,
+        'hosting_board': board.HostingBoard,
+        'removable': board.Removable,
+        'replaceable': board.Replaceable,
+        'requires_daughter_board': board.RequiresDaughterBoard
+    }
+
+
+def _collect_boards_wmi(motherboard_data):
+    """
+    Zbiera informacje o płytach głównych z WMI.
+
+    Args:
+        motherboard_data: Słownik z danymi płyty głównej do uzupełnienia
+    """
+    try:
+        c = wmi.WMI()
+        for board in c.Win32_BaseBoard():
+            board_info = _create_board_info(board)
+            motherboard_data['boards'].append(board_info)
+    except Exception as e:
+        logger.warning(f"[HARDWARE] Error reading motherboard info: {e}")
+        motherboard_data['boards'].append(
+            {'error': f'Unable to read motherboard info: {e}'}
+        )
+
+
+def _create_bios_info(bios):
+    """
+    Tworzy słownik z informacjami o BIOS.
+
+    Args:
+        bios: Obiekt WMI Win32_BIOS
+
+    Returns:
+        dict: Informacje o BIOS
+    """
+    return {
+        'manufacturer': bios.Manufacturer.strip() if bios.Manufacturer else None,
+        'version': bios.Version.strip() if bios.Version else None,
+        'release_date': bios.ReleaseDate.strip() if bios.ReleaseDate else None,
+        'serial_number': bios.SerialNumber.strip() if bios.SerialNumber else None,
+        'smbios_version': (
+            bios.SMBIOSBIOSVersion.strip()
+            if bios.SMBIOSBIOSVersion else None
+        ),
+        'smbios_major_version': bios.SMBIOSMajorVersion,
+        'smbios_minor_version': bios.SMBIOSMinorVersion,
+        'bios_characteristics': (
+            bios.BIOSCharacteristics
+            if hasattr(bios, 'BIOSCharacteristics') else None
+        )
+    }
+
+
+def _collect_bios_wmi(motherboard_data):
+    """
+    Zbiera informacje o BIOS z WMI.
+
+    Args:
+        motherboard_data: Słownik z danymi płyty głównej do uzupełnienia
+    """
+    try:
+        c = wmi.WMI()
+        for bios in c.Win32_BIOS():
+            bios_info = _create_bios_info(bios)
+            motherboard_data['bios'].append(bios_info)
+    except Exception as e:
+        logger.debug(f"[HARDWARE] Could not get BIOS info: {e}")
+
+
+def _create_chipset_info(chipset):
+    """
+    Tworzy słownik z informacjami o chipsecie.
+
+    Args:
+        chipset: Obiekt WMI Win32_IDEController
+
+    Returns:
+        dict: Informacje o chipsecie
+    """
+    return {
+        'name': chipset.Name.strip() if chipset.Name else None,
+        'manufacturer': (
+            chipset.Manufacturer.strip() if chipset.Manufacturer else None
+        ),
+        'device_id': chipset.DeviceID.strip() if chipset.DeviceID else None,
+        'status': chipset.Status
+    }
+
+
+def _collect_chipset_wmi(motherboard_data):
+    """
+    Zbiera informacje o chipsecie z WMI.
+
+    Args:
+        motherboard_data: Słownik z danymi płyty głównej do uzupełnienia
+    """
+    try:
+        c = wmi.WMI()
+        for chipset in c.Win32_IDEController():
+            chipset_info = _create_chipset_info(chipset)
+            motherboard_data['chipset'].append(chipset_info)
+    except Exception as e:
+        logger.debug(f"[HARDWARE] Could not get chipset info: {e}")
+
+
 def _collect_motherboard():
-    """Zbiera informacje o płycie głównej."""
+    """
+    Zbiera informacje o płycie głównej.
+
+    Returns:
+        dict: Dane płyty głównej
+    """
     motherboard_data = {
         'boards': [],
         'bios': [],
         'chipset': []
     }
+
     if sys.platform == "win32" and wmi:
-        try:
-            c = wmi.WMI()
-            for board in c.Win32_BaseBoard():
-                motherboard_data['boards'].append({
-                    'manufacturer': board.Manufacturer.strip()
-                    if board.Manufacturer else None,
-                    'product': board.Product.strip()
-                    if board.Product else None,
-                    'serial': board.SerialNumber.strip()
-                    if board.SerialNumber else None,
-                    'version': board.Version.strip()
-                    if board.Version else None,
-                    'tag': board.Tag.strip() if board.Tag else None,
-                    'part_number': board.PartNumber.strip()
-                    if board.PartNumber else None,
-                    'status': board.Status,
-                    'hosting_board': board.HostingBoard,
-                    'removable': board.Removable,
-                    'replaceable': board.Replaceable,
-                    'requires_daughter_board': board.RequiresDaughterBoard
-                })
+        _collect_boards_wmi(motherboard_data)
+        _collect_bios_wmi(motherboard_data)
+        _collect_chipset_wmi(motherboard_data)
 
-            # BIOS informacje
-            try:
-                for bios in c.Win32_BIOS():
-                    motherboard_data['bios'].append({
-                        'manufacturer': bios.Manufacturer.strip()
-                        if bios.Manufacturer else None,
-                        'version': bios.Version.strip()
-                        if bios.Version else None,
-                        'release_date': bios.ReleaseDate.strip()
-                        if bios.ReleaseDate else None,
-                        'serial_number': bios.SerialNumber.strip()
-                        if bios.SerialNumber else None,
-                        'smbios_version':
-                            bios.SMBIOSBIOSVersion.strip()
-                            if bios.SMBIOSBIOSVersion else None,
-                        'smbios_major_version': bios.SMBIOSMajorVersion,
-                        'smbios_minor_version': bios.SMBIOSMinorVersion,
-                        'bios_characteristics':
-                            bios.BIOSCharacteristics
-                            if hasattr(bios, 'BIOSCharacteristics') else None
-                    })
-            except Exception as e:
-                logger.debug(f"[HARDWARE] Could not get BIOS info: {e}")
-
-            # Chipset informacje
-            try:
-                for chipset in c.Win32_IDEController():
-                    motherboard_data['chipset'].append({
-                        'name': chipset.Name.strip()
-                        if chipset.Name else None,
-                        'manufacturer': chipset.Manufacturer.strip()
-                        if chipset.Manufacturer else None,
-                        'device_id': chipset.DeviceID.strip()
-                        if chipset.DeviceID else None,
-                        'status': chipset.Status
-                    })
-            except Exception as e:
-                logger.debug(f"[HARDWARE] Could not get chipset info: {e}")
-
-            if not motherboard_data['boards']:
-                motherboard_data['boards'].append(
-                    {'info': 'Motherboard not found'})
-        except Exception as e:
-            logger.warning(f"[HARDWARE] Error reading motherboard info: {e}")
+        if not motherboard_data['boards']:
             motherboard_data['boards'].append(
-                {'error': f'Unable to read motherboard info: {e}'})
+                {'info': 'Motherboard not found'}
+            )
+
     return motherboard_data
 
 
-def _collect_sensors():
-    """Zbiera informacje o czujnikach."""
-    sensors_data = {}
-    if sys.platform == "win32" and wmi:
-        try:
-            # CPU Temperature
-            c = wmi.WMI(namespace="root\\wmi")
-            for sensor in c.MSAcpi_ThermalZoneTemperature():
-                temp_celsius = (sensor.CurrentTemperature / 10.0 - 273.15)
-                sensors_data['cpu_temp'] = round(temp_celsius, 2)
-                sensors_data['cpu_temp_raw'] = sensor.CurrentTemperature
-                sensors_data['thermal_zone'] = (
-                    sensor.InstanceName.strip()
-                    if sensor.InstanceName else None)
-        except Exception as e:
-            logger.debug(f"[HARDWARE] Could not get CPU temperature: {e}")
-            sensors_data['cpu_temp'] = f'Unavailable: {e}'
+def _collect_cpu_temperature_wmi(sensors_data):
+    """
+    Zbiera temperaturę CPU z WMI.
 
-        # Fan speeds (jeśli dostępne)
-        try:
-            c = wmi.WMI(namespace="root\\wmi")
-            fans = []
-            for fan in c.MSAcpi_Fan():
-                fans.append({
-                    'active': fan.Active,
-                    'desired_speed': fan.DesiredSpeed
+    Args:
+        sensors_data: Słownik z danymi czujników do uzupełnienia
+    """
+    try:
+        c = wmi.WMI(namespace="root\\wmi")
+        for sensor in c.MSAcpi_ThermalZoneTemperature():
+            temp_celsius = (sensor.CurrentTemperature / 10.0 - 273.15)
+            sensors_data['cpu_temp'] = round(temp_celsius, 2)
+            sensors_data['cpu_temp_raw'] = sensor.CurrentTemperature
+            sensors_data['thermal_zone'] = (
+                sensor.InstanceName.strip()
+                if sensor.InstanceName else None
+            )
+    except Exception as e:
+        logger.debug(f"[HARDWARE] Could not get CPU temperature: {e}")
+        sensors_data['cpu_temp'] = f'Unavailable: {e}'
+
+
+def _collect_fan_speeds_wmi(sensors_data):
+    """
+    Zbiera informacje o wentylatorach z WMI.
+
+    Args:
+        sensors_data: Słownik z danymi czujników do uzupełnienia
+    """
+    try:
+        c = wmi.WMI(namespace="root\\wmi")
+        fans = []
+        for fan in c.MSAcpi_Fan():
+            fans.append({
+                'active': fan.Active,
+                'desired_speed': (
+                    fan.DesiredSpeed
                     if hasattr(fan, 'DesiredSpeed') else None
-                })
-            if fans:
-                sensors_data['fans'] = fans
-        except Exception as e:
-            logger.debug(f"[HARDWARE] Could not get fan info: {e}")
+                )
+            })
+        if fans:
+            sensors_data['fans'] = fans
+    except Exception as e:
+        logger.debug(f"[HARDWARE] Could not get fan info: {e}")
 
-    # psutil sensors (jeśli dostępne)
+
+def _collect_psutil_sensors(sensors_data):
+    """
+    Zbiera informacje o czujnikach z psutil.
+
+    Args:
+        sensors_data: Słownik z danymi czujników do uzupełnienia
+    """
     try:
         if hasattr(psutil, "sensors_temperatures"):
             temps = psutil.sensors_temperatures()
@@ -767,6 +991,23 @@ def _collect_sensors():
                 sensors_data['psutil_fans'] = fans
     except Exception as e:
         logger.debug(f"[HARDWARE] Could not get psutil sensors: {e}")
+
+
+def _collect_sensors():
+    """
+    Zbiera informacje o czujnikach.
+
+    Returns:
+        dict: Dane czujników
+    """
+    sensors_data = {}
+
+    if sys.platform == "win32" and wmi:
+        _collect_cpu_temperature_wmi(sensors_data)
+        _collect_fan_speeds_wmi(sensors_data)
+
+    _collect_psutil_sensors(sensors_data)
+
     return sensors_data
 
 

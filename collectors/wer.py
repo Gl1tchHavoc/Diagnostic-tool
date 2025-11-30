@@ -22,6 +22,95 @@ logger = get_logger()
 WER_EVENT_IDS = [1000, 1001, 1002, 1005, 1008]
 
 
+def _initialize_local_dumps_result():
+    """
+    Inicjalizuje strukturę wyniku check_local_dumps.
+
+    Returns:
+        dict: Pusta struktura wyniku
+    """
+    return {
+        "enabled": False,
+        "dump_count": None,
+        "dump_type": None,
+        "dump_folder": None,
+        "folder_exists": False,
+        "warnings": []
+    }
+
+
+def _read_registry_value(key, value_name, result):
+    """
+    Czyta wartość z klucza rejestru.
+
+    Args:
+        key: Klucz rejestru
+        value_name: Nazwa wartości
+        result: Słownik wyniku do uzupełnienia
+
+    Returns:
+        object: Wartość z rejestru lub None
+    """
+    try:
+        value, _ = winreg.QueryValueEx(key, value_name)
+        return value
+    except FileNotFoundError:
+        result["warnings"].append(f"{value_name} missing")
+        return None
+
+
+def _read_dump_folder(key, result):
+    """
+    Czyta DumpFolder z rejestru i sprawdza czy folder istnieje.
+
+    Args:
+        key: Klucz rejestru
+        result: Słownik wyniku do uzupełnienia
+
+    Returns:
+        str: Ścieżka do folderu lub None
+    """
+    dump_folder = _read_registry_value(key, "DumpFolder", result)
+    if dump_folder:
+        dump_folder = os.path.expandvars(dump_folder)
+        result["dump_folder"] = dump_folder
+        result["folder_exists"] = os.path.isdir(dump_folder)
+    return dump_folder
+
+
+def _read_local_dumps_registry(result):
+    """
+    Czyta wartości LocalDumps z rejestru.
+
+    Args:
+        result: Słownik wyniku do uzupełnienia
+    """
+    key_path = (
+        r"SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps"
+    )
+
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            key_path,
+            0,
+            winreg.KEY_READ
+        ) as key:
+            result["dump_type"] = _read_registry_value(key, "DumpType", result)
+            result["dump_count"] = _read_registry_value(
+                key, "DumpCount", result
+            )
+            _read_dump_folder(key, result)
+    except FileNotFoundError:
+        result["warnings"].append("LocalDumps registry key missing")
+    except PermissionError:
+        result["warnings"].append(
+            "Cannot access registry - admin rights may be required"
+        )
+    except Exception as e:
+        result["warnings"].append(f"Error checking LocalDumps: {e}")
+
+
 def check_local_dumps():
     """
     ✅ 1. AUTODETEKCJA – sprawdza, czy LocalDumps jest włączone.
@@ -36,51 +125,8 @@ def check_local_dumps():
             "warnings": list
         }
     """
-    result = {
-        "enabled": False,
-        "dump_count": None,
-        "dump_type": None,
-        "dump_folder": None,
-        "folder_exists": False,
-        "warnings": []
-    }
-
-    try:
-        key_path = r"SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps"
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path, 0, winreg.KEY_READ) as key:
-            # DumpType
-            try:
-                dump_type, _ = winreg.QueryValueEx(key, "DumpType")
-                result["dump_type"] = dump_type
-            except FileNotFoundError:
-                result["warnings"].append("DumpType missing")
-
-            # DumpCount
-            try:
-                dump_count, _ = winreg.QueryValueEx(key, "DumpCount")
-                result["dump_count"] = dump_count
-            except FileNotFoundError:
-                result["warnings"].append("DumpCount missing")
-
-            # DumpFolder
-            try:
-                dump_folder, _ = winreg.QueryValueEx(key, "DumpFolder")
-                dump_folder = os.path.expandvars(dump_folder)
-                result["dump_folder"] = dump_folder
-                result["folder_exists"] = os.path.isdir(dump_folder)
-            except FileNotFoundError:
-                result["warnings"].append("DumpFolder missing")
-
-    except FileNotFoundError:
-        result["warnings"].append("LocalDumps registry key missing")
-        return result  # LocalDumps disabled
-    except PermissionError:
-        result["warnings"].append(
-            "Cannot access registry - admin rights may be required")
-        return result
-    except Exception as e:
-        result["warnings"].append(f"Error checking LocalDumps: {e}")
-        return result
+    result = _initialize_local_dumps_result()
+    _read_local_dumps_registry(result)
 
     # Enabled if DumpType exists
     if result["dump_type"] is not None:
@@ -424,71 +470,148 @@ def _simplify_reports(wer_data, max_reports=20):
             f"{len(simplified_reports)}")
 
 
+def _convert_single_datetime(dt_obj):
+    """
+    Konwertuje pojedynczy obiekt datetime na string.
+
+    Args:
+        dt_obj: Obiekt datetime
+
+    Returns:
+        str: ISO format string lub str(dt_obj) w przypadku błędu
+    """
+    try:
+        return dt_obj.isoformat()
+    except Exception as e:
+        logger.warning(f"[WER] Error converting datetime to isoformat: {e}")
+        return str(dt_obj)
+
+
+def _convert_dict_datetime(obj_dict, depth, max_depth, convert_func):
+    """
+    Konwertuje słownik z datetime obiektami.
+
+    Args:
+        obj_dict: Słownik do konwersji
+        depth: Obecna głębokość rekurencji
+        max_depth: Maksymalna głębokość
+        convert_func: Funkcja rekurencyjna do konwersji
+
+    Returns:
+        dict: Skonwertowany słownik
+    """
+    try:
+        return {
+            k: convert_func(v, depth + 1, max_depth)
+            for k, v in obj_dict.items()
+        }
+    except Exception as e:
+        logger.warning(f"[WER] Error converting dict at depth {depth}: {e}")
+        return str(obj_dict)
+
+
+def _convert_list_datetime(obj_list, depth, max_depth, convert_func):
+    """
+    Konwertuje listę z datetime obiektami.
+
+    Args:
+        obj_list: Lista do konwersji
+        depth: Obecna głębokość rekurencji
+        max_depth: Maksymalna głębokość
+        convert_func: Funkcja rekurencyjna do konwersji
+
+    Returns:
+        list: Skonwertowana lista
+    """
+    try:
+        return [
+            convert_func(item, depth + 1, max_depth)
+            for item in obj_list
+        ]
+    except Exception as e:
+        logger.warning(f"[WER] Error converting list at depth {depth}: {e}")
+        return str(obj_list)
+
+
+def _convert_datetime_to_string_recursive(obj, depth=0, max_depth=50):
+    """
+    Rekurencyjnie konwertuje wszystkie obiekty datetime na stringi.
+
+    Args:
+        obj: Obiekt do konwersji
+        depth: Obecna głębokość rekurencji
+        max_depth: Maksymalna głębokość
+
+    Returns:
+        object: Skonwertowany obiekt
+    """
+    if depth > max_depth:
+        logger.warning(
+            f"[WER] Max depth {max_depth} reached in datetime conversion"
+        )
+        return str(obj) if obj is not None else None
+
+    if obj is None:
+        return None
+
+    if isinstance(obj, datetime):
+        return _convert_single_datetime(obj)
+
+    if isinstance(obj, dict):
+        return _convert_dict_datetime(obj, depth, max_depth, _convert_datetime_to_string_recursive)
+
+    if isinstance(obj, list):
+        return _convert_list_datetime(obj, depth, max_depth, _convert_datetime_to_string_recursive)
+
+    return obj
+
+
+def _count_total_items(wer_data):
+    """
+    Liczy całkowitą liczbę elementów w wer_data.
+
+    Args:
+        wer_data: Słownik z danymi WER
+
+    Returns:
+        int: Całkowita liczba elementów
+    """
+    return (
+        len(wer_data.get('recent_crashes', [])) +
+        len(wer_data.get('reports', [])) +
+        len(wer_data.get('grouped_crashes', []))
+    )
+
+
 def _convert_datetime_to_strings(wer_data):
-    """Konwertuje wszystkie obiekty datetime na stringi."""
-    def convert_datetime_to_string(obj, depth=0, max_depth=50):
-        """Rekurencyjnie konwertuje wszystkie obiekty datetime na stringi."""
-        if depth > max_depth:
-            logger.warning(
-                f"[WER] Max depth {max_depth} reached in datetime conversion")
-            return str(obj) if obj is not None else None
+    """
+    Konwertuje wszystkie obiekty datetime na stringi.
 
-        if obj is None:
-            return None
+    Args:
+        wer_data: Słownik z danymi WER
 
-        if isinstance(obj, datetime):
-            try:
-                return obj.isoformat()
-            except Exception as e:
-                logger.warning(
-                    f"[WER] Error converting datetime to isoformat: {e}")
-                return str(obj)
-
-        elif isinstance(obj, dict):
-            try:
-                return {
-                    k: convert_datetime_to_string(v, depth + 1, max_depth)
-                    for k, v in obj.items()
-                }
-            except Exception as e:
-                logger.warning(
-                    f"[WER] Error converting dict at depth {depth}: {e}")
-                return str(obj)
-
-        elif isinstance(obj, list):
-            try:
-                return [
-                    convert_datetime_to_string(item, depth + 1, max_depth)
-                    for item in obj
-                ]
-            except Exception as e:
-                logger.warning(
-                    f"[WER] Error converting list at depth {depth}: {e}")
-                return str(obj)
-
-        else:
-            return obj
-
+    Returns:
+        dict: wer_data z skonwertowanymi datetime
+    """
     logger.info(
-        "[WER] Converting datetime objects to strings for serialization...")
+        "[WER] Converting datetime objects to strings for serialization..."
+    )
     sys.stdout.flush()
 
     try:
-        total_items = (
-            len(wer_data.get('recent_crashes', [])) +
-            len(wer_data.get('reports', [])) +
-            len(wer_data.get('grouped_crashes', []))
-        )
+        total_items = _count_total_items(wer_data)
 
         if total_items > 200:
             logger.warning(
                 f"[WER] Skipping datetime conversion - too many items "
-                f"({total_items}), data already simplified")
+                f"({total_items}), data already simplified"
+            )
             sys.stdout.flush()
-        else:
-            wer_data = convert_datetime_to_string(wer_data)
-            logger.info("[WER] Datetime conversion completed successfully")
-            sys.stdout.flush()
+            return wer_data
+
+        wer_data = _convert_datetime_to_string_recursive(wer_data)
+        logger.info("[WER] Datetime conversion completed successfully")
+        sys.stdout.flush()
     except Exception as e:
         logger.warning(f"[WER] Error converting datetime objects: {e}")
         sys.stdout.flush()
@@ -613,68 +736,96 @@ def _optimize_wer_data(wer_data):
     return wer_data
 
 
-def _calculate_statistics(wer_data, grouped):
-    """Oblicza statystyki crashy."""
-    now = datetime.now()
-    last_30min = now - timedelta(minutes=30)
-    last_24h = now - timedelta(hours=24)
+def _filter_crashes_by_time(wer_data, last_30min, last_24h):
+    """
+    Filtruje crashy według czasu (ostatnie 30 min i 24h).
 
-    # Bezpieczne filtrowanie crashy z timestampami
+    Args:
+        wer_data: Słownik z danymi WER
+        last_30min: Datetime dla ostatnich 30 minut
+        last_24h: Datetime dla ostatnich 24 godzin
+
+    Returns:
+        tuple: (crashes_30min, crashes_24h)
+    """
     crashes_30min = []
     crashes_24h = []
+
     for c in wer_data["recent_crashes"]:
         if not isinstance(c, dict):
             continue
-        timestamp = parse_timestamp(c.get("timestamp", ""))
-        if timestamp is not None:
-            if timestamp >= last_30min:
-                crashes_30min.append(c)
-            if timestamp >= last_24h:
-                crashes_24h.append(c)
 
-    # Bezpieczne filtrowanie powtarzających się crashy
+        timestamp = parse_timestamp(c.get("timestamp", ""))
+        if timestamp is None:
+            continue
+
+        if timestamp >= last_30min:
+            crashes_30min.append(c)
+        if timestamp >= last_24h:
+            crashes_24h.append(c)
+
+    return crashes_30min, crashes_24h
+
+
+def _is_repeating_crash_group(group):
+    """
+    Sprawdza czy grupa crashy jest powtarzająca się (>=3 w ostatnich 30 min).
+
+    Args:
+        group: Słownik z danymi grupy crashy
+
+    Returns:
+        bool: True jeśli grupa jest powtarzająca się
+    """
+    if not isinstance(group, dict):
+        return False
+
+    try:
+        occurrences_30min = group.get("occurrences_30min", 0)
+        return isinstance(occurrences_30min, (int, float)) and occurrences_30min >= 3
+    except Exception:
+        return False
+
+
+def _filter_repeating_crashes(grouped):
+    """
+    Filtruje powtarzające się crashy z grouped.
+
+    Args:
+        grouped: Lista grup crashy
+
+    Returns:
+        list: Lista powtarzających się grup
+    """
     repeating = []
+
+    if not isinstance(grouped, list):
+        logger.warning(f"[WER] grouped is not a list: {type(grouped)}")
+        return repeating
+
     logger.debug(
         f"[WER] Before filtering repeating - grouped type: {type(grouped)}, "
-        f"is_list: {isinstance(grouped, list)}")
-    if isinstance(grouped, list):
-        logger.debug(
-            f"[WER] Before filtering repeating - grouped length: "
-            f"{len(grouped)}")
-        for idx, g in enumerate(grouped):
-            logger.debug(
-                f"[WER] Processing group[{idx}] for repeating check: "
-                f"type={type(g)}, is_dict={isinstance(g, dict)}")
+        f"is_list: {isinstance(grouped, list)}, length: {len(grouped)}"
+    )
 
-            if isinstance(g, dict):
-                try:
-                    occurrences_30min = g.get("occurrences_30min", 0)
-                    if isinstance(occurrences_30min, (int, float)
-                                  ) and occurrences_30min >= 3:
-                        repeating.append(g)
-                except Exception as e:
-                    logger.warning(
-                        f"[WER] Error processing group[{idx}] for repeating "
-                        f"check: {e}")
-                    from utils.error_analyzer import log_error_with_analysis
-                    log_error_with_analysis(
-                        e,
-                        g,
-                        {
-                            'variable_name': f'grouped[{idx}]',
-                            'location': 'wer.py:_calculate_statistics',
-                            'function': '_calculate_statistics'
-                        },
-                        continue_execution=True
-                    )
-                    continue
-            elif isinstance(g, list):
-                logger.error(
-                    f"[WER] CRITICAL: group[{idx}] is list instead of dict "
-                    "in repeating check! Skipping...")
+    for idx, g in enumerate(grouped):
+        logger.debug(
+            f"[WER] Processing group[{idx}] for repeating check: "
+            f"type={type(g)}, is_dict={isinstance(g, dict)}"
+        )
+
+        if isinstance(g, dict):
+            try:
+                if _is_repeating_crash_group(g):
+                    repeating.append(g)
+            except Exception as e:
+                logger.warning(
+                    f"[WER] Error processing group[{idx}] for repeating "
+                    f"check: {e}"
+                )
                 from utils.error_analyzer import log_error_with_analysis
                 log_error_with_analysis(
-                    TypeError(f"group[{idx}] is list instead of dict"),
+                    e,
                     g,
                     {
                         'variable_name': f'grouped[{idx}]',
@@ -683,26 +834,84 @@ def _calculate_statistics(wer_data, grouped):
                     },
                     continue_execution=True
                 )
-                continue
-            else:
-                logger.warning(
-                    f"[WER] Unexpected type in grouped[{idx}] for repeating "
-                    f"check: {type(g)}")
-                continue
-    else:
-        logger.warning(f"[WER] grouped is not a list: {type(grouped)}")
+        elif isinstance(g, list):
+            logger.error(
+                f"[WER] CRITICAL: group[{idx}] is list instead of dict "
+                "in repeating check! Skipping..."
+            )
+            from utils.error_analyzer import log_error_with_analysis
+            log_error_with_analysis(
+                TypeError(f"group[{idx}] is list instead of dict"),
+                g,
+                {
+                    'variable_name': f'grouped[{idx}]',
+                    'location': 'wer.py:_calculate_statistics',
+                    'function': '_calculate_statistics'
+                },
+                continue_execution=True
+            )
+        else:
+            logger.warning(
+                f"[WER] Unexpected type in grouped[{idx}] for repeating "
+                f"check: {type(g)}"
+            )
 
-    wer_data["statistics"] = {
-        "total_crashes": len(wer_data["recent_crashes"]),
+    return repeating
+
+
+def _create_statistics_dict(total_crashes, crashes_30min, crashes_24h, repeating):
+    """
+    Tworzy słownik ze statystykami.
+
+    Args:
+        total_crashes: Całkowita liczba crashy
+        crashes_30min: Liczba crashy w ostatnich 30 min
+        crashes_24h: Liczba crashy w ostatnich 24h
+        repeating: Liczba powtarzających się crashy
+
+    Returns:
+        dict: Słownik ze statystykami
+    """
+    return {
+        "total_crashes": total_crashes,
         "crashes_last_30min": len(crashes_30min),
         "crashes_last_24h": len(crashes_24h),
         "repeating_crashes": len(repeating)
     }
 
+
+def _calculate_statistics(wer_data, grouped):
+    """
+    Oblicza statystyki crashy.
+
+    Args:
+        wer_data: Słownik z danymi WER
+        grouped: Lista zgrupowanych crashy
+    """
+    now = datetime.now()
+    last_30min = now - timedelta(minutes=30)
+    last_24h = now - timedelta(hours=24)
+
+    crashes_30min, crashes_24h = _filter_crashes_by_time(
+        wer_data,
+        last_30min,
+        last_24h
+    )
+
+    repeating = _filter_repeating_crashes(grouped)
+
+    wer_data["statistics"] = _create_statistics_dict(
+        len(wer_data["recent_crashes"]),
+        crashes_30min,
+        crashes_24h,
+        repeating
+    )
+
     logger.info(
         f"[WER] Collected {wer_data['statistics']['total_crashes']} crashes, "
         f"{wer_data['statistics']['crashes_last_30min']} in last 30min, "
-        f"{wer_data['statistics']['repeating_crashes']} repeating")
+        f"{wer_data['statistics']['repeating_crashes']} repeating"
+    )
 
 
 def collect():
@@ -835,6 +1044,416 @@ def collect_from_event_log():
     return crashes
 
 
+def _validate_event_id(event_id):
+    """
+    Sprawdza czy event_id jest w liście obsługiwanych WER_EVENT_IDS.
+
+    Args:
+        event_id: Event ID jako string
+
+    Returns:
+        bool: True jeśli event_id jest obsługiwany
+    """
+    if not event_id:
+        return False
+    return event_id in [str(eid) for eid in WER_EVENT_IDS]
+
+
+def _extract_basic_fields(record, message):
+    """
+    Wyciąga podstawowe pola z rekordu i message.
+
+    Args:
+        record: Słownik z rekordem Event Log
+        message: Wiadomość z Event Log
+
+    Returns:
+        dict: Podstawowe pola
+    """
+    timestamp = (
+        record.get("TimeCreated") or
+        record.get("Time", "") or
+        record.get("TimeCreated", "")
+    )
+    provider = (
+        record.get("ProviderName", "") or
+        record.get("Source", "") or
+        ""
+    )
+
+    return {
+        'timestamp': timestamp,
+        'provider': provider,
+        'message': message
+    }
+
+
+def _extract_application_fields(record, message):
+    """
+    Wyciąga pola związane z aplikacją.
+
+    Args:
+        record: Słownik z rekordem Event Log
+        message: Wiadomość z Event Log
+
+    Returns:
+        dict: Pola aplikacji
+    """
+    app_name = (
+        record.get("FaultingApplicationName") or
+        extract_field_from_message(message, [
+            r'Faulting\s+application\s+name:\s*([^\r\n]+)',
+            r'Application\s+Name:\s*([^\r\n]+)',
+            r'Application:\s*([^\r\n,]+)',
+            r'AppName:\s*([^\r\n]+)',
+            r'Faulting\s+Application\s+Name:\s*([^\r\n]+)'
+        ])
+    )
+
+    app_path = (
+        record.get("FaultingApplicationPath") or
+        extract_field_from_message(message, [
+            r'Faulting\s+application\s+path:\s*([^\r\n]+)',
+            r'Application\s+Path:\s*([^\r\n]+)',
+            r'Faulting\s+Application\s+Path:\s*([^\r\n]+)'
+        ])
+    )
+
+    app_version = (
+        record.get("FaultingApplicationVersion") or
+        extract_field_from_message(message, [
+            r'Faulting\s+application\s+version:\s*([^\r\n]+)',
+            r'Application\s+Version:\s*([^\r\n]+)',
+            r'Application\s+Version\s+String:\s*([^\r\n]+)'
+        ])
+    )
+
+    return {
+        'app_name': app_name,
+        'app_path': app_path,
+        'app_version': app_version
+    }
+
+
+def _extract_module_fields(record, message):
+    """
+    Wyciąga pola związane z modułem.
+
+    Args:
+        record: Słownik z rekordem Event Log
+        message: Wiadomość z Event Log
+
+    Returns:
+        dict: Pola modułu
+    """
+    module_name = (
+        record.get("FaultingModuleName") or
+        extract_field_from_message(message, [
+            r'Faulting\s+module\s+name:\s*([^\r\n]+)',
+            r'Module\s+Name:\s*([^\r\n]+)',
+            r'Faulting\s+Module\s+Name:\s*([^\r\n]+)',
+            r'Module:\s*([^\r\n]+)'
+        ])
+    )
+
+    module_path = (
+        record.get("FaultingModulePath") or
+        extract_field_from_message(message, [
+            r'Faulting\s+module\s+path:\s*([^\r\n]+)',
+            r'Module\s+Path:\s*([^\r\n]+)',
+            r'Faulting\s+Module\s+Path:\s*([^\r\n]+)'
+        ])
+    )
+
+    module_version = (
+        record.get("FaultingModuleVersion") or
+        extract_field_from_message(message, [
+            r'Faulting\s+module\s+version:\s*([^\r\n]+)',
+            r'Module\s+Version:\s*([^\r\n]+)'
+        ])
+    )
+
+    return {
+        'module_name': module_name,
+        'module_path': module_path,
+        'module_version': module_version
+    }
+
+
+def _extract_exception_fields(record, message):
+    """
+    Wyciąga pola związane z wyjątkiem.
+
+    Args:
+        record: Słownik z rekordem Event Log
+        message: Wiadomość z Event Log
+
+    Returns:
+        dict: Pola wyjątku
+    """
+    exception_code = (
+        record.get("ExceptionCode") or
+        extract_field_from_message(message, [
+            r'Exception\s+Code:\s*([^\r\n]+)',
+            r'Exception\s+code:\s*([^\r\n]+)',
+            r'ExceptionCode:\s*([^\r\n]+)'
+        ])
+    )
+
+    fault_offset = (
+        record.get("FaultOffset") or
+        extract_field_from_message(message, [
+            r'Fault\s+offset:\s*([^\r\n]+)',
+            r'FaultOffset:\s*([^\r\n]+)',
+            r'Offset:\s*([^\r\n]+)'
+        ])
+    )
+
+    return {
+        'exception_code': exception_code,
+        'fault_offset': fault_offset
+    }
+
+
+def _extract_additional_fields(record, message):
+    """
+    Wyciąga dodatkowe pola z rekordu.
+
+    Args:
+        record: Słownik z rekordem Event Log
+        message: Wiadomość z Event Log
+
+    Returns:
+        dict: Dodatkowe pola
+    """
+    activity_id = record.get("ActivityID") or record.get("ActivityId", "") or ""
+    report_id = record.get("ReportID") or record.get("ReportId", "") or ""
+
+    process_id = (
+        record.get("ProcessId") or
+        extract_field_from_message(message, [
+            r'Process\s+Id:\s*(\d+)',
+            r'ProcessId:\s*(\d+)'
+        ])
+    )
+
+    thread_id = (
+        record.get("ThreadId") or
+        extract_field_from_message(message, [
+            r'Thread\s+Id:\s*(\d+)',
+            r'ThreadId:\s*(\d+)'
+        ])
+    )
+
+    os_version = (
+        record.get("OSVersion") or
+        extract_field_from_message(message, [
+            r'OS\s+Version:\s*([^\r\n]+)',
+            r'Operating\s+System\s+Version:\s*([^\r\n]+)'
+        ])
+    )
+
+    return {
+        'activity_id': activity_id,
+        'report_id': report_id,
+        'process_id': process_id,
+        'thread_id': thread_id,
+        'os_version': os_version
+    }
+
+
+def _handle_application_hang(event_id, message, app_name):
+    """
+    Obsługuje Application Hang (EventID 1002).
+
+    Args:
+        event_id: Event ID
+        message: Wiadomość z Event Log
+        app_name: Obecna nazwa aplikacji
+
+    Returns:
+        tuple: (is_hang, hang_type, app_name)
+    """
+    is_hang = (event_id == "1002")
+    hang_type = None
+
+    if not is_hang:
+        return False, None, app_name
+
+    hang_type = extract_field_from_message(message, [
+        r'Application\s+hang:\s*([^\r\n]+)',
+        r'Hang\s+type:\s*([^\r\n]+)',
+        r'Application\s+stopped\s+responding:\s*([^\r\n]+)'
+    ])
+
+    if not app_name:
+        app_name = extract_field_from_message(message, [
+            r'Application\s+Name:\s*([^\r\n]+)',
+            r'Program:\s*([^\r\n]+)'
+        ])
+
+    return True, hang_type, app_name
+
+
+def _normalize_app_name(app_name, module_name, provider):
+    """
+    Normalizuje nazwę aplikacji z fallbackami.
+
+    Args:
+        app_name: Nazwa aplikacji
+        module_name: Nazwa modułu
+        provider: Provider z Event Log
+
+    Returns:
+        str: Znormalizowana nazwa aplikacji
+    """
+    if app_name and app_name != "Unknown":
+        return app_name
+
+    if module_name:
+        logger.debug(
+            f"[WER] AppName is None/Unknown, using module_name as fallback: "
+            f"{module_name}"
+        )
+        return module_name
+
+    if provider and provider != "Application Error":
+        return provider
+
+    return "Unknown"
+
+
+def _normalize_paths(app_name, app_path, module_name, module_path):
+    """
+    Normalizuje ścieżki aplikacji i modułu.
+
+    Args:
+        app_name: Nazwa aplikacji
+        app_path: Ścieżka aplikacji
+        module_name: Nazwa modułu
+        module_path: Ścieżka modułu
+
+    Returns:
+        tuple: (app_name, app_path, module_name, module_path)
+    """
+    app_name = normalize_path(app_name)
+    module_name = normalize_path(module_name) if module_name else ""
+
+    if app_path:
+        app_path = normalize_path(app_path)
+    elif app_name:
+        app_path = normalize_path(app_name)
+
+    if module_path:
+        module_path = normalize_path(module_path)
+    elif module_name:
+        module_path = normalize_path(module_name)
+
+    return app_name, app_path, module_name, module_path
+
+
+def _normalize_timestamp(timestamp):
+    """
+    Normalizuje timestamp do string.
+
+    Args:
+        timestamp: Timestamp jako string lub datetime
+
+    Returns:
+        str: Znormalizowany timestamp
+    """
+    if not timestamp:
+        return ""
+
+    timestamp_parsed = parse_timestamp(timestamp)
+    if timestamp_parsed:
+        return timestamp_parsed.isoformat()
+
+    return timestamp
+
+
+def _build_crash_dict_from_fields(
+    event_id,
+    timestamp_str,
+    message,
+    provider,
+    app_name,
+    app_path,
+    app_version,
+    module_name,
+    module_path,
+    module_version,
+    exception_code,
+    fault_offset,
+    activity_id,
+    report_id,
+    process_id,
+    thread_id,
+    os_version,
+    is_hang,
+    hang_type
+):
+    """
+    Tworzy słownik z danymi crash z wyciągniętych pól.
+
+    Args:
+        event_id: Event ID
+        timestamp_str: Timestamp jako string
+        message: Wiadomość
+        provider: Provider
+        app_name: Nazwa aplikacji
+        app_path: Ścieżka aplikacji
+        app_version: Wersja aplikacji
+        module_name: Nazwa modułu
+        module_path: Ścieżka modułu
+        module_version: Wersja modułu
+        exception_code: Kod wyjątku
+        fault_offset: Offset wyjątku
+        activity_id: Activity ID
+        report_id: Report ID
+        process_id: Process ID
+        thread_id: Thread ID
+        os_version: OS Version
+        is_hang: Czy to Application Hang
+        hang_type: Typ hang
+
+    Returns:
+        dict: Słownik z danymi crash
+    """
+    crash = {
+        "event_id": event_id,
+        "timestamp": timestamp_str,
+        "time_created": timestamp_str,
+        "message": message[:500] if len(message) > 500 else message,
+        "source": provider,
+        "provider": provider,
+        "application": app_name or "Unknown",
+        "faulting_application_name": app_name or "Unknown",
+        "faulting_application_path": app_path or "",
+        "app_version": app_version or "",
+        "faulting_application_version": app_version or "",
+        "module_name": module_name or "",
+        "faulting_module_name": module_name or "",
+        "faulting_module_path": module_path or "",
+        "module_version": module_version or "",
+        "faulting_module_version": module_version or "",
+        "exception_code": exception_code or "",
+        "fault_offset": fault_offset or "",
+        "activity_id": activity_id,
+        "report_id": report_id,
+        "process_id": process_id or "",
+        "thread_id": thread_id or "",
+        "os_version": os_version or "",
+        "type": determine_crash_type(app_name, module_name, exception_code),
+        "severity": get_exception_severity(exception_code),
+        "is_hang": is_hang,
+        "hang_type": hang_type or ""
+    }
+
+    crash["criticality"] = calculate_crash_criticality(crash)
+    return crash
+
+
 def extract_crash_details(record):
     """
     🔷 1.1. Event Log — Crash Reports
@@ -864,217 +1483,59 @@ def extract_crash_details(record):
     """
     try:
         event_id = str(record.get("Id") or record.get("EventID", ""))
-        if not event_id or event_id not in [str(eid) for eid in WER_EVENT_IDS]:
+        if not _validate_event_id(event_id):
             return None
 
         message = record.get("Message", "") or ""
-        # TimeCreated - czas wystąpienia
-        timestamp = record.get("TimeCreated") or record.get(
-            "Time", "") or record.get("TimeCreated", "")
-        provider = record.get(
-            "ProviderName",
-            "") or record.get(
-            "Source",
-            "") or ""
 
-        # 1️⃣ EventID 1000 (Application Error) - kluczowe pola
-        # FaultingApplicationName - EXE (z różnych formatów)
-        app_name = (
-            record.get("FaultingApplicationName")
-            or extract_field_from_message(message, [
-                r'Faulting\s+application\s+name:\s*([^\r\n]+)',
-                r'Application\s+Name:\s*([^\r\n]+)',
-                r'Application:\s*([^\r\n,]+)',
-                r'AppName:\s*([^\r\n]+)',
-                r'Faulting\s+Application\s+Name:\s*([^\r\n]+)'
-            ])
+        basic = _extract_basic_fields(record, message)
+        app_fields = _extract_application_fields(record, message)
+        module_fields = _extract_module_fields(record, message)
+        exception_fields = _extract_exception_fields(record, message)
+        additional = _extract_additional_fields(record, message)
+
+        is_hang, hang_type, app_name = _handle_application_hang(
+            event_id,
+            message,
+            app_fields['app_name']
         )
 
-        # FaultingApplicationPath - pełna ścieżka do aplikacji
-        app_path = (
-            record.get("FaultingApplicationPath")
-            or extract_field_from_message(message, [
-                r'Faulting\s+application\s+path:\s*([^\r\n]+)',
-                r'Application\s+Path:\s*([^\r\n]+)',
-                r'Faulting\s+Application\s+Path:\s*([^\r\n]+)'
-            ])
+        app_name = _normalize_app_name(
+            app_name,
+            module_fields['module_name'],
+            basic['provider']
         )
 
-        # FaultingApplicationVersion - wersja aplikacji
-        app_version = (
-            record.get("FaultingApplicationVersion")
-            or extract_field_from_message(message, [
-                r'Faulting\s+application\s+version:\s*([^\r\n]+)',
-                r'Application\s+Version:\s*([^\r\n]+)',
-                r'Application\s+Version\s+String:\s*([^\r\n]+)'
-            ])
+        app_name, app_path, module_name, module_path = _normalize_paths(
+            app_name,
+            app_fields['app_path'],
+            module_fields['module_name'],
+            module_fields['module_path']
         )
 
-        # FaultingModuleName - moduł (DLL / driver)
-        module_name = (
-            record.get("FaultingModuleName")
-            or extract_field_from_message(message, [
-                r'Faulting\s+module\s+name:\s*([^\r\n]+)',
-                r'Module\s+Name:\s*([^\r\n]+)',
-                r'Faulting\s+Module\s+Name:\s*([^\r\n]+)',
-                r'Module:\s*([^\r\n]+)'
-            ])
+        timestamp_str = _normalize_timestamp(basic['timestamp'])
+
+        crash = _build_crash_dict_from_fields(
+            event_id,
+            timestamp_str,
+            basic['message'],
+            basic['provider'],
+            app_name,
+            app_path,
+            app_fields['app_version'],
+            module_name,
+            module_path,
+            module_fields['module_version'],
+            exception_fields['exception_code'],
+            exception_fields['fault_offset'],
+            additional['activity_id'],
+            additional['report_id'],
+            additional['process_id'],
+            additional['thread_id'],
+            additional['os_version'],
+            is_hang,
+            hang_type
         )
-
-        # FaultingModulePath - pełna ścieżka do modułu
-        module_path = (
-            record.get("FaultingModulePath")
-            or extract_field_from_message(message, [
-                r'Faulting\s+module\s+path:\s*([^\r\n]+)',
-                r'Module\s+Path:\s*([^\r\n]+)',
-                r'Faulting\s+Module\s+Path:\s*([^\r\n]+)'
-            ])
-        )
-
-        # FaultingModuleVersion - wersja modułu
-        module_version = (
-            record.get("FaultingModuleVersion")
-            or extract_field_from_message(message, [
-                r'Faulting\s+module\s+version:\s*([^\r\n]+)',
-                r'Module\s+Version:\s*([^\r\n]+)'
-            ])
-        )
-
-        # 2️⃣ EventID 1002 (Application Hang) - specjalna obsługa
-        is_hang = (event_id == "1002")
-        hang_type = None
-        if is_hang:
-            # Dla Application Hang, wyciągnij dodatkowe informacje
-            hang_type = extract_field_from_message(message, [
-                r'Application\s+hang:\s*([^\r\n]+)',
-                r'Hang\s+type:\s*([^\r\n]+)',
-                r'Application\s+stopped\s+responding:\s*([^\r\n]+)'
-            ])
-            # Jeśli nie ma app_name, spróbuj wyciągnąć z message
-            if not app_name:
-                app_name = extract_field_from_message(message, [
-                    r'Application\s+Name:\s*([^\r\n]+)',
-                    r'Program:\s*([^\r\n]+)'
-                ])
-
-        # ExceptionCode - kod błędu
-        exception_code = (
-            record.get("ExceptionCode")
-            or extract_field_from_message(message, [
-                r'Exception\s+Code:\s*([^\r\n]+)',
-                r'Exception\s+code:\s*([^\r\n]+)',
-                r'ExceptionCode:\s*([^\r\n]+)'
-            ])
-        )
-
-        # FaultOffset - offset wyjątku
-        fault_offset = (
-            record.get("FaultOffset")
-            or extract_field_from_message(message, [
-                r'Fault\s+offset:\s*([^\r\n]+)',
-                r'FaultOffset:\s*([^\r\n]+)',
-                r'Offset:\s*([^\r\n]+)'
-            ])
-        )
-
-        # ActivityID - korelacja
-        activity_id = record.get("ActivityID") or record.get(
-            "ActivityId", "") or ""
-
-        # ReportID - ID raportu w Microsoft telemetry
-        report_id = record.get("ReportID") or record.get("ReportId", "") or ""
-
-        process_id = (
-            record.get("ProcessId")
-            or extract_field_from_message(message, [
-                r'Process\s+Id:\s*(\d+)',
-                r'ProcessId:\s*(\d+)'
-            ])
-        )
-
-        thread_id = (
-            record.get("ThreadId")
-            or extract_field_from_message(message, [
-                r'Thread\s+Id:\s*(\d+)',
-                r'ThreadId:\s*(\d+)'
-            ])
-        )
-
-        # OS Version
-        os_version = (
-            record.get("OSVersion")
-            or extract_field_from_message(message, [
-                r'OS\s+Version:\s*([^\r\n]+)',
-                r'Operating\s+System\s+Version:\s*([^\r\n]+)'
-            ])
-        )
-
-        # Reguła: ✔ rekord uznajemy za crash tylko jeśli ma
-        # FaultingApplicationName lub Application Error
-        if not app_name or app_name == "Unknown":
-            # Fallback: spróbuj Faulting module name
-            if module_name:
-                logger.debug(
-                    f"[WER] AppName is None/Unknown, using module_name as fallback: {module_name}")
-                app_name = module_name
-            elif provider and provider != "Application Error":
-                app_name = provider
-            else:
-                # Oznacz jako Unknown, ale NIE USUWAJ (statystyka)
-                app_name = "Unknown"
-
-        # Normalizuj ścieżki - konwersja na absolutne ścieżki
-        app_name = normalize_path(app_name)
-        module_name = normalize_path(module_name) if module_name else ""
-
-        # Normalizuj timestamp
-        timestamp_parsed = parse_timestamp(timestamp) if timestamp else None
-        timestamp_str = timestamp_parsed.isoformat(
-        ) if timestamp_parsed else (timestamp or "")
-
-        # Normalizuj ścieżki - jeśli nie ma pełnej ścieżki, użyj nazwy
-        if app_path:
-            app_path = normalize_path(app_path)
-        elif app_name:
-            app_path = normalize_path(app_name)
-
-        if module_path:
-            module_path = normalize_path(module_path)
-        elif module_name:
-            module_path = normalize_path(module_name)
-
-        crash = {
-            "event_id": event_id,
-            "timestamp": timestamp_str,
-            "time_created": timestamp_str,  # Alias dla kompatybilności
-            "message": message[:500] if len(message) > 500 else message,
-            "source": provider,  # Windows Error Reporting / Application Error
-            "provider": provider,
-            "application": app_name or "Unknown",
-            "faulting_application_name": app_name or "Unknown",  # Alias
-            "faulting_application_path": app_path or "",  # 1️⃣ NOWE POLE
-            "app_version": app_version or "",
-            "faulting_application_version": app_version or "",  # Alias
-            "module_name": module_name or "",
-            "faulting_module_name": module_name or "",  # Alias
-            "faulting_module_path": module_path or "",  # 1️⃣ NOWE POLE
-            "module_version": module_version or "",
-            "faulting_module_version": module_version or "",  # Alias
-            "exception_code": exception_code or "",
-            "fault_offset": fault_offset or "",
-            "activity_id": activity_id,
-            "report_id": report_id,
-            "process_id": process_id or "",
-            "thread_id": thread_id or "",
-            "os_version": os_version or "",
-            "type": determine_crash_type(app_name, module_name, exception_code),
-            "severity": get_exception_severity(exception_code),
-            "is_hang": is_hang,  # 2️⃣ EventID 1002
-            "hang_type": hang_type or ""  # 2️⃣ EventID 1002
-        }
-
-        # 3️⃣ Dodaj criticality do crasha
-        crash["criticality"] = calculate_crash_criticality(crash)
 
         return crash
 
@@ -1368,6 +1829,338 @@ def parse_wer_file(wer_file_path):
         return None
 
 
+def _clean_wer_content(content):
+    """
+    Czyści zawartość pliku .wer z null bytes i problematycznych znaków.
+
+    Args:
+        content: Zawartość pliku
+
+    Returns:
+        str: Oczyszczona zawartość
+    """
+    clean_content = content.replace('\x00', '').replace('\x01', '').replace('\x02', '')
+    lines = [line for line in clean_content.split('\n') if line.strip()]
+    return '\n'.join(lines)
+
+
+def _setup_config_parser(content, wer_file_path):
+    """
+    Przygotowuje configparser i parsuje zawartość.
+
+    Args:
+        content: Zawartość pliku
+        wer_file_path: Ścieżka do pliku
+
+    Returns:
+        ConfigParser: Sparsowany config lub None
+    """
+    config = configparser.ConfigParser()
+    config.optionxform = str  # Zachowaj oryginalną wielkość liter
+
+    try:
+        clean_content = _clean_wer_content(content)
+        config.read_string(clean_content)
+        return config
+    except configparser.MissingSectionHeaderError:
+        clean_content = _clean_wer_content(content)
+        config.read_string(f"[DEFAULT]\n{clean_content}")
+        return config
+    except Exception as e:
+        logger.debug(
+            f"[WER] configparser failed for {wer_file_path}, using fallback: {e}"
+        )
+        return None
+
+
+def _extract_report_metadata(section):
+    """
+    Wyciąga dane z sekcji ReportMetadata.
+
+    Args:
+        section: Sekcja configparser
+
+    Returns:
+        dict: Wyciągnięte dane
+    """
+    return {
+        'report_type': get_config_value(section, 'ReportType'),
+        'timestamp': get_config_value(section, 'CreationTime'),
+        'report_status': get_config_value(section, 'ReportStatus'),
+        'report_guid': get_config_value(section, 'ReportGUID')
+    }
+
+
+def _extract_problem_signatures(section):
+    """
+    Wyciąga dane z sekcji ProblemSignatures.
+
+    Args:
+        section: Sekcja configparser
+
+    Returns:
+        dict: Wyciągnięte dane
+    """
+    return {
+        'app_name': get_config_value(section, 'P1'),
+        'app_version': get_config_value(section, 'P2'),
+        'module_name': get_config_value(section, 'P3'),
+        'module_version': get_config_value(section, 'P4'),
+        'fault_offset': get_config_value(section, 'P5'),
+        'exception_code': get_config_value(section, 'P9')
+    }
+
+
+def _extract_system_information(section):
+    """
+    Wyciąga dane z sekcji SystemInformation.
+
+    Args:
+        section: Sekcja configparser
+
+    Returns:
+        dict: Wyciągnięte dane
+    """
+    return {
+        'os_version': get_config_value(section, 'OSVersion'),
+        'locale_id': get_config_value(section, 'LocaleID'),
+        'bios_version': get_config_value(section, 'BIOSVersion')
+    }
+
+
+def _extract_appcompat_data(section):
+    """
+    Wyciąga dane z sekcji AppCompat.
+
+    Args:
+        section: Sekcja configparser
+
+    Returns:
+        str: AppCompat flags lub None
+    """
+    return get_config_value(section, 'AppCompatFlags')
+
+
+def _extract_dynamic_signatures(section):
+    """
+    Wyciąga dane z sekcji DynamicSignatures.
+
+    Args:
+        section: Sekcja configparser
+
+    Returns:
+        dict: Dynamic signatures
+    """
+    dynamic_sigs = {}
+    for key in section:
+        if key.lower().startswith('dynamicsig'):
+            dynamic_sigs[key] = section[key]
+    return dynamic_sigs
+
+
+def _extract_from_default_section(default_section, extracted_data):
+    """
+    Wyciąga dane z sekcji DEFAULT jako fallback.
+
+    Args:
+        default_section: Sekcja DEFAULT
+        extracted_data: Słownik z już wyciągniętymi danymi
+
+    Returns:
+        dict: Zaktualizowane dane
+    """
+    if not extracted_data.get('app_name'):
+        extracted_data['app_name'] = (
+            get_config_value(default_section, 'P1') or
+            get_config_value(default_section, 'FaultingApplicationName')
+        )
+
+    if not extracted_data.get('module_name'):
+        extracted_data['module_name'] = (
+            get_config_value(default_section, 'P3') or
+            get_config_value(default_section, 'FaultingModuleName')
+        )
+
+    if not extracted_data.get('exception_code'):
+        extracted_data['exception_code'] = (
+            get_config_value(default_section, 'P9') or
+            get_config_value(default_section, 'ExceptionCode')
+        )
+
+    if not extracted_data.get('timestamp'):
+        extracted_data['timestamp'] = (
+            get_config_value(default_section, 'CreationTime') or
+            get_config_value(default_section, 'Time')
+        )
+
+    extracted_data['dump_count'] = (
+        get_config_value(default_section, 'DumpCount') or
+        extracted_data.get('dump_count')
+    )
+
+    extracted_data['parent_process_name'] = (
+        get_config_value(default_section, 'ParentProcessName') or
+        extracted_data.get('parent_process_name')
+    )
+
+    extracted_data['parent_process_version'] = (
+        get_config_value(default_section, 'ParentProcessVersion') or
+        extracted_data.get('parent_process_version')
+    )
+
+    return extracted_data
+
+
+def _parse_wer_timestamp(timestamp, wer_file_path):
+    """
+    Parsuje timestamp z WER file lub używa daty modyfikacji pliku.
+
+    Args:
+        timestamp: Timestamp string lub None
+        wer_file_path: Ścieżka do pliku
+
+    Returns:
+        datetime: Sparsowany timestamp
+    """
+    if not timestamp:
+        return datetime.fromtimestamp(wer_file_path.stat().st_mtime)
+
+    timestamp_parsed = parse_timestamp(timestamp)
+    if not timestamp_parsed:
+        return datetime.fromtimestamp(wer_file_path.stat().st_mtime)
+
+    return timestamp_parsed
+
+
+def _build_crash_dict(extracted_data, wer_file_path):
+    """
+    Tworzy słownik z danymi crash z wyciągniętych danych.
+
+    Args:
+        extracted_data: Słownik z wyciągniętymi danymi
+        wer_file_path: Ścieżka do pliku
+
+    Returns:
+        dict: Słownik z danymi crash
+    """
+    timestamp = extracted_data.get('timestamp')
+    if isinstance(timestamp, datetime):
+        timestamp_str = timestamp.isoformat()
+    else:
+        timestamp_str = str(timestamp) if timestamp else ""
+
+    app_name = extracted_data.get('app_name') or "Unknown"
+    module_name = extracted_data.get('module_name') or ""
+    app_version = extracted_data.get('app_version') or ""
+    module_version = extracted_data.get('module_version') or ""
+
+    return {
+        "event_id": "WER_FILE",
+        "timestamp": timestamp_str,
+        "time_created": timestamp_str,
+        "message": f"WER file: {wer_file_path.name}",
+        "source": "wer_file",
+        "provider": "Windows Error Reporting",
+        "application": app_name,
+        "faulting_application_name": app_name,
+        "app_version": app_version,
+        "faulting_application_version": app_version,
+        "module_name": module_name,
+        "faulting_module_name": module_name,
+        "module_version": module_version,
+        "faulting_module_version": module_version,
+        "exception_code": extracted_data.get('exception_code') or "",
+        "fault_offset": extracted_data.get('fault_offset') or "",
+        "os_version": extracted_data.get('os_version') or "",
+        "type": determine_crash_type(
+            app_name if app_name != "Unknown" else None,
+            module_name if module_name else None,
+            extracted_data.get('exception_code')
+        ),
+        "severity": get_exception_severity(extracted_data.get('exception_code')),
+        "wer_file_path": str(wer_file_path),
+        "report_type": extracted_data.get('report_type') or "",
+        "report_status": extracted_data.get('report_status') or "",
+        "report_guid": extracted_data.get('report_guid') or "",
+        "dump_count": extracted_data.get('dump_count') or "",
+        "parent_process_name": extracted_data.get('parent_process_name') or "",
+        "parent_process_version": extracted_data.get('parent_process_version') or "",
+        "locale_id": extracted_data.get('locale_id') or "",
+        "bios_version": extracted_data.get('bios_version') or "",
+        "app_compat_flags": extracted_data.get('app_compat_flags') or "",
+        "dynamic_signatures": extracted_data.get('dynamic_signatures', {})
+    }
+
+
+def _process_config_section(section_name, section, extracted_data, config):
+    """
+    Przetwarza pojedynczą sekcję config i aktualizuje extracted_data.
+
+    Args:
+        section_name: Nazwa sekcji
+        section: Sekcja configparser
+        extracted_data: Słownik z wyciągniętymi danymi
+        config: Obiekt ConfigParser
+
+    Returns:
+        dict: Zaktualizowany extracted_data
+    """
+    section_lower = section_name.lower()
+
+    if 'reportmetadata' in section_lower or 'metadata' in section_lower:
+        metadata = _extract_report_metadata(section)
+        extracted_data.update(metadata)
+    elif 'problemsignatures' in section_lower or 'signature' in section_lower:
+        signatures = _extract_problem_signatures(section)
+        extracted_data.update(signatures)
+    elif 'systeminformation' in section_lower or 'system' in section_lower:
+        sys_info = _extract_system_information(section)
+        extracted_data.update(sys_info)
+    elif 'appcompat' in section_lower:
+        extracted_data['app_compat_flags'] = _extract_appcompat_data(section)
+    elif 'dynamicsignatures' in section_lower or 'dynamic' in section_lower:
+        extracted_data['dynamic_signatures'] = _extract_dynamic_signatures(section)
+
+    # Sprawdź sekcję DEFAULT jako fallback
+    if 'default' in config:
+        default_section = config['DEFAULT']
+        extracted_data = _extract_from_default_section(
+            default_section,
+            extracted_data
+        )
+
+    return extracted_data
+
+
+def _initialize_extracted_data():
+    """
+    Inicjalizuje strukturę extracted_data.
+
+    Returns:
+        dict: Pusta struktura extracted_data
+    """
+    return {
+        'app_name': None,
+        'app_version': None,
+        'module_name': None,
+        'module_version': None,
+        'exception_code': None,
+        'fault_offset': None,
+        'timestamp': None,
+        'report_type': None,
+        'report_status': None,
+        'os_version': None,
+        'locale_id': None,
+        'bios_version': None,
+        'app_compat_flags': None,
+        'dynamic_signatures': {},
+        'dump_count': None,
+        'parent_process_name': None,
+        'parent_process_version': None,
+        'report_guid': None
+    }
+
+
 def parse_wer_ini_with_sections(wer_file_path, content):
     """
     ✅ 2.1. Parsuj sekcje i klucze (case-insensitive)
@@ -1383,195 +2176,51 @@ def parse_wer_ini_with_sections(wer_file_path, content):
         dict: Wyciągnięte dane o crashu lub None
     """
     try:
-        # Utwórz configparser z case-insensitive opcją
-        config = configparser.ConfigParser()
-        config.optionxform = str  # Zachowaj oryginalną wielkość liter w kluczach
-
-        # Spróbuj sparsować jako INI
-        try:
-            # Usuń jeszcze raz null bytes i problematyczne znaki przed
-            # parsowaniem
-            clean_content = content.replace(
-                '\x00',
-                '').replace(
-                '\x01',
-                '').replace(
-                '\x02',
-                '')
-            # Usuń puste linie z samymi null bytes
-            lines = [line for line in clean_content.split(
-                '\n') if line.strip()]
-            clean_content = '\n'.join(lines)
-
-            config.read_string(clean_content)
-        except configparser.MissingSectionHeaderError:
-            # Jeśli brak sekcji, dodaj domyślną sekcję
-            clean_content = content.replace(
-                '\x00',
-                '').replace(
-                '\x01',
-                '').replace(
-                '\x02',
-                '')
-            lines = [line for line in clean_content.split(
-                '\n') if line.strip()]
-            clean_content = '\n'.join(lines)
-            config.read_string(f"[DEFAULT]\n{clean_content}")
-        except Exception as e:
-            # Jeśli configparser nie działa, użyj ręcznego parsowania
-            logger.debug(
-                f"[WER] configparser failed for {wer_file_path}, using fallback: {e}")
+        config = _setup_config_parser(content, wer_file_path)
+        if not config:
             return parse_wer_ini_fallback(wer_file_path, content)
 
-        # Wyciągnij dane z sekcji (case-insensitive)
-        app_name = None
-        app_version = None
-        module_name = None
-        module_version = None
-        exception_code = None
-        fault_offset = None
-        timestamp = None
-        report_type = None
-        report_status = None
-        os_version = None
-        locale_id = None
-        bios_version = None
-        app_compat_flags = None
-        dynamic_sigs = {}
-        dump_count = None
-        parent_process_name = None
-        parent_process_version = None
-        report_guid = None
+        extracted_data = _initialize_extracted_data()
 
-        # ReportMetadata
+        # Przetwórz wszystkie sekcje
         for section_name in config.sections():
-            section_lower = section_name.lower()
             section = config[section_name]
+            extracted_data = _process_config_section(
+                section_name,
+                section,
+                extracted_data,
+                config
+            )
 
-            # ReportMetadata
-            if 'reportmetadata' in section_lower or 'metadata' in section_lower:
-                report_type = get_config_value(section, 'ReportType')
-                timestamp = get_config_value(section, 'CreationTime')
-                report_status = get_config_value(section, 'ReportStatus')
-                report_guid = get_config_value(section, 'ReportGUID')
-
-            # ProblemSignatures
-            elif 'problemsignatures' in section_lower or 'signature' in section_lower:
-                # P1 = nazwa EXE, P2 = wersja EXE, P3 = nazwa modułu, P4 =
-                # wersja modułu, P5 = offset, P9 = Exception Code
-                app_name = get_config_value(section, 'P1')
-                app_version = get_config_value(section, 'P2')
-                module_name = get_config_value(section, 'P3')
-                module_version = get_config_value(section, 'P4')
-                fault_offset = get_config_value(section, 'P5')
-                exception_code = get_config_value(section, 'P9')
-
-            # SystemInformation
-            elif 'systeminformation' in section_lower or 'system' in section_lower:
-                os_version = get_config_value(section, 'OSVersion')
-                locale_id = get_config_value(section, 'LocaleID')
-                bios_version = get_config_value(section, 'BIOSVersion')
-
-            # AppCompat
-            elif 'appcompat' in section_lower:
-                app_compat_flags = get_config_value(section, 'AppCompatFlags')
-
-            # DynamicSignatures
-            elif 'dynamicsignatures' in section_lower or 'dynamic' in section_lower:
-                for key in section:
-                    if key.lower().startswith('dynamicsig'):
-                        dynamic_sigs[key] = section[key]
-
-            # Sprawdź też w DEFAULT
-            if 'default' in config:
-                default_section = config['DEFAULT']
-                if not app_name:
-                    app_name = get_config_value(
-                        default_section, 'P1') or get_config_value(
-                        default_section, 'FaultingApplicationName')
-                if not module_name:
-                    module_name = get_config_value(
-                        default_section, 'P3') or get_config_value(
-                        default_section, 'FaultingModuleName')
-                if not exception_code:
-                    exception_code = get_config_value(
-                        default_section, 'P9') or get_config_value(
-                        default_section, 'ExceptionCode')
-                if not timestamp:
-                    timestamp = get_config_value(
-                        default_section, 'CreationTime') or get_config_value(
-                        default_section, 'Time')
-                dump_count = get_config_value(
-                    default_section, 'DumpCount') or dump_count
-                parent_process_name = get_config_value(
-                    default_section, 'ParentProcessName') or parent_process_name
-                parent_process_version = get_config_value(
-                    default_section, 'ParentProcessVersion') or parent_process_version
-
-        # Jeśli nie znaleziono timestamp, użyj daty modyfikacji pliku
-        if not timestamp:
-            timestamp = datetime.fromtimestamp(wer_file_path.stat().st_mtime)
-        else:
-            timestamp_parsed = parse_timestamp(timestamp)
-            if not timestamp_parsed:
-                timestamp = datetime.fromtimestamp(
-                    wer_file_path.stat().st_mtime)
-            else:
-                timestamp = timestamp_parsed
+        # Parsuj timestamp
+        extracted_data['timestamp'] = _parse_wer_timestamp(
+            extracted_data.get('timestamp'),
+            wer_file_path
+        )
 
         # Normalizuj ścieżki
-        app_name = normalize_path(app_name) if app_name else None
-        module_name = normalize_path(module_name) if module_name else None
+        app_name = normalize_path(extracted_data.get('app_name'))
+        module_name = normalize_path(extracted_data.get('module_name'))
 
         # Zwróć tylko jeśli znaleziono przynajmniej AppName lub Module
-        if app_name or module_name:
-            crash = {
-                "event_id": "WER_FILE",
-                "timestamp": timestamp.isoformat() if isinstance(
-                    timestamp,
-                    datetime) else str(timestamp),
-                "time_created": timestamp.isoformat() if isinstance(
-                    timestamp,
-                    datetime) else str(timestamp),
-                "message": f"WER file: {wer_file_path.name}",
-                "source": "wer_file",
-                "provider": "Windows Error Reporting",
-                "application": app_name or "Unknown",
-                "faulting_application_name": app_name or "Unknown",
-                "app_version": app_version or "",
-                "faulting_application_version": app_version or "",
-                "module_name": module_name or "",
-                "faulting_module_name": module_name or "",
-                "module_version": module_version or "",
-                "faulting_module_version": module_version or "",
-                "exception_code": exception_code or "",
-                "fault_offset": fault_offset or "",
-                "os_version": os_version or "",
-                "type": determine_crash_type(
-                    app_name,
-                    module_name,
-                    exception_code),
-                "severity": get_exception_severity(exception_code),
-                "wer_file_path": str(wer_file_path),
-                "report_type": report_type or "",
-                "report_status": report_status or "",
-                "report_guid": report_guid or "",
-                "dump_count": dump_count or "",
-                "parent_process_name": parent_process_name or "",
-                "parent_process_version": parent_process_version or "",
-                "locale_id": locale_id or "",
-                "bios_version": bios_version or "",
-                "app_compat_flags": app_compat_flags or "",
-                "dynamic_signatures": dynamic_sigs}
-            logger.debug(
-                f"[WER] Parsed .wer file - AppName: {app_name}, Module: {module_name}, ExceptionCode: {exception_code}")
-            return crash
+        if not app_name and not module_name:
+            return None
 
-        return None
+        extracted_data['app_name'] = app_name
+        extracted_data['module_name'] = module_name
+
+        crash = _build_crash_dict(extracted_data, wer_file_path)
+        logger.debug(
+            f"[WER] Parsed .wer file - AppName: {app_name}, "
+            f"Module: {module_name}, "
+            f"ExceptionCode: {extracted_data.get('exception_code')}"
+        )
+        return crash
 
     except Exception as e:
-        logger.debug(f"[WER] Error parsing INI .wer file {wer_file_path}: {e}")
-        # Fallback do ręcznego parsowania
+        logger.debug(
+            f"[WER] Error parsing INI .wer file {wer_file_path}: {e}"
+        )
         return parse_wer_ini_fallback(wer_file_path, content)
 
 
@@ -1603,6 +2252,153 @@ def get_config_value(section, key, default=None):
         return default
 
 
+def _clean_wer_content_fallback(content):
+    """
+    Czyści zawartość pliku .wer z null bytes i znaków kontrolnych.
+
+    Args:
+        content: Zawartość pliku
+
+    Returns:
+        str: Oczyszczona zawartość
+    """
+    clean_content = content.replace('\x00', '').replace('\x01', '').replace('\x02', '')
+    return ''.join(c for c in clean_content if ord(c) >= 32 or c in '\r\n\t')
+
+
+def _extract_with_multiple_patterns(content, patterns):
+    """
+    Wyciąga wartość używając wielu wzorców regex.
+
+    Args:
+        content: Zawartość do przeszukania
+        patterns: Lista wzorców regex do wypróbowania
+
+    Returns:
+        str: Wyciągnięta wartość lub None
+    """
+    for pattern in patterns:
+        match = re.search(pattern, content, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+    return None
+
+
+def _extract_app_name_fallback(content):
+    """
+    Wyciąga nazwę aplikacji z zawartości pliku .wer.
+
+    Args:
+        content: Zawartość pliku
+
+    Returns:
+        str: Nazwa aplikacji lub None
+    """
+    patterns = [
+        r'Faulting\s+application[:\s]+([^\r\n]+)',
+        r'AppName[:\s]+([^\r\n]+)',
+        r'P1[:\s=]+([^\r\n]+)'
+    ]
+    return _extract_with_multiple_patterns(content, patterns)
+
+
+def _extract_module_fallback(content):
+    """
+    Wyciąga nazwę modułu z zawartości pliku .wer.
+
+    Args:
+        content: Zawartość pliku
+
+    Returns:
+        str: Nazwa modułu lub None
+    """
+    patterns = [
+        r'Faulting\s+module[:\s]+([^\r\n]+)',
+        r'Module[:\s]+([^\r\n]+)',
+        r'P3[:\s=]+([^\r\n]+)'
+    ]
+    return _extract_with_multiple_patterns(content, patterns)
+
+
+def _extract_exception_code_fallback(content):
+    """
+    Wyciąga kod wyjątku z zawartości pliku .wer.
+
+    Args:
+        content: Zawartość pliku
+
+    Returns:
+        str: Kod wyjątku lub None
+    """
+    patterns = [
+        r'Exception\s+code[:\s]+([^\r\n]+)',
+        r'ExceptionCode[:\s]+([^\r\n]+)',
+        r'P9[:\s=]+([^\r\n]+)'
+    ]
+    return _extract_with_multiple_patterns(content, patterns)
+
+
+def _extract_timestamp_fallback(content, wer_file_path):
+    """
+    Wyciąga timestamp z zawartości pliku .wer lub używa daty modyfikacji.
+
+    Args:
+        content: Zawartość pliku
+        wer_file_path: Ścieżka do pliku
+
+    Returns:
+        datetime: Timestamp
+    """
+    patterns = [
+        r'CreationTime[:\s=]+([^\r\n]+)',
+        r'Time[:\s]+([^\r\n]+)'
+    ]
+
+    timestamp_str = _extract_with_multiple_patterns(content, patterns)
+    if timestamp_str:
+        timestamp = parse_timestamp(timestamp_str)
+        if timestamp:
+            return timestamp
+
+    return datetime.fromtimestamp(wer_file_path.stat().st_mtime)
+
+
+def _build_fallback_crash_dict(app_name, module, exception_code, timestamp, wer_file_path):
+    """
+    Tworzy słownik z danymi crash dla fallback parsera.
+
+    Args:
+        app_name: Nazwa aplikacji
+        module: Nazwa modułu
+        exception_code: Kod wyjątku
+        timestamp: Timestamp
+        wer_file_path: Ścieżka do pliku
+
+    Returns:
+        dict: Słownik z danymi crash
+    """
+    timestamp_str = (
+        timestamp.isoformat() if isinstance(timestamp, datetime) else str(timestamp)
+    )
+
+    return {
+        "event_id": "WER_FILE",
+        "timestamp": timestamp_str,
+        "time_created": timestamp_str,
+        "message": f"WER file: {wer_file_path.name}",
+        "provider": "Windows Error Reporting",
+        "application": app_name or "Unknown",
+        "faulting_application_name": app_name or "Unknown",
+        "module_name": module or "",
+        "faulting_module_name": module or "",
+        "exception_code": exception_code or "",
+        "type": determine_crash_type(app_name, module, exception_code),
+        "severity": get_exception_severity(exception_code),
+        "source": "wer_file",
+        "wer_file_path": str(wer_file_path)
+    }
+
+
 def parse_wer_ini_fallback(wer_file_path, content):
     """
     Fallback - ręczne parsowanie pliku .wer gdy configparser nie działa.
@@ -1616,117 +2412,210 @@ def parse_wer_ini_fallback(wer_file_path, content):
         dict: Wyciągnięte dane o crashu lub None
     """
     try:
-        # Oczyść content z null bytes i problematycznych znaków
-        clean_content = content.replace(
-            '\x00',
-            '').replace(
-            '\x01',
-            '').replace(
-            '\x02',
-            '')
-        # Usuń znaki kontrolne (zostaw tylko \r, \n, \t)
-        clean_content = ''.join(
-            c for c in clean_content if ord(c) >= 32 or c in '\r\n\t')
+        _clean_wer_content_fallback(content)
 
-        app_name = None
-        module = None
-        exception_code = None
-        timestamp = None
-
-        # Wyciągnij wartości używając regex
-        app_match = re.search(
-            r'Faulting\s+application[:\s]+([^\r\n]+)',
-            content,
-            re.IGNORECASE)
-        if not app_match:
-            app_match = re.search(
-                r'AppName[:\s]+([^\r\n]+)',
-                content,
-                re.IGNORECASE)
-        if not app_match:
-            app_match = re.search(
-                r'P1[:\s=]+([^\r\n]+)', content, re.IGNORECASE)
-        if app_match:
-            app_name = app_match.group(1).strip()
-
-        module_match = re.search(
-            r'Faulting\s+module[:\s]+([^\r\n]+)',
-            content,
-            re.IGNORECASE)
-        if not module_match:
-            module_match = re.search(
-                r'Module[:\s]+([^\r\n]+)', content, re.IGNORECASE)
-        if not module_match:
-            module_match = re.search(
-                r'P3[:\s=]+([^\r\n]+)', content, re.IGNORECASE)
-        if module_match:
-            module = module_match.group(1).strip()
-
-        exception_match = re.search(
-            r'Exception\s+code[:\s]+([^\r\n]+)',
-            content,
-            re.IGNORECASE)
-        if not exception_match:
-            exception_match = re.search(
-                r'ExceptionCode[:\s]+([^\r\n]+)', content, re.IGNORECASE)
-        if not exception_match:
-            exception_match = re.search(
-                r'P9[:\s=]+([^\r\n]+)', content, re.IGNORECASE)
-        if exception_match:
-            exception_code = exception_match.group(1).strip()
-
-        timestamp_match = re.search(
-            r'CreationTime[:\s=]+([^\r\n]+)',
-            content,
-            re.IGNORECASE)
-        if not timestamp_match:
-            timestamp_match = re.search(
-                r'Time[:\s]+([^\r\n]+)', content, re.IGNORECASE)
-        if not timestamp_match:
-            timestamp = datetime.fromtimestamp(wer_file_path.stat().st_mtime)
-        else:
-            timestamp_str = timestamp_match.group(1).strip()
-            timestamp = parse_timestamp(timestamp_str)
-            if not timestamp:
-                timestamp = datetime.fromtimestamp(
-                    wer_file_path.stat().st_mtime)
-
-        if not timestamp:
-            timestamp = datetime.fromtimestamp(wer_file_path.stat().st_mtime)
+        app_name = _extract_app_name_fallback(content)
+        module = _extract_module_fallback(content)
+        exception_code = _extract_exception_code_fallback(content)
+        timestamp = _extract_timestamp_fallback(content, wer_file_path)
 
         app_name = normalize_path(app_name) if app_name else None
         module = normalize_path(module) if module else None
 
-        if app_name or module:
-            crash = {
-                "event_id": "WER_FILE",
-                "timestamp": timestamp.isoformat() if isinstance(
-                    timestamp,
-                    datetime) else str(timestamp),
-                "time_created": timestamp.isoformat() if isinstance(
-                    timestamp,
-                    datetime) else str(timestamp),
-                "message": f"WER file: {wer_file_path.name}",
-                "provider": "Windows Error Reporting",
-                "application": app_name or "Unknown",
-                "faulting_application_name": app_name or "Unknown",
-                "module_name": module or "",
-                "faulting_module_name": module or "",
-                "exception_code": exception_code or "",
-                "type": determine_crash_type(
-                    app_name,
-                    module,
-                    exception_code),
-                "severity": get_exception_severity(exception_code),
-                "source": "wer_file",
-                "wer_file_path": str(wer_file_path)}
-            return crash
+        if not app_name and not module:
+            return None
 
-        return None
+        return _build_fallback_crash_dict(
+            app_name,
+            module,
+            exception_code,
+            timestamp,
+            wer_file_path
+        )
 
     except Exception as e:
         logger.debug(f"[WER] Error in fallback parsing: {e}")
         return None
+
+
+def _extract_value_from_xml_elem(elem):
+    """
+    Wyciąga wartość z elementu XML (text lub atrybut value).
+
+    Args:
+        elem: Element XML
+
+    Returns:
+        str: Wartość lub pusty string
+    """
+    text = (elem.text or "").strip()
+    attrib_value = elem.attrib.get('value', '').strip()
+    return text or attrib_value
+
+
+def _check_app_name_tag(tag, elem, app_name):
+    """
+    Sprawdza czy tag XML zawiera informacje o nazwie aplikacji.
+
+    Args:
+        tag: Tag elementu (lowercase)
+        elem: Element XML
+        app_name: Obecna wartość app_name (może być None)
+
+    Returns:
+        str: Nowa wartość app_name lub None
+    """
+    if app_name:
+        return app_name
+
+    if 'faulting' in tag and 'application' in tag:
+        return _extract_value_from_xml_elem(elem)
+    if 'appname' in tag:
+        return _extract_value_from_xml_elem(elem)
+    if 'application' in tag and elem.text and elem.text.strip():
+        return elem.text.strip()
+
+    return None
+
+
+def _check_module_tag(tag, elem, module):
+    """
+    Sprawdza czy tag XML zawiera informacje o module.
+
+    Args:
+        tag: Tag elementu (lowercase)
+        elem: Element XML
+        module: Obecna wartość module (może być None)
+
+    Returns:
+        str: Nowa wartość module lub None
+    """
+    if module:
+        return module
+
+    if 'faulting' in tag and 'module' in tag:
+        return _extract_value_from_xml_elem(elem)
+    if 'module' in tag and 'name' in tag:
+        return _extract_value_from_xml_elem(elem)
+
+    return None
+
+
+def _check_exception_code_tag(tag, elem, exception_code):
+    """
+    Sprawdza czy tag XML zawiera kod wyjątku.
+
+    Args:
+        tag: Tag elementu (lowercase)
+        elem: Element XML
+        exception_code: Obecna wartość exception_code (może być None)
+
+    Returns:
+        str: Nowa wartość exception_code lub None
+    """
+    if exception_code:
+        return exception_code
+
+    if 'exception' in tag and 'code' in tag:
+        return _extract_value_from_xml_elem(elem)
+    if 'exceptioncode' in tag:
+        return _extract_value_from_xml_elem(elem)
+
+    return None
+
+
+def _check_timestamp_tag(tag, elem, timestamp):
+    """
+    Sprawdza czy tag XML zawiera timestamp.
+
+    Args:
+        tag: Tag elementu (lowercase)
+        elem: Element XML
+        timestamp: Obecna wartość timestamp (może być None)
+
+    Returns:
+        datetime: Nowa wartość timestamp lub None
+    """
+    if timestamp:
+        return timestamp
+
+    if 'time' in tag or 'timestamp' in tag:
+        timestamp_str = _extract_value_from_xml_elem(elem)
+        if timestamp_str:
+            parsed = parse_timestamp(timestamp_str)
+            if parsed:
+                return parsed
+
+    return None
+
+
+def _extract_data_from_xml(root):
+    """
+    Wyciąga dane z XML root element.
+
+    Args:
+        root: ElementTree root element
+
+    Returns:
+        dict: Wyciągnięte dane (app_name, module, exception_code, timestamp)
+    """
+    app_name = None
+    module = None
+    exception_code = None
+    timestamp = None
+
+    for elem in root.iter():
+        tag = elem.tag.lower()
+
+        app_name = _check_app_name_tag(tag, elem, app_name)
+        module = _check_module_tag(tag, elem, module)
+        exception_code = _check_exception_code_tag(tag, elem, exception_code)
+        timestamp = _check_timestamp_tag(tag, elem, timestamp)
+
+    return {
+        'app_name': app_name,
+        'module': module,
+        'exception_code': exception_code,
+        'timestamp': timestamp
+    }
+
+
+def _build_xml_crash_dict(app_name, module, exception_code, timestamp, wer_file_path):
+    """
+    Tworzy słownik z danymi crash dla XML parsera.
+
+    Args:
+        app_name: Nazwa aplikacji
+        module: Nazwa modułu
+        exception_code: Kod wyjątku
+        timestamp: Timestamp
+        wer_file_path: Ścieżka do pliku
+
+    Returns:
+        dict: Słownik z danymi crash
+    """
+    timestamp_str = (
+        timestamp.isoformat() if isinstance(timestamp, datetime) else str(timestamp)
+    )
+
+    return {
+        "event_id": "WER_FILE",
+        "timestamp": timestamp_str,
+        "message": f"WER file: {wer_file_path.name}",
+        "provider": "Windows Error Reporting",
+        "application": app_name or "Unknown",
+        "app_version": "",
+        "module_name": module or "",
+        "module_version": "",
+        "exception_code": exception_code or "",
+        "process_id": "",
+        "thread_id": "",
+        "os_version": "",
+        "type": determine_crash_type(app_name, module, exception_code),
+        "severity": get_exception_severity(exception_code),
+        "source": "wer_file",
+        "wer_file_path": str(wer_file_path)
+    }
 
 
 def parse_wer_xml(wer_file_path, content):
@@ -1742,77 +2631,34 @@ def parse_wer_xml(wer_file_path, content):
     """
     try:
         root = ET.fromstring(content)
+        extracted = _extract_data_from_xml(root)
 
-        app_name = None
-        module = None
-        exception_code = None
-        timestamp = None
-
-        # Szukaj w różnych miejscach w XML
-        # AppName → Faulting application
-        for elem in root.iter():
-            text = elem.text or ""
-            tag = elem.tag.lower()
-            attrib = elem.attrib
-
-            # Sprawdź różne możliwe lokalizacje
-            if 'faulting' in tag and 'application' in tag:
-                app_name = text.strip() or attrib.get('value', '').strip()
-            elif 'appname' in tag:
-                app_name = text.strip() or attrib.get('value', '').strip()
-            elif 'application' in tag and text.strip():
-                app_name = text.strip()
-
-            # Module → Faulting module
-            if 'faulting' in tag and 'module' in tag:
-                module = text.strip() or attrib.get('value', '').strip()
-            elif 'module' in tag and 'name' in tag:
-                module = text.strip() or attrib.get('value', '').strip()
-
-            # ExceptionCode → Exception code
-            if 'exception' in tag and 'code' in tag:
-                exception_code = text.strip() or attrib.get('value', '').strip()
-            elif 'exceptioncode' in tag:
-                exception_code = text.strip() or attrib.get('value', '').strip()
-
-            # Timestamp
-            if 'time' in tag or 'timestamp' in tag:
-                timestamp_str = text.strip() or attrib.get('value', '').strip()
-                if timestamp_str:
-                    timestamp = parse_timestamp(timestamp_str)
+        app_name = extracted['app_name']
+        module = extracted['module']
+        exception_code = extracted['exception_code']
+        timestamp = extracted['timestamp']
 
         # Jeśli nie znaleziono timestamp, użyj daty modyfikacji pliku
         if not timestamp:
             timestamp = datetime.fromtimestamp(wer_file_path.stat().st_mtime)
 
         # Zwróć tylko jeśli znaleziono przynajmniej AppName lub Module
-        if app_name or module:
-            crash = {
-                "event_id": "WER_FILE",
-                "timestamp": timestamp.isoformat() if isinstance(
-                    timestamp,
-                    datetime) else str(timestamp),
-                "message": f"WER file: {wer_file_path.name}",
-                "provider": "Windows Error Reporting",
-                "application": app_name or "Unknown",
-                "app_version": "",
-                "module_name": module or "",
-                "module_version": "",
-                "exception_code": exception_code or "",
-                "process_id": "",
-                "thread_id": "",
-                "os_version": "",
-                "type": determine_crash_type(
-                    app_name,
-                    module,
-                    exception_code),
-                "source": "wer_file",
-                "wer_file_path": str(wer_file_path)}
-            logger.debug(
-                f"[WER] Parsed .wer XML file - AppName: {app_name}, Module: {module}, ExceptionCode: {exception_code}")
-            return crash
+        if not app_name and not module:
+            return None
 
-        return None
+        crash = _build_xml_crash_dict(
+            app_name,
+            module,
+            exception_code,
+            timestamp,
+            wer_file_path
+        )
+
+        logger.debug(
+            f"[WER] Parsed .wer XML file - AppName: {app_name}, "
+            f"Module: {module}, ExceptionCode: {exception_code}"
+        )
+        return crash
 
     except ET.ParseError as e:
         logger.debug(f"[WER] XML parse error in {wer_file_path}: {e}")
@@ -1820,6 +2666,260 @@ def parse_wer_xml(wer_file_path, content):
     except Exception as e:
         logger.debug(f"[WER] Error parsing XML .wer file {wer_file_path}: {e}")
         return None
+
+
+def _get_wer_directory_paths():
+    """
+    Przygotowuje listę ścieżek do katalogów WER.
+
+    Returns:
+        list: Lista ścieżek Path do katalogów WER
+    """
+    programdata = os.environ.get("ProgramData", "C:/ProgramData")
+    localappdata = os.environ.get("LOCALAPPDATA", "")
+
+    wer_paths = [
+        Path(programdata) / "Microsoft" / "Windows" / "WER" / "ReportQueue",
+        Path(programdata) / "Microsoft" / "Windows" / "WER" / "ReportArchive",
+    ]
+
+    if localappdata:
+        wer_paths.extend([
+            Path(localappdata) / "Microsoft" / "Windows" / "WER" / "ReportQueue",
+            Path(localappdata) / "Microsoft" / "Windows" / "WER" / "ReportArchive",
+        ])
+
+    return wer_paths
+
+
+def _get_sorted_report_directories(wer_path, max_count=50):
+    """
+    Znajduje i sortuje katalogi raportów w katalogu WER.
+
+    Args:
+        wer_path: Ścieżka do katalogu WER
+        max_count: Maksymalna liczba katalogów do zwrócenia
+
+    Returns:
+        list: Lista katalogów raportów posortowanych według czasu modyfikacji
+    """
+    if not wer_path.exists():
+        return []
+
+    try:
+        report_dirs = [d for d in wer_path.iterdir() if d.is_dir()]
+        if not report_dirs:
+            return []
+
+        sorted_dirs = sorted(
+            report_dirs,
+            key=lambda x: x.stat().st_mtime,
+            reverse=True
+        )[:max_count]
+
+        return sorted_dirs
+    except Exception as e:
+        logger.debug(f"[WER] Error listing report directories: {e}")
+        return []
+
+
+def _parse_single_dump_file(dump_file, dump_type):
+    """
+    Parsuje pojedynczy plik dump (mdmp lub hdmp).
+
+    Args:
+        dump_file: Ścieżka do pliku dump
+        dump_type: Typ dumpa ('minidump' lub 'fulldump')
+
+    Returns:
+        dict: Informacje o dumpie lub None
+    """
+    try:
+        from utils.minidump_parser import parse_minidump
+        dump_info = parse_minidump(str(dump_file))
+        if not dump_info.get("success"):
+            return None
+
+        return {
+            "file": str(dump_file),
+            "type": dump_type,
+            "stop_code": dump_info.get("stop_code"),
+            "stop_code_name": dump_info.get("stop_code_name"),
+            "offending_driver": dump_info.get("offending_driver")
+        }
+    except Exception as e:
+        logger.debug(f"[WER] Error parsing {dump_type} {dump_file}: {e}")
+        return None
+
+
+def _update_crash_from_dump_info(crash, dump_info):
+    """
+    Aktualizuje obiekt crash danymi z dumpa, jeśli brakuje kluczowych pól.
+
+    Args:
+        crash: Słownik z danymi crasha
+        dump_info: Słownik z danymi dumpa
+    """
+    stop_code = dump_info.get("stop_code")
+    offending_driver = dump_info.get("offending_driver")
+
+    if not crash.get("exception_code") and stop_code:
+        crash["exception_code"] = stop_code
+        crash["severity"] = get_exception_severity(stop_code)
+
+    if not crash.get("module_name") and offending_driver:
+        crash["module_name"] = offending_driver
+        crash["faulting_module_name"] = offending_driver
+
+
+def _parse_dump_files(report_dir, crash):
+    """
+    Parsuje wszystkie pliki dump w katalogu raportu.
+
+    Args:
+        report_dir: Katalog raportu
+        crash: Słownik z danymi crasha do uzupełnienia
+
+    Returns:
+        list: Lista danych o dumpach
+    """
+    dump_data = []
+    mdmp_files = list(report_dir.glob("*.mdmp"))
+    hdmp_files = list(report_dir.glob("*.hdmp"))
+
+    for dump_file in mdmp_files:
+        dump_info = _parse_single_dump_file(dump_file, "minidump")
+        if dump_info:
+            dump_data.append(dump_info)
+            _update_crash_from_dump_info(crash, dump_info)
+
+    for dump_file in hdmp_files:
+        dump_info = _parse_single_dump_file(dump_file, "fulldump")
+        if dump_info:
+            dump_data.append(dump_info)
+            _update_crash_from_dump_info(crash, dump_info)
+
+    if mdmp_files:
+        crash["wer_files"].extend([str(f) for f in mdmp_files])
+    if hdmp_files:
+        crash["wer_files"].extend([str(f) for f in hdmp_files])
+    if dump_data:
+        crash["dump_analysis"] = dump_data
+
+    return dump_data
+
+
+def _parse_memory_info_file(report_dir, crash):
+    """
+    Parsuje plik MemoryInfo.txt z katalogu raportu.
+
+    Args:
+        report_dir: Katalog raportu
+        crash: Słownik z danymi crasha do uzupełnienia
+    """
+    memory_info = report_dir / "MemoryInfo.txt"
+    if not memory_info.exists():
+        return
+
+    crash["has_memory_info"] = True
+    crash["wer_files"].append(str(memory_info))
+
+    try:
+        with open(
+            memory_info, 'r', encoding='utf-8', errors='ignore'
+        ) as f:
+            mem_content = f.read()
+            mem_match = re.search(
+                r'Memory\s+Usage:\s*([^\r\n]+)',
+                mem_content,
+                re.IGNORECASE
+            )
+            if mem_match:
+                crash["memory_usage"] = mem_match.group(1).strip()
+    except Exception:
+        pass
+
+
+def _parse_appcompat_file(report_dir, crash):
+    """
+    Parsuje plik AppCompat.txt z katalogu raportu.
+
+    Args:
+        report_dir: Katalog raportu
+        crash: Słownik z danymi crasha do uzupełnienia
+    """
+    appcompat = report_dir / "AppCompat.txt"
+    if not appcompat.exists():
+        return
+
+    crash["has_appcompat"] = True
+    crash["wer_files"].append(str(appcompat))
+
+
+def _process_single_report_directory(report_dir):
+    """
+    Przetwarza pojedynczy katalog raportu WER.
+
+    Args:
+        report_dir: Katalog raportu
+
+    Returns:
+        dict: Dane crasha lub None
+    """
+    report_wer = report_dir / "Report.wer"
+    if not report_wer.exists():
+        return None
+
+    crash = parse_wer_file(report_wer)
+    if not crash:
+        return None
+
+    crash["wer_directory"] = str(report_dir)
+    crash["wer_files"] = []
+
+    _parse_dump_files(report_dir, crash)
+    _parse_memory_info_file(report_dir, crash)
+    _parse_appcompat_file(report_dir, crash)
+
+    return crash
+
+
+def _process_wer_directory(wer_path):
+    """
+    Przetwarza wszystkie katalogi raportów w katalogu WER.
+
+    Args:
+        wer_path: Ścieżka do katalogu WER
+
+    Returns:
+        list: Lista crash events z tego katalogu
+    """
+    crashes = []
+    report_dirs = _get_sorted_report_directories(wer_path, max_count=50)
+
+    if not report_dirs:
+        return crashes
+
+    logger.info(
+        f"[WER] Found {len(report_dirs)} report directories in {wer_path}"
+    )
+
+    for report_dir in report_dirs:
+        try:
+            crash = _process_single_report_directory(report_dir)
+            if crash:
+                crashes.append(crash)
+        except Exception as e:
+            logger.debug(
+                f"[WER] Error processing report directory {report_dir}: {e}"
+            )
+            continue
+
+    logger.info(
+        f"[WER] Parsed {len(crashes)} report directories from {wer_path}"
+    )
+
+    return crashes
 
 
 def collect_from_wer_directories():
@@ -1836,29 +2936,7 @@ def collect_from_wer_directories():
         list: Lista crash events wyciągniętych z plików .wer
     """
     crashes = []
-    report_dirs_processed = []
-
-    # 3️⃣ Parsowanie katalogów WER - WSZYSTKIE wymagane lokalizacje:
-    # %ProgramData%\Microsoft\Windows\WER\ReportQueue
-    # %ProgramData%\Microsoft\Windows\WER\ReportArchive
-    # %LOCALAPPDATA%\Microsoft\Windows\WER\ReportQueue
-    # %LOCALAPPDATA%\Microsoft\Windows\WER\ReportArchive
-    programdata = os.environ.get("ProgramData", "C:/ProgramData")
-    localappdata = os.environ.get("LOCALAPPDATA", "")
-
-    wer_paths = [
-        Path(programdata) / "Microsoft" / "Windows" / "WER" / "ReportQueue",
-        Path(programdata) / "Microsoft" / "Windows" / "WER" / "ReportArchive",
-    ]
-
-    # Dodaj LOCALAPPDATA ścieżki tylko jeśli zmienna środowiskowa istnieje
-    if localappdata:
-        wer_paths.extend([
-            Path(localappdata) / "Microsoft"
-            / "Windows" / "WER" / "ReportQueue",
-            Path(localappdata) / "Microsoft"
-            / "Windows" / "WER" / "ReportArchive",
-        ])
+    wer_paths = _get_wer_directory_paths()
 
     logger.info(f"[WER] Checking {len(wer_paths)} WER directory locations")
 
@@ -1870,159 +2948,18 @@ def collect_from_wer_directories():
         logger.info(f"[WER] Processing WER directory: {wer_path}")
 
         try:
-            # Znajdź wszystkie katalogi raportów w tym katalogu
-            report_dirs = [d for d in wer_path.iterdir() if d.is_dir()]
-            logger.info(
-                f"[WER] Found {len(report_dirs)} report directories in {wer_path}")
-
-            if not report_dirs:
-                continue
-
-            # Parsuj katalogi raportów (maksymalnie 50 najnowszych z każdego
-            # katalogu)
-            parsed_count = 0
-            for report_dir in sorted(
-                    report_dirs,
-                    key=lambda x: x.stat().st_mtime,
-                    reverse=True)[
-                    :50]:
-                try:
-                    # 3️⃣ Parsuj Report.wer w katalogu
-                    report_wer = report_dir / "Report.wer"
-                    if not report_wer.exists():
-                        continue
-
-                    crash = parse_wer_file(report_wer)
-                    if crash:
-                        # 4️⃣ Dodatkowe pliki w katalogu
-                        crash["wer_directory"] = str(report_dir)
-                        crash["wer_files"] = []
-
-                        # 1️⃣ Parsowanie dumpów - wyciąganie Exception Code,
-                        # Faulting Module, Stack Trace
-                        mdmp_files = list(report_dir.glob("*.mdmp"))
-                        hdmp_files = list(report_dir.glob("*.hdmp"))
-                        dump_data = []
-
-                        # Parsuj minidumpy
-                        for dump_file in mdmp_files:
-                            try:
-                                from utils.minidump_parser import (
-                                    parse_minidump,
-                                )
-                                dump_info = parse_minidump(str(dump_file))
-                                if dump_info.get("success"):
-                                    dump_data.append({
-                                        "file": str(dump_file),
-                                        "type": "minidump",
-                                        "stop_code": dump_info.get("stop_code"),
-                                        "stop_code_name": dump_info.get("stop_code_name"),
-                                        "offending_driver": dump_info.get("offending_driver")
-                                    })
-                                    # Uzupełnij brakujące pola z dumpa
-                                    if not crash.get(
-                                            "exception_code") and dump_info.get("stop_code"):
-                                        crash["exception_code"] = dump_info.get(
-                                            "stop_code")
-                                        crash["severity"] = get_exception_severity(
-                                            dump_info.get("stop_code"))
-                                    if not crash.get("module_name") and dump_info.get(
-                                            "offending_driver"):
-                                        crash["module_name"] = dump_info.get(
-                                            "offending_driver")
-                                        crash["faulting_module_name"] = dump_info.get(
-                                            "offending_driver")
-                            except Exception as e:
-                                logger.debug(
-                                    f"[WER] Error parsing minidump {dump_file}: {e}")
-
-                        # Parsuj full dumpy (hdmp)
-                        for dump_file in hdmp_files:
-                            try:
-                                from utils.minidump_parser import (
-                                    parse_minidump,
-                                )
-                                dump_info = parse_minidump(str(dump_file))
-                                if dump_info.get("success"):
-                                    dump_data.append({
-                                        "file": str(dump_file),
-                                        "type": "fulldump",
-                                        "stop_code": dump_info.get("stop_code"),
-                                        "stop_code_name": dump_info.get("stop_code_name"),
-                                        "offending_driver": dump_info.get("offending_driver")
-                                    })
-                                    # Uzupełnij brakujące pola z dumpa
-                                    if not crash.get(
-                                            "exception_code") and dump_info.get("stop_code"):
-                                        crash["exception_code"] = dump_info.get(
-                                            "stop_code")
-                                        crash["severity"] = get_exception_severity(
-                                            dump_info.get("stop_code"))
-                                    if not crash.get("module_name") and dump_info.get(
-                                            "offending_driver"):
-                                        crash["module_name"] = dump_info.get(
-                                            "offending_driver")
-                                        crash["faulting_module_name"] = dump_info.get(
-                                            "offending_driver")
-                            except Exception as e:
-                                logger.debug(
-                                    f"[WER] Error parsing fulldump {dump_file}: {e}")
-
-                        if mdmp_files:
-                            crash["wer_files"].extend(
-                                [str(f) for f in mdmp_files])
-                        if hdmp_files:
-                            crash["wer_files"].extend(
-                                [str(f) for f in hdmp_files])
-                        if dump_data:
-                            crash["dump_analysis"] = dump_data
-
-                        # Sprawdź MemoryInfo.txt
-                        memory_info = report_dir / "MemoryInfo.txt"
-                        if memory_info.exists():
-                            crash["has_memory_info"] = True
-                            crash["wer_files"].append(str(memory_info))
-                            # Spróbuj wyciągnąć informacje o pamięci
-                            try:
-                                with open(memory_info, 'r', encoding='utf-8', errors='ignore') as f:
-                                    mem_content = f.read()
-                                    # Wyciągnij użycie pamięci
-                                    mem_match = re.search(
-                                        r'Memory\s+Usage:\s*([^\r\n]+)', mem_content, re.IGNORECASE)
-                                    if mem_match:
-                                        crash["memory_usage"] = mem_match.group(
-                                            1).strip()
-                            except Exception:
-                                pass
-
-                        # Sprawdź AppCompat.txt
-                        appcompat = report_dir / "AppCompat.txt"
-                        if appcompat.exists():
-                            crash["has_appcompat"] = True
-                            crash["wer_files"].append(str(appcompat))
-
-                        crashes.append(crash)
-                        parsed_count += 1
-                        report_dirs_processed.append({
-                            "path": str(report_dir),
-                            "modified": datetime.fromtimestamp(report_dir.stat().st_mtime).isoformat()
-                        })
-
-                except Exception as e:
-                    logger.debug(
-                        f"[WER] Error processing report directory {report_dir}: {e}")
-                    continue
-
-            logger.info(
-                f"[WER] Parsed {parsed_count} report directories from {wer_path}")
-
+            dir_crashes = _process_wer_directory(wer_path)
+            crashes.extend(dir_crashes)
         except Exception as e:
             logger.warning(
-                f"[WER] Error accessing WER directory {wer_path}: {e}")
+                f"[WER] Error accessing WER directory {wer_path}: {e}"
+            )
             continue
 
     logger.info(
-        f"[WER] Collected {len(crashes)} crashes from {len(wer_paths)} WER directory locations")
+        f"[WER] Collected {len(crashes)} crashes "
+        f"from {len(wer_paths)} WER directory locations"
+    )
 
     return crashes
 
