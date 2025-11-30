@@ -766,60 +766,148 @@ def detect_wer_causes(processed_data, collected_data):
     """
     causes = []
     
+    # DEBUG: Sprawdź collected_data
+    logger.debug(f"[CAUSE_DETECTOR] DEBUG: collected_data type: {type(collected_data)}")
+    logger.debug(f"[CAUSE_DETECTOR] DEBUG: collected_data is dict: {isinstance(collected_data, dict)}")
+    if isinstance(collected_data, dict):
+        logger.debug(f"[CAUSE_DETECTOR] DEBUG: collected_data keys: {list(collected_data.keys())}")
+        if 'collectors' in collected_data:
+            logger.debug(f"[CAUSE_DETECTOR] DEBUG: collected_data['collectors'] type: {type(collected_data['collectors'])}")
+            if isinstance(collected_data['collectors'], dict):
+                logger.debug(f"[CAUSE_DETECTOR] DEBUG: collected_data['collectors'] keys: {list(collected_data['collectors'].keys())}")
+                if 'wer' in collected_data['collectors']:
+                    logger.debug(f"[CAUSE_DETECTOR] DEBUG: collected_data['collectors']['wer'] type: {type(collected_data['collectors']['wer'])}")
+    
     wer_data = collected_data.get('collectors', {}).get('wer', {})
-    if not wer_data:
+    
+    # ZABEZPIECZENIE: Upewnij się, że wer_data jest bezpieczny
+    if not isinstance(wer_data, dict):
+        logger.warning(f"[CAUSE_DETECTOR] WER data is not a dict: {type(wer_data)}")
         return causes
     
+    # DEBUG: Sprawdź wer_data (tylko podstawowe info)
+    logger.debug(f"[CAUSE_DETECTOR] DEBUG: wer_data type: {type(wer_data)}")
+    logger.debug(f"[CAUSE_DETECTOR] DEBUG: wer_data is dict: {isinstance(wer_data, dict)}")
+    logger.debug(f"[CAUSE_DETECTOR] DEBUG: wer_data empty: {not wer_data}")
+    
+    if not wer_data:
+        logger.debug("[CAUSE_DETECTOR] DEBUG: wer_data is empty, returning empty causes")
+        return causes
+    
+    logger.debug(f"[CAUSE_DETECTOR] DEBUG: wer_data keys: {list(wer_data.keys())}")
+    
+    # Bezpieczne pobranie recent_crashes i grouped_crashes
     recent_crashes = wer_data.get('recent_crashes', [])
     grouped_crashes = wer_data.get('grouped_crashes', [])
+    
+    # ZABEZPIECZENIE: Upewnij się, że są to listy
+    if not isinstance(recent_crashes, list):
+        logger.warning(f"[CAUSE_DETECTOR] recent_crashes is not a list: {type(recent_crashes)}")
+        recent_crashes = []
+    
+    if not isinstance(grouped_crashes, list):
+        logger.warning(f"[CAUSE_DETECTOR] grouped_crashes is not a list: {type(grouped_crashes)}")
+        grouped_crashes = []
+    
+    # DEBUG: Sprawdź typy przed konwersją
+    logger.debug(f"[CAUSE_DETECTOR] DEBUG: recent_crashes type: {type(recent_crashes)}")
+    logger.debug(f"[CAUSE_DETECTOR] DEBUG: recent_crashes is list: {isinstance(recent_crashes, list)}")
+    logger.debug(f"[CAUSE_DETECTOR] DEBUG: grouped_crashes type: {type(grouped_crashes)}")
+    logger.debug(f"[CAUSE_DETECTOR] DEBUG: grouped_crashes is list: {isinstance(grouped_crashes, list)}")
+    logger.debug(f"[CAUSE_DETECTOR] DEBUG: grouped_crashes is dict: {isinstance(grouped_crashes, dict)}")
+    
+    # Upewnij się, że grouped_crashes jest listą (nie dict)
+    if not isinstance(grouped_crashes, list):
+        logger.warning(f"[CAUSE_DETECTOR] grouped_crashes is not a list: {type(grouped_crashes)}, converting...")
+        logger.debug(f"[CAUSE_DETECTOR] DEBUG: grouped_crashes value (first 200 chars): {str(grouped_crashes)[:200]}")
+        grouped_crashes = [grouped_crashes] if grouped_crashes is not None else []
+        logger.debug(f"[CAUSE_DETECTOR] DEBUG: After conversion, grouped_crashes type: {type(grouped_crashes)}")
+        logger.debug(f"[CAUSE_DETECTOR] DEBUG: After conversion, grouped_crashes is list: {isinstance(grouped_crashes, list)}")
+    
+    # Upewnij się, że recent_crashes jest listą
+    if not isinstance(recent_crashes, list):
+        logger.warning(f"[CAUSE_DETECTOR] recent_crashes is not a list: {type(recent_crashes)}, converting...")
+        recent_crashes = [recent_crashes] if recent_crashes is not None else []
+    
+    # DEBUG: Sprawdź typy po konwersji
+    logger.debug(f"[CAUSE_DETECTOR] DEBUG: After conversion - recent_crashes type: {type(recent_crashes)}, length: {len(recent_crashes) if isinstance(recent_crashes, list) else 'N/A'}")
+    logger.debug(f"[CAUSE_DETECTOR] DEBUG: After conversion - grouped_crashes type: {type(grouped_crashes)}, length: {len(grouped_crashes) if isinstance(grouped_crashes, list) else 'N/A'}")
+    
     bsod_data = collected_data.get('collectors', {}).get('bsod_dumps', {})
     
     # Golden Rule 1: FaultingModule = ntdll.dll + EventID=1000 → crash systemowy (≥95%)
     for crash in recent_crashes:
-        event_id = str(crash.get('event_id', ''))
-        module_name = (crash.get('module_name', '') or '').lower()
-        app_name = (crash.get('application', '') or '').lower()
+        # ZABEZPIECZENIE: Upewnij się, że crash jest dict
+        if not isinstance(crash, dict):
+            logger.debug(f"[CAUSE_DETECTOR] Skipping non-dict crash: {type(crash)}")
+            continue
         
-        if event_id == '1000' and 'ntdll.dll' in module_name:
-            causes.append({
-                'category': 'System',
-                'cause': 'SYSTEM_CRASH_NTDLL',
-                'confidence': 95.0,
-                'description': f'System crash detected: FaultingModule=ntdll.dll with EventID=1000. Application: {app_name}',
-                'evidence': {
-                    'event_id': event_id,
-                    'module_name': crash.get('module_name', ''),
-                    'application': crash.get('application', ''),
-                    'exception_code': crash.get('exception_code', ''),
-                    'timestamp': crash.get('timestamp', '')
-                },
-                'recommendation': 'System crash indicates serious system instability. Check for hardware failures, update drivers, run system file checker (sfc /scannow), check for malware'
-            })
-            break  # Tylko jeden raz
+        try:
+            event_id = str(crash.get('event_id', ''))
+            module_name = (crash.get('module_name', '') or '').lower()
+            app_name = (crash.get('application', '') or '').lower()
+            
+            if event_id == '1000' and 'ntdll.dll' in module_name:
+                causes.append({
+                    'category': 'System',
+                    'cause': 'SYSTEM_CRASH_NTDLL',
+                    'confidence': 95.0,
+                    'description': f'System crash detected: FaultingModule=ntdll.dll with EventID=1000. Application: {app_name}',
+                    'evidence': {
+                        'event_id': event_id,
+                        'module_name': crash.get('module_name', ''),
+                        'application': crash.get('application', ''),
+                        'exception_code': crash.get('exception_code', ''),
+                        'timestamp': crash.get('timestamp', '')
+                    },
+                    'recommendation': 'System crash indicates serious system instability. Check for hardware failures, update drivers, run system file checker (sfc /scannow), check for malware'
+                })
+                break  # Tylko jeden raz
+        except Exception as e:
+            logger.warning(f"[CAUSE_DETECTOR] Error processing crash in Golden Rule 1: {e}")
+            continue
     
     # Golden Rule 2: Crash >=3 w 30 min dla tej samej aplikacji → prawdopodobny błąd aplikacji (≥95%)
     for group in grouped_crashes:
-        if group.get('is_repeating', False) and group.get('occurrences_30min', 0) >= 3:
-            app = group.get('application', 'Unknown')
-            module = group.get('module_name', '')
-            exception = group.get('exception_code', '')
+        # ZABEZPIECZENIE: Upewnij się, że group jest dict
+        if not isinstance(group, dict):
+            logger.debug(f"[CAUSE_DETECTOR] Skipping non-dict group: {type(group)}")
+            continue
+        
+        try:
+            is_repeating = group.get('is_repeating', False)
+            occurrences_30min = group.get('occurrences_30min', 0)
             
-            causes.append({
-                'category': 'Application',
-                'cause': 'REPEATING_APPLICATION_CRASH',
-                'confidence': 95.0,
-                'description': f'Repeating application crash: {app} crashed {group.get("occurrences_30min")} times in last 30 minutes. Faulting module: {module}, Exception: {exception}',
-                'evidence': {
-                    'application': app,
-                    'module_name': module,
-                    'exception_code': exception,
-                    'occurrences_30min': group.get('occurrences_30min', 0),
-                    'occurrences_24h': group.get('occurrences_24h', 0),
-                    'first_occurrence': group.get('first_occurrence', ''),
-                    'last_occurrence': group.get('last_occurrence', '')
-                },
-                'recommendation': f'Application {app} is repeatedly crashing. Update the application, check for compatibility issues, reinstall if necessary, check for corrupted files or dependencies'
-            })
+            # Upewnij się, że wartości są poprawnego typu
+            if not isinstance(is_repeating, bool):
+                is_repeating = False
+            if not isinstance(occurrences_30min, (int, float)):
+                occurrences_30min = 0
+            
+            if is_repeating and occurrences_30min >= 3:
+                app = str(group.get('application', 'Unknown'))[:200]  # Ogranicz długość
+                module = str(group.get('module_name', ''))[:200]  # Ogranicz długość
+                exception = str(group.get('exception_code', ''))[:100]  # Ogranicz długość
+                
+                causes.append({
+                    'category': 'Application',
+                    'cause': 'REPEATING_APPLICATION_CRASH',
+                    'confidence': 95.0,
+                    'description': f'Repeating application crash: {app} crashed {occurrences_30min} times in last 30 minutes. Faulting module: {module}, Exception: {exception}',
+                    'evidence': {
+                        'application': app,
+                        'module_name': module,
+                        'exception_code': exception,
+                        'occurrences_30min': occurrences_30min,
+                        'occurrences_24h': group.get('occurrences_24h', 0),
+                        'first_occurrence': str(group.get('first_occurrence', ''))[:100],
+                        'last_occurrence': str(group.get('last_occurrence', ''))[:100]
+                    },
+                    'recommendation': f'Application {app} is repeatedly crashing. Update the application, check for compatibility issues, reinstall if necessary, check for corrupted files or dependencies'
+                })
+        except Exception as e:
+            logger.warning(f"[CAUSE_DETECTOR] Error processing group in Golden Rule 2: {e}")
+            continue
     
     # Golden Rule 3: Crash w tym samym czasie co BSOD EventID=41 → prawdopodobna awaria sprzętowa (≥95%)
     if bsod_data:

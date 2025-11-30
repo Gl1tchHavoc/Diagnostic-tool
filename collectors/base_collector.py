@@ -99,30 +99,94 @@ class BaseCollector(ABC):
             dict: Wyniki kolektora
         """
         try:
+            self._logger.debug(f"[{self.name}] DEBUG: Entering run() method")
             self.set_status("RUNNING")
+            self._logger.debug(f"[{self.name}] DEBUG: Status set to RUNNING")
             self.set_progress(0.0)
+            self._logger.debug(f"[{self.name}] DEBUG: Progress set to 0.0")
             
             self._logger.info(f"[{self.name}] Starting collection")
-            self.data = self.collect()
+            self._logger.debug(f"[{self.name}] DEBUG: About to call self.collect()")
             
+            try:
+                self._logger.debug(f"[{self.name}] DEBUG: Calling self.collect() NOW")
+                if self.name == "wer":
+                    self._logger.info(f"[{self.name}] DEBUG: WER - About to call collect()")
+                collected_data = self.collect()
+                self._logger.debug(f"[{self.name}] DEBUG: self.collect() returned, type: {type(collected_data)}")
+                if self.name == "wer":
+                    self._logger.info(f"[{self.name}] DEBUG: WER - collect() returned successfully")
+                    self._logger.debug(f"[{self.name}] DEBUG: WER - About to assign data to self.data")
+                
+                # ZABEZPIECZENIE: Dla WER, upewnij się, że dane są bezpieczne przed przypisaniem
+                if self.name == "wer" and isinstance(collected_data, dict):
+                    # Sprawdź czy dane nie są zbyt duże lub problematyczne
+                    try:
+                        # Próba serializacji do JSON jako test
+                        import json
+                        json.dumps(collected_data, default=str)
+                        self._logger.debug(f"[{self.name}] DEBUG: WER data is JSON-serializable")
+                    except Exception as e:
+                        self._logger.warning(f"[{self.name}] DEBUG: WER data may not be JSON-serializable: {e}")
+                
+                self.data = collected_data
+                self._logger.debug(f"[{self.name}] DEBUG: self.data assigned successfully")
+                if self.name == "wer":
+                    self._logger.info(f"[{self.name}] DEBUG: WER - self.data assigned successfully")
+            except Exception as collect_error:
+                self._logger.exception(f"[{self.name}] DEBUG: Exception in self.collect(): {collect_error}")
+                raise
+            
+            # DEBUG: Sprawdź dane przed zapisaniem
+            self._logger.debug(f"[{self.name}] DEBUG: self.data assigned, type: {type(self.data)}")
+            if self.name == "wer":
+                self._logger.debug(f"[{self.name}] DEBUG: self.data type: {type(self.data)}")
+                self._logger.debug(f"[{self.name}] DEBUG: self.data is dict: {isinstance(self.data, dict)}")
+                if isinstance(self.data, dict):
+                    self._logger.debug(f"[{self.name}] DEBUG: self.data keys: {list(self.data.keys())}")
+                    if 'grouped_crashes' in self.data:
+                        self._logger.debug(f"[{self.name}] DEBUG: grouped_crashes type: {type(self.data['grouped_crashes'])}")
+                        self._logger.debug(f"[{self.name}] DEBUG: grouped_crashes is list: {isinstance(self.data.get('grouped_crashes'), list)}")
+            
+            self._logger.debug(f"[{self.name}] DEBUG: About to set progress to 100.0")
             self.set_progress(100.0)
+            self._logger.debug(f"[{self.name}] DEBUG: Progress set to 100.0")
+            
+            self._logger.debug(f"[{self.name}] DEBUG: About to set status to DONE")
             self.set_status("DONE")
+            self._logger.debug(f"[{self.name}] DEBUG: Status set to DONE")
             
             self._logger.info(f"[{self.name}] Collection completed")
             
-            return {
+            self._logger.debug(f"[{self.name}] DEBUG: About to create result dict")
+            result = {
                 'name': self.name,
                 'status': self.status,
                 'progress': self.progress,
                 'data': self.data,
                 'subtasks': self.subtasks
             }
+            self._logger.debug(f"[{self.name}] DEBUG: Result dict created")
+            
+            # DEBUG: Sprawdź wynik przed zwróceniem
+            if self.name == "wer":
+                self._logger.debug(f"[{self.name}] DEBUG: Returning result, type: {type(result)}")
+                self._logger.debug(f"[{self.name}] DEBUG: result['data'] type: {type(result.get('data'))}")
+                if isinstance(result.get('data'), dict) and 'grouped_crashes' in result.get('data', {}):
+                    self._logger.debug(f"[{self.name}] DEBUG: result['data']['grouped_crashes'] type: {type(result['data']['grouped_crashes'])}")
+            
+            self._logger.debug(f"[{self.name}] DEBUG: About to return result")
+            return result
         except Exception as e:
+            self._logger.debug(f"[{self.name}] DEBUG: Exception caught in run(): {type(e).__name__}: {str(e)}")
             error_msg = f"{type(e).__name__}: {str(e)}"
+            self._logger.debug(f"[{self.name}] DEBUG: About to set_error")
             self.set_error(error_msg)
+            self._logger.debug(f"[{self.name}] DEBUG: Error set, about to log exception")
             self._logger.exception(f"[{self.name}] Collection failed")
             
-            return {
+            self._logger.debug(f"[{self.name}] DEBUG: About to create error result dict")
+            error_result = {
                 'name': self.name,
                 'status': self.status,
                 'progress': self.progress,
@@ -130,6 +194,8 @@ class BaseCollector(ABC):
                 'error': error_msg,
                 'subtasks': self.subtasks
             }
+            self._logger.debug(f"[{self.name}] DEBUG: About to return error result")
+            return error_result
     
     def get_info(self):
         """

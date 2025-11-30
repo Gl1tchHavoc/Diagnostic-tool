@@ -299,18 +299,43 @@ class DiagnosticsGUI:
         try:
             # Callback do aktualizacji postępu
             def progress_callback(progress, message):
-                # Progress jest już 0-100% z ProgressCalculator
-                self.progress_bar['value'] = progress
-                self.progress_percent.config(text=f"{progress:.1f}%")
-                self.progress_label.config(text=message)
-                self.status.config(text=message)
-                self.output_text.insert(tk.END, f"  [{progress:.1f}%] {message}\n")
-                self.output_text.see(tk.END)
-                self.root.update()
+                try:
+                    logger.debug(f"[GUI] DEBUG: progress_callback called: progress={progress}, message={message}")
+                    # Progress jest już 0-100% z ProgressCalculator
+                    self.progress_bar['value'] = progress
+                    self.progress_percent.config(text=f"{progress:.1f}%")
+                    self.progress_label.config(text=message)
+                    self.status.config(text=message)
+                    self.output_text.insert(tk.END, f"  [{progress:.1f}%] {message}\n")
+                    self.output_text.see(tk.END)
+                    logger.debug(f"[GUI] DEBUG: About to call root.update()")
+                    self.root.update()
+                    logger.debug(f"[GUI] DEBUG: root.update() completed")
+                except Exception as e:
+                    logger.exception(f"[GUI] DEBUG: Exception in progress_callback: {e}")
+                    # Nie przerywaj - tylko loguj błąd
             
             # Uruchom Full Scan używając nowego systemu
+            logger.debug("[GUI] DEBUG: About to create FullScan")
             full_scan = FullScan(progress_callback=progress_callback)
+            logger.debug("[GUI] DEBUG: About to run FullScan")
             scan_results = full_scan.run()
+            
+            # DEBUG: Sprawdź wyniki skanowania
+            logger.debug(f"[GUI] DEBUG: scan_results type: {type(scan_results)}")
+            logger.debug(f"[GUI] DEBUG: scan_results is dict: {isinstance(scan_results, dict)}")
+            if isinstance(scan_results, dict):
+                logger.debug(f"[GUI] DEBUG: scan_results keys: {list(scan_results.keys())}")
+                if 'results' in scan_results:
+                    logger.debug(f"[GUI] DEBUG: scan_results['results'] type: {type(scan_results['results'])}")
+                    if isinstance(scan_results['results'], dict) and 'collectors' in scan_results['results']:
+                        logger.debug(f"[GUI] DEBUG: scan_results['results']['collectors'] type: {type(scan_results['results']['collectors'])}")
+                        if isinstance(scan_results['results']['collectors'], dict) and 'wer' in scan_results['results']['collectors']:
+                            wer_data = scan_results['results']['collectors']['wer']
+                            logger.debug(f"[GUI] DEBUG: WER data type: {type(wer_data)}")
+                            if isinstance(wer_data, dict) and 'grouped_crashes' in wer_data:
+                                logger.debug(f"[GUI] DEBUG: WER grouped_crashes type: {type(wer_data['grouped_crashes'])}")
+                                logger.debug(f"[GUI] DEBUG: WER grouped_crashes is list: {isinstance(wer_data['grouped_crashes'], list)}")
             
             # Konwertuj wyniki do formatu oczekiwanego przez analyzer
             # Upewnij się, że scan_results jest słownikiem
@@ -325,10 +350,22 @@ class DiagnosticsGUI:
             if not isinstance(collectors, dict):
                 collectors = {}
             
+            # DEBUG: Sprawdź collectors przed utworzeniem collected_data
+            logger.debug(f"[GUI] DEBUG: collectors type: {type(collectors)}")
+            logger.debug(f"[GUI] DEBUG: collectors keys: {list(collectors.keys()) if isinstance(collectors, dict) else 'N/A'}")
+            if isinstance(collectors, dict) and 'wer' in collectors:
+                logger.debug(f"[GUI] DEBUG: collectors['wer'] type: {type(collectors['wer'])}")
+            
             collected_data = {
                 "timestamp": scan_results.get('timestamp', ''),
                 "collectors": collectors
             }
+            
+            # DEBUG: Sprawdź collected_data przed przekazaniem do analyzer
+            logger.debug(f"[GUI] DEBUG: collected_data type: {type(collected_data)}")
+            logger.debug(f"[GUI] DEBUG: collected_data['collectors'] type: {type(collected_data.get('collectors'))}")
+            if isinstance(collected_data.get('collectors'), dict) and 'wer' in collected_data['collectors']:
+                logger.debug(f"[GUI] DEBUG: collected_data['collectors']['wer'] type: {type(collected_data['collectors']['wer'])}")
             
             # Bezpieczne pobranie progress_info
             progress_info = scan_results.get('progress_info', {})

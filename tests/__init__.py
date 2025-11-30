@@ -1,5 +1,3 @@
 """
-Tests for diagnostic tool.
+Testy dla Diagnostic Tool.
 """
-
-
