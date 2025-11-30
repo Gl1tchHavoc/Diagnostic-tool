@@ -2,18 +2,19 @@
 Collector Windows Error Reporting (WER) - zbiera szczegółowe dane o crashach aplikacji i systemu.
 Zbiera dane z Event Log oraz katalogów WER, grupuje powtarzające się crashy i integruje z golden rules.
 """
-import subprocess
-import sys
+import configparser
 import os
 import re
-import xml.etree.ElementTree as ET
-import configparser
+import subprocess
+import sys
 import winreg
-from pathlib import Path
-from datetime import datetime, timedelta
+import xml.etree.ElementTree as ET
 from collections import defaultdict
-from utils.subprocess_helper import run_powershell_hidden
+from datetime import datetime, timedelta
+from pathlib import Path
+
 from utils.logger import get_logger
+from utils.subprocess_helper import run_powershell_hidden
 
 logger = get_logger()
 
@@ -330,7 +331,9 @@ def collect():
                     except Exception as e:
                         logger.warning(
                             f"[WER] Error processing group[{idx}] for repeating check: {e}")
-                        from utils.error_analyzer import log_error_with_analysis
+                        from utils.error_analyzer import (
+                            log_error_with_analysis,
+                        )
                         log_error_with_analysis(
                             e,
                             g,
@@ -503,7 +506,9 @@ def collect():
                     except Exception as e:
                         logger.error(
                             f"[WER] Error processing group[{idx}]: {e}")
-                        from utils.error_analyzer import log_error_with_analysis
+                        from utils.error_analyzer import (
+                            log_error_with_analysis,
+                        )
                         log_error_with_analysis(
                             e,
                             group,
@@ -1904,7 +1909,9 @@ def collect_from_wer_directories():
                         # Parsuj minidumpy
                         for dump_file in mdmp_files:
                             try:
-                                from utils.minidump_parser import parse_minidump
+                                from utils.minidump_parser import (
+                                    parse_minidump,
+                                )
                                 dump_info = parse_minidump(str(dump_file))
                                 if dump_info.get("success"):
                                     dump_data.append({
@@ -1934,7 +1941,9 @@ def collect_from_wer_directories():
                         # Parsuj full dumpy (hdmp)
                         for dump_file in hdmp_files:
                             try:
-                                from utils.minidump_parser import parse_minidump
+                                from utils.minidump_parser import (
+                                    parse_minidump,
+                                )
                                 dump_info = parse_minidump(str(dump_file))
                                 if dump_info.get("success"):
                                     dump_data.append({

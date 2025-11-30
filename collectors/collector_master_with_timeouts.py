@@ -3,16 +3,21 @@ Collector Master z timeoutami i fallback - Faza 2.
 Dodaje timeouty dla collectorów i fallback mechanizmy.
 """
 import asyncio
-from datetime import datetime
-from typing import Optional, Callable, Dict, Any
 import concurrent.futures
+from datetime import datetime
+from typing import Callable, Optional
 
-from utils.logger import get_logger, log_collector_start, log_collector_end, log_performance
-from core.config_loader import get_config
-from core.collector_registry import get_registry as get_collector_registry
 from collectors.collector_master_async import (
+    _save_raw_data,
     run_sync_in_executor,
-    _save_raw_data
+)
+from core.collector_registry import get_registry as get_collector_registry
+from core.config_loader import get_config
+from utils.logger import (
+    get_logger,
+    log_collector_end,
+    log_collector_start,
+    log_performance,
 )
 
 logger = get_logger()

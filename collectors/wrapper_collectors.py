@@ -2,9 +2,19 @@
 Wrapper kolektory - opakowują istniejące funkcje collect() w BaseCollector.
 """
 from collectors.base_collector import BaseCollector
+
 from . import (
-    hardware, drivers, system_logs, registry_txr, storage_health, system_info,
-    services, bsod_dumps, performance_counters, wer, processes
+    bsod_dumps,
+    drivers,
+    hardware,
+    performance_counters,
+    processes,
+    registry_txr,
+    services,
+    storage_health,
+    system_info,
+    system_logs,
+    wer,
 )
 
 

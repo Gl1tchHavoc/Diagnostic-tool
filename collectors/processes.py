@@ -1,9 +1,9 @@
 """
 Collector informacji o procesach - zbiera dane o problematycznych procesach.
 """
-import psutil
-import sys
 from datetime import datetime
+
+import psutil
 
 
 def collect():

@@ -1,5 +1,4 @@
 # collectors/drivers.py
-import sys
 
 
 def collect():

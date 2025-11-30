@@ -3,16 +3,20 @@ Master collector - koordynuje zbieranie danych ze wszystkich collectors.
 MVP: Używa CollectorRegistry i obsługuje równoległe wykonanie.
 """
 import json
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
-import time
-import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Optional, Callable
+from typing import Callable, Optional
 
-from utils.logger import get_logger, log_collector_start, log_collector_end, log_performance
-from core.config_loader import get_config
 from core.collector_registry import get_registry as get_collector_registry
+from core.config_loader import get_config
+from utils.logger import (
+    get_logger,
+    log_collector_end,
+    log_collector_start,
+    log_performance,
+)
 
 
 def cleanup_old_raw_files(output_dir="output/raw", keep_last=5):

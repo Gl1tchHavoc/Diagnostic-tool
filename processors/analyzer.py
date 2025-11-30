@@ -2,15 +2,27 @@
 Główny analyzer - łączy wszystkie procesory i nowy system scoringu w kompleksową analizę.
 """
 import time
-from . import (
-    hardware_processor, driver_processor, system_logs_processor,
-    registry_txr_processor, storage_health_processor, system_info_processor,
-    whea_processor
+
+from utils.logger import (
+    get_logger,
+    log_bsod_analysis,
+    log_performance,
+    log_processor_end,
+    log_processor_start,
 )
-from .report_builder import build_report
+
+from . import (
+    driver_processor,
+    hardware_processor,
+    registry_txr_processor,
+    storage_health_processor,
+    system_info_processor,
+    system_logs_processor,
+    whea_processor,
+)
 from .bsod_analyzer import analyze_bsod
 from .cause_detector import detect_all_causes
-from utils.logger import get_logger, log_processor_start, log_processor_end, log_performance, log_bsod_analysis
+from .report_builder import build_report
 
 
 def analyze_all(collected_data, progress_callback=None):
@@ -138,7 +150,9 @@ def analyze_all(collected_data, progress_callback=None):
 
                 # Faza 2: Rejestruj w monitorze wydajności
                 try:
-                    from utils.performance_monitor import get_performance_monitor
+                    from utils.performance_monitor import (
+                        get_performance_monitor,
+                    )
                     monitor = get_performance_monitor()
                     errors_count = len(
                         processor_result.get(
@@ -176,7 +190,9 @@ def analyze_all(collected_data, progress_callback=None):
 
                 # Faza 2: Rejestruj w monitorze wydajności
                 try:
-                    from utils.performance_monitor import get_performance_monitor
+                    from utils.performance_monitor import (
+                        get_performance_monitor,
+                    )
                     monitor = get_performance_monitor()
                     monitor.record_processor(
                         name, int(duration * 1000), "Error", 1, 0)

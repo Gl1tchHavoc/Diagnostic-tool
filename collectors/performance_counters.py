@@ -1,10 +1,10 @@
 """
 Collector Performance Counters - zbiera metryki wydajności systemu.
 """
-import psutil
-import sys
 import time
 from datetime import datetime
+
+import psutil
 
 
 def collect(sample_duration=2):

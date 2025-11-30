@@ -3,10 +3,11 @@ Event Correlation Engine - tworzy timeline i mapuje zależności między eventam
 Używa priorytetów: WHEA > BugCheck > Kernel-Power > Disk > Driver
 Generuje finalne logiczne "Root Cause".
 """
-from datetime import datetime, timedelta
 from collections import defaultdict
-from utils.logger import get_logger
+from datetime import datetime, timedelta
+
 from utils.event_deduplicator import deduplicate_events
+from utils.logger import get_logger
 
 logger = get_logger()
 
@@ -193,16 +194,18 @@ def create_timeline(events, time_window_minutes):
                     {
                         'window_start': current_window_start.isoformat() if current_window_start else None,
                         'window_end': (
-            current_window_start
-            + timedelta(
-                minutes=time_window_minutes)).isoformat() if current_window_start else None,
+                            current_window_start
+                            + timedelta(
+                                minutes=time_window_minutes)
+                        ).isoformat() if current_window_start else None,
                         'events': current_window_events,
                         'event_count': len(current_window_events),
                         'max_priority': max(
-                    [
-                        e.get(
-                            'priority',
-                            0) for e in current_window_events]) if current_window_events else 0})
+                            [
+                                e.get('priority', 0)
+                                for e in current_window_events
+                            ]
+                        ) if current_window_events else 0})
 
             # Nowe okno
             current_window_start = event_time
@@ -217,9 +220,10 @@ def create_timeline(events, time_window_minutes):
             {
                 'window_start': current_window_start.isoformat() if current_window_start else None,
                 'window_end': (
-            current_window_start
-            + timedelta(
-                minutes=time_window_minutes)).isoformat() if current_window_start else None,
+                    current_window_start
+                    + timedelta(
+                        minutes=time_window_minutes)
+                ).isoformat() if current_window_start else None,
                 'events': current_window_events,
                 'event_count': len(current_window_events),
                 'max_priority': max(

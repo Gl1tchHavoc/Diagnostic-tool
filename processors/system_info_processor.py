@@ -13,7 +13,7 @@ def process(system_info_data):
     """
     issues = []
     warnings = []
-    
+
     if isinstance(system_info_data, dict) and "error" in system_info_data:
         issues.append({
             "type": "SYSTEM_INFO_COLLECTION_ERROR",
@@ -27,7 +27,7 @@ def process(system_info_data):
             "warnings": warnings,
             "summary": {"total_issues": len(issues), "total_warnings": len(warnings)}
         }
-    
+
     # Sprawdź uptime - bardzo krótki uptime może wskazywać na problemy
     uptime = system_info_data.get("uptime", "")
     if uptime:
@@ -48,7 +48,7 @@ def process(system_info_data):
                 })
         except:
             pass
-    
+
     return {
         "data": system_info_data,
         "issues": issues,

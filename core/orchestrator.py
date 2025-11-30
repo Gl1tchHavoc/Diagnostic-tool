@@ -12,7 +12,7 @@ def run_full_scan():
     collected_data = collect_all(save_raw=True, output_dir="output/raw")
 
     # Przetwórz i przeanalizuj
-    analysis_report = analyze_all(collected_data)
+    analyze_all(collected_data)
 
     # Generuj raport (używa starego formatu dla kompatybilności)
     # Konwertuj nowy format na stary dla report generatora

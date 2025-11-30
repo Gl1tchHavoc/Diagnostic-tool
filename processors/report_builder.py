@@ -2,12 +2,13 @@
 Report Builder - składa wszystko w końcowy raport.
 Zawiera sekcję ShadowCopy Diagnostic.
 """
-from .status_calculator import calculate_status
-from .score_calculator import calculate_score
+from utils.logger import get_logger
+from utils.shadowcopy_helper import get_shadowcopy_info
+
 from .confidence_engine import calculate_confidence
 from .recommendation_engine import generate_recommendations
-from utils.shadowcopy_helper import get_shadowcopy_info
-from utils.logger import get_logger
+from .score_calculator import calculate_score
+from .status_calculator import calculate_status
 
 logger = get_logger()
 
@@ -23,16 +24,16 @@ def build_report(processed_data):
     """
     # 1. Oblicz status systemu
     status_info = calculate_status(processed_data)
-    
+
     # 2. Oblicz score
     score_info = calculate_score(processed_data)
-    
+
     # 3. Oblicz confidence
     confidence_info = calculate_confidence(processed_data)
-    
+
     # 4. Generuj rekomendacje
     recommendations = generate_recommendations(processed_data)
-    
+
     # 5. Zbierz wszystkie problemy dla szczegółów (z kategoryzacją)
     all_issues = []
     all_warnings = []
@@ -41,23 +42,23 @@ def build_report(processed_data):
     shadowcopy_errors = []
     registry_txr_real = []
     registry_txr_shadowcopy = []
-    
+
     for processor_name, processor_data in processed_data.items():
         if isinstance(processor_data, dict):
             critical = processor_data.get("critical_issues", [])
             if critical:
                 all_critical.extend(critical)
-            
+
             critical_events = processor_data.get("critical_events", [])
             if critical_events:
                 all_critical.extend(critical_events)
-            
+
             issues = processor_data.get("issues", [])
             for issue in issues:
                 severity = issue.get("severity", "").upper()
                 category = issue.get("category", "")
                 issue_type = issue.get("type", "")
-                
+
                 # Kategoryzuj błędy
                 if category == "SHADOWCOPY_ERROR" or issue_type == "SHADOWCOPY_ERROR":
                     shadowcopy_errors.append(issue)
@@ -68,44 +69,44 @@ def build_report(processed_data):
                         registry_txr_shadowcopy.append(issue)
                     else:
                         registry_txr_real.append(issue)
-                
+
                 if severity == "CRITICAL":
                     all_critical.append(issue)
                 elif severity == "ERROR":
                     all_issues.append(issue)
-            
+
             warnings = processor_data.get("warnings", [])
             if warnings:
                 for warning in warnings:
                     category = warning.get("category", "")
                     issue_type = warning.get("type", "")
-                    
+
                     if category == "SHADOWCOPY_ERROR" or issue_type == "SHADOWCOPY_ERROR":
                         shadowcopy_errors.append(warning)
                     elif category == "REAL_DISK_ERROR":
                         real_disk_errors.append(warning)
-                
+
                 all_warnings.extend(warnings)
-            
+
             # ShadowCopy issues z registry_txr_processor
             shadowcopy_issues = processor_data.get("shadowcopy_issues", [])
             if shadowcopy_issues:
                 shadowcopy_errors.extend(shadowcopy_issues)
-    
+
     # Sortuj problemy według severity
     all_critical.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
     all_issues.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
     all_warnings.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-    
+
     # 6. Pobierz informacje o ShadowCopy
     shadowcopy_info = get_shadowcopy_info()
-    
+
     # 7. Pobierz wykryte przyczyny (jeśli dostępne)
     detected_causes = processed_data.get('detected_causes', {})
     if not detected_causes:
         # Spróbuj pobrać z głównego raportu
         detected_causes = {}
-    
+
     # 8. Buduj raport z kategoryzacją błędów
     report = {
         "status": {
@@ -173,7 +174,7 @@ def build_report(processed_data):
             "registry_txr_shadowcopy_count": len(registry_txr_shadowcopy)
         }
     }
-    
+
     # Dodaj analizę WHEA jeśli dostępna
     whea_analysis = processed_data.get("whea_analysis", {})
     if whea_analysis and not whea_analysis.get("error"):
@@ -185,9 +186,9 @@ def build_report(processed_data):
             "total_events": whea_analysis.get("total_events", 0),
             "root_causes": whea_analysis.get("root_causes", [])[:10]  # Top 10
         }
-    
+
     # Dodaj analizę BSOD jeśli dostępna (będzie dodana w analyzer.py)
     # BSOD analysis jest już w final_report, więc nie trzeba jej tutaj dodawać
-    
+
     return report
 

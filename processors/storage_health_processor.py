@@ -2,11 +2,14 @@
 Procesor zdrowia dysków - analizuje stan dysków i wykrywa problemy.
 Zaimplementowano filtrowanie ShadowCopy errors i de-duplikację zdarzeń.
 """
-from utils.disk_helper import filter_disk_errors_by_existing_drives, get_existing_drives
-from utils.shadowcopy_helper import filter_shadowcopy_errors
+from utils.disk_helper import (
+    filter_disk_errors_by_existing_drives,
+    get_existing_drives,
+)
 from utils.event_deduplicator import deduplicate_events
-from utils.warning_classifier import classify_warning, is_false_disk_warning
 from utils.logger import get_logger
+from utils.shadowcopy_helper import filter_shadowcopy_errors
+from utils.warning_classifier import classify_warning, is_false_disk_warning
 
 logger = get_logger()
 
@@ -22,7 +25,7 @@ def process(storage_data):
     """
     issues = []
     warnings = []
-    
+
     if isinstance(storage_data, dict) and "error" in storage_data:
         issues.append({
             "type": "STORAGE_COLLECTION_ERROR",
@@ -36,7 +39,7 @@ def process(storage_data):
             "warnings": warnings,
             "summary": {"total_issues": len(issues), "total_warnings": len(warnings)}
         }
-    
+
     # Sprawdź statusy dysków
     disks = storage_data.get("disks", [])
     for disk in disks:
@@ -50,7 +53,7 @@ def process(storage_data):
                 "disk_model": disk.get("model"),
                 "serial": disk.get("serial")
             })
-    
+
     # Sprawdź błędy SMART (z de-duplikacją)
     smart_errors = storage_data.get("smart_errors", [])
     if smart_errors:
@@ -65,7 +68,7 @@ def process(storage_data):
                 "component": "Storage",
                 "description": "SMART error indicates physical disk problems"
             })
-    
+
     # Sprawdź błędy I/O (z de-duplikacją)
     io_errors = storage_data.get("io_errors", [])
     if io_errors:
@@ -79,7 +82,7 @@ def process(storage_data):
                 "timestamp": error.get("timestamp", ""),
                 "component": "Storage"
             })
-    
+
     # Sprawdź ogólne błędy dysków - filtruj ShadowCopy i nieistniejące dyski (z de-duplikacją)
     disk_errors = storage_data.get("disk_errors", [])
     if disk_errors:
@@ -87,18 +90,18 @@ def process(storage_data):
         # Pobierz listę istniejących dysków
         existing_drives = get_existing_drives()
         logger.debug(f"[STORAGE_HEALTH] Filtering {len(disk_errors)} disk errors against {len(existing_drives)} existing drives")
-        
+
         # Najpierw filtruj ShadowCopy errors
         real_disk_errors, shadowcopy_errors = filter_shadowcopy_errors(disk_errors)
         logger.info(f"[STORAGE_HEALTH] Filtered ShadowCopy: {len(real_disk_errors)} real, {len(shadowcopy_errors)} ShadowCopy")
-        
+
         # Następnie filtruj błędy dotyczące nieistniejących dysków
         filtered_disk_errors = filter_disk_errors_by_existing_drives(real_disk_errors, existing_drives)
-        
+
         # Dodaj rzeczywiste błędy dysków (z filtrowaniem fałszywych DISK_WARNING)
         for error in filtered_disk_errors:
             message = error.get("message", "")
-            
+
             # Sprawdź czy to nie jest fałszywy DISK_WARNING
             if is_false_disk_warning(message):
                 warning_type = classify_warning(message, error.get("event_id"))
@@ -117,7 +120,7 @@ def process(storage_data):
                         "category": "NETWORK_WARNING"
                     })
                     continue
-            
+
             # Rzeczywisty błąd dysku
             warnings.append({
                 "type": "DISK_WARNING",
@@ -128,7 +131,7 @@ def process(storage_data):
                 "component": "Storage",
                 "category": "REAL_DISK_ERROR"
             })
-        
+
         # Dodaj błędy ShadowCopy jako osobna kategoria (nie wpływają na zdrowie dysku)
         for error in shadowcopy_errors:
             warnings.append({
@@ -141,10 +144,10 @@ def process(storage_data):
                 "category": "SHADOWCOPY_ERROR",
                 "description": "ShadowCopy error - does not affect disk health"
             })
-        
+
         if len(filtered_disk_errors) < len(real_disk_errors):
             logger.info(f"[STORAGE_HEALTH] Filtered out {len(real_disk_errors) - len(filtered_disk_errors)} errors for non-existent drives")
-    
+
     return {
         "data": storage_data,
         "issues": issues,

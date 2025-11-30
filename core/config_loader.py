@@ -108,7 +108,7 @@ class ConfigLoader:
                 logger.warning(
                     f"[CONFIG] Failed to load config file: {e}, using defaults")
         else:
-            logger.info(f"[CONFIG] Config file not found, using defaults")
+            logger.info("[CONFIG] Config file not found, using defaults")
             # Utwórz domyślny plik konfiguracyjny
             self.save_config()
 

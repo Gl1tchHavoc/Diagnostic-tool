@@ -227,7 +227,7 @@ def generate_recommendations(processed_data):
         list: Lista rekomendacji posortowanych według priorytetu
     """
     detected_issue_types = set()
-    
+
     # Zbierz wszystkie typy problemów
     for processor_name, processor_data in processed_data.items():
         if isinstance(processor_data, dict):
@@ -237,32 +237,32 @@ def generate_recommendations(processed_data):
                 issue_type = issue.get("type", "")
                 if issue_type:
                     detected_issue_types.add(issue_type)
-            
+
             # Critical events
             critical_events = processor_data.get("critical_events", [])
             for event in critical_events:
                 issue_type = event.get("type", "")
                 if issue_type:
                     detected_issue_types.add(issue_type)
-            
+
             # Issues (wszystkie - critical, error, warning)
             issues = processor_data.get("issues", [])
             for issue in issues:
                 issue_type = issue.get("type", "")
                 if issue_type:
                     detected_issue_types.add(issue_type)
-            
+
             # Warnings też mogą mieć rekomendacje
             warnings = processor_data.get("warnings", [])
             for warning in warnings:
                 issue_type = warning.get("type", "")
                 if issue_type:
                     detected_issue_types.add(issue_type)
-    
+
     # Zbierz rekomendacje dla wykrytych typów problemów
     all_recommendations = []
     seen_actions = set()
-    
+
     for issue_type in detected_issue_types:
         if issue_type in RECOMMENDATIONS:
             for rec in RECOMMENDATIONS[issue_type]:
@@ -271,12 +271,12 @@ def generate_recommendations(processed_data):
                 if action_key not in seen_actions:
                     seen_actions.add(action_key)
                     all_recommendations.append(rec)
-    
+
     # Sortuj według priorytetu
     priority_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
     all_recommendations.sort(
         key=lambda x: priority_order.get(x.get("priority", "LOW"), 3)
     )
-    
+
     return all_recommendations[:15]  # Max 15 rekomendacji
 

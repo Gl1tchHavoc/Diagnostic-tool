@@ -176,10 +176,11 @@ class BaseCollector(ABC):
                         self._logger.debug(
                             f"[{self.name}] DEBUG: grouped_crashes type: "
                             f"{type(self.data['grouped_crashes'])}")
+                        is_list = isinstance(
+                            self.data.get('grouped_crashes'), list)
                         self._logger.debug(
                             f"[{self.name}] DEBUG: grouped_crashes is list: "
-                            f"{isinstance(self.data.get('grouped_crashes'), "
-                            f"list)}")
+                            f"{is_list}")
 
             self._logger.debug(
                 f"[{self.name}] DEBUG: About to set progress to 100.0"

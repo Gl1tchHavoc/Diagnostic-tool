@@ -1,7 +1,6 @@
+import os
 import platform
 import sys
-import os
-import subprocess
 from datetime import datetime
 
 from utils.logger import get_logger
@@ -71,7 +70,7 @@ def collect():
             except Exception as e:
                 logger.warning(
                     f"[SYSTEM_INFO] Failed to get boot time: {e}")
-            
+
             # Uptime
             import psutil
             boot_time = psutil.boot_time()
@@ -80,22 +79,27 @@ def collect():
             hours = int(uptime_seconds // 3600)
             minutes = int((uptime_seconds % 3600) // 60)
             system_data["uptime"] = f"{hours}h {minutes}m"
-            
+
         except Exception as e:
             system_data["error"] = f"Failed to collect Windows info: {type(e).__name__}: {e}"
-    
+
     # System paths
     system_data["system_paths"] = {
         "system32": sys.executable if hasattr(sys, 'executable') else "N/A",
         "python_version": sys.version,
         "python_path": sys.executable
     }
-    
+
     # Environment variables (ważne dla diagnostyki)
-    important_env = ["PATH", "TEMP", "TMP", "USERPROFILE", "SYSTEMROOT", "WINDIR"]
+    important_env = [
+        "PATH",
+        "TEMP",
+        "TMP",
+        "USERPROFILE",
+        "SYSTEMROOT",
+        "WINDIR"]
     for env_var in important_env:
         if env_var in os.environ:
             system_data["environment"][env_var] = os.environ[env_var]
-    
-    return system_data
 
+    return system_data

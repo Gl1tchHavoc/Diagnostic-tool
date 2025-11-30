@@ -2,10 +2,9 @@
 Collector BSOD i Memory Dumps - zbiera informacje o crashach systemu.
 """
 import subprocess
-import os
 import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 
 def collect():
@@ -195,6 +194,7 @@ def collect():
 def extract_bugcheck_code(message):
     """Wyciąga kod bugcheck z wiadomości."""
     import re
+
     # Szukaj wzorców typu "0x0000007E" lub "0x7E"
     patterns = [
         r'BugCheckCode:\s*([0-9A-Fa-f]+)',

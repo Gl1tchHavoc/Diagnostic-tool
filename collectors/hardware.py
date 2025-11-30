@@ -1,6 +1,7 @@
-import psutil
 import platform
 import sys
+
+import psutil
 
 # GPU
 try:
@@ -150,7 +151,7 @@ def collect():
     # Dyski - używamy get_logical_volumes() dla pełnych informacji
     logger.debug(
         "[HARDWARE] Collecting disk information using get_logical_volumes()")
-    from utils.disk_helper import get_logical_volumes, get_existing_drives
+    from utils.disk_helper import get_existing_drives, get_logical_volumes
 
     disks = []
     logical_volumes = get_logical_volumes()
@@ -879,9 +880,10 @@ def collect():
 
 def get_smart_data(device_id):
     """Pobiera SMART data dla dysku (CrystalDiskInfo-like)."""
-    from utils.subprocess_helper import run_powershell_hidden
-    from utils.logger import get_logger
     import json
+
+    from utils.logger import get_logger
+    from utils.subprocess_helper import run_powershell_hidden
 
     logger = get_logger()
     try:
@@ -910,9 +912,10 @@ def get_smart_data(device_id):
 
 def get_nvme_health(device_id):
     """Pobiera NVMe health status."""
-    from utils.subprocess_helper import run_powershell_hidden
-    from utils.logger import get_logger
     import json
+
+    from utils.logger import get_logger
+    from utils.subprocess_helper import run_powershell_hidden
 
     logger = get_logger()
     try:
@@ -940,9 +943,10 @@ def get_nvme_health(device_id):
 
 def get_pcie_info(device_id):
     """Pobiera informacje o PCIe link width i speed."""
-    from utils.subprocess_helper import run_powershell_hidden
-    from utils.logger import get_logger
     import json
+
+    from utils.logger import get_logger
+    from utils.subprocess_helper import run_powershell_hidden
 
     logger = get_logger()
     try:

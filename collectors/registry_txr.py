@@ -1,6 +1,5 @@
 import subprocess
 import sys
-from datetime import datetime
 
 
 def collect(max_events=200):

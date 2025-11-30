@@ -2,17 +2,22 @@
 Async Collector Master - pełna asynchroniczność używając asyncio.
 Oferuje lepszą wydajność niż ThreadPoolExecutor dla I/O-bound operacji.
 """
-import json
 import asyncio
+import concurrent.futures
+import json
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Callable, Dict, Any
-import concurrent.futures
+from typing import Any, Callable, Dict, Optional
 
-from utils.logger import get_logger, log_collector_start, log_collector_end, log_performance
-from core.config_loader import get_config
-from core.collector_registry import get_registry as get_collector_registry
 from collectors.collector_master import cleanup_old_raw_files
+from core.collector_registry import get_registry as get_collector_registry
+from core.config_loader import get_config
+from utils.logger import (
+    get_logger,
+    log_collector_end,
+    log_collector_start,
+    log_performance,
+)
 
 logger = get_logger()
 

@@ -3,7 +3,8 @@ Base Processor - klasa bazowa dla wszystkich procesorów MVP.
 Każdy processor MVP powinien parsować i walidować dane z collectorów.
 """
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
+
 from utils.logger import get_logger
 
 logger = get_logger()

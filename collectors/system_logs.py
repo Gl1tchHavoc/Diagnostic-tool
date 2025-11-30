@@ -1,12 +1,12 @@
+import re
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
+from collections import defaultdict
 from datetime import datetime
-import re
+
 from utils.logger import get_logger
 from utils.shadowcopy_helper import is_shadowcopy_path
-from utils.event_deduplicator import deduplicate_events
-from collections import defaultdict
 
 logger = get_logger()
 

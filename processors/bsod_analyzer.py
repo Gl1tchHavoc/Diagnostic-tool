@@ -2,12 +2,16 @@
 BSOD Analyzer - analizuje ostatni BSOD i identyfikuje najbardziej prawdopodobne przyczyny.
 Używa nowego modułu correlation/bsod_correlation.py dla ulepszonej korelacji.
 """
-from datetime import datetime, timedelta
-from collections import defaultdict
 import re
-from utils.logger import get_logger
-from utils.confidence_normalizer import normalize_confidence, calculate_weighted_confidence
+from collections import defaultdict
+from datetime import datetime, timedelta
+
+from utils.confidence_normalizer import (
+    calculate_weighted_confidence,
+    normalize_confidence,
+)
 from utils.event_deduplicator import deduplicate_events
+from utils.logger import get_logger
 
 # Inicjalizacja loggera
 logger = get_logger()
