@@ -44,7 +44,7 @@ def _get_driver_attributes(drv):
             'date': str(date),
             'status': str(status)
         }
-    except Exception:
+    except (AttributeError, TypeError, ValueError):
         return None
 
 
@@ -65,7 +65,8 @@ def _collect_drivers_from_wmi():
         c = wmi.WMI()
         try:
             drivers = c.Win32_PnPSignedDriver()
-        except Exception:
+        except (AttributeError, TypeError, ValueError) as e:
+            # WMI może zwracać różne błędy
             return []
 
         for drv in drivers:
@@ -73,7 +74,8 @@ def _collect_drivers_from_wmi():
             if driver_info:
                 results.append(driver_info)
 
-    except Exception:
+    except (AttributeError, TypeError, ValueError, ImportError) as e:
+        # WMI może zwracać różne błędy lub może nie być dostępny
         return []
 
     return results

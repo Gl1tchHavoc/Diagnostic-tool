@@ -172,7 +172,7 @@ def analyze_minidumps(bsod_data):
                 if latest_time is None or dump_time > latest_time:
                     latest_time = dump_time
                     latest_dump = dump
-            except Exception:
+            except (ValueError, TypeError, AttributeError):
                 pass
 
     if latest_dump:

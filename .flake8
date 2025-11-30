@@ -22,6 +22,7 @@ select = E,F,W,C,I,B,B950
 # E203: whitespace przed ':', często konflikty z black
 # W503: line break before binary operator (konflikt z W504)
 ignore = E203, W503
+extend-ignore = W504
 
 # Opcjonalne ustawienia dla plików __init__.py
 per-file-ignores =

@@ -84,7 +84,8 @@ def _collect_disk_info_from_wmi(storage_data):
     try:
         c = wmi.WMI()
         disks = c.Win32_DiskDrive()
-    except Exception:
+    except (AttributeError, TypeError, ValueError, ImportError) as e:
+        # WMI może zwracać różne błędy lub może nie być dostępny
         return
 
     for disk in disks:
@@ -192,7 +193,8 @@ def _try_collect_smart_data(storage_data):
         for _ in c.Win32_DiskDrive():
             storage_data["smart_available"] = False
             break
-    except Exception:
+    except (AttributeError, TypeError, ValueError, ImportError) as e:
+        # WMI może zwracać różne błędy
         pass
 
 

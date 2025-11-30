@@ -48,7 +48,7 @@ def process(system_info_data):
                     "message": f"System uptime is very low: {uptime} - may indicate recent crashes",
                     "component": "System"
                 })
-        except Exception:
+        except (ValueError, AttributeError, TypeError, IndexError):
             pass
 
     return {

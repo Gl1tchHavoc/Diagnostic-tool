@@ -165,7 +165,7 @@ def parse_event_timestamp(timestamp_str):
         for fmt in formats:
             try:
                 return datetime.strptime(timestamp_str[:19], fmt)
-            except Exception:
+            except (ValueError, IndexError, TypeError):
                 continue
 
         # Fallback: ISO format

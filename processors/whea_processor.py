@@ -557,7 +557,7 @@ def parse_timestamp(timestamp_str):
 
     try:
         return datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
-    except Exception:
+    except (ValueError, TypeError, AttributeError):
         pass
 
     return None
