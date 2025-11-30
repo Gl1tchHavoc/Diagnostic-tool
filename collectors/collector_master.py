@@ -4,7 +4,26 @@ MVP: Używa CollectorRegistry i obsługuje równoległe wykonanie.
 """
 import json
 import time
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# Windows COM initialization for PowerShell/psutil
+if sys.platform == "win32":
+    try:
+        import pythoncom
+
+        def _init_thread_com():
+            """Inicjalizuje COM w wątku - wymagane dla PowerShell i części psutil."""
+            pythoncom.CoInitialize()
+    except ImportError:
+        # pythoncom nie dostępne (nie Windows lub brak pywin32)
+        def _init_thread_com():
+            """Pusta funkcja jeśli COM nie jest dostępne."""
+            pass
+else:
+    def _init_thread_com():
+        """Pusta funkcja dla systemów nie-Windows."""
+        pass
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
@@ -266,7 +285,10 @@ def collect_all(
     if parallel and total > 1:
         # Równoległe wykonanie
         logger.info("[COLLECTION] Using parallel execution")
-        with ThreadPoolExecutor(max_workers=min(total, 6)) as executor:
+        with ThreadPoolExecutor(
+            max_workers=min(total, 6),
+            initializer=_init_thread_com
+        ) as executor:
             # Uruchom wszystkie collectory
             future_to_collector = {
                 executor.submit(_run_collector, name, func, msg, i + 1, total, progress_callback): name

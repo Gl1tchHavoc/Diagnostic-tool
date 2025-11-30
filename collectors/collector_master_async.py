@@ -5,9 +5,28 @@ Oferuje lepszą wydajność niż ThreadPoolExecutor dla I/O-bound operacji.
 import asyncio
 import concurrent.futures
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
+
+# Windows COM initialization for PowerShell/psutil
+if sys.platform == "win32":
+    try:
+        import pythoncom
+
+        def _init_thread_com():
+            """Inicjalizuje COM w wątku - wymagane dla PowerShell i części psutil."""
+            pythoncom.CoInitialize()
+    except ImportError:
+        # pythoncom nie dostępne (nie Windows lub brak pywin32)
+        def _init_thread_com():
+            """Pusta funkcja jeśli COM nie jest dostępne."""
+            pass
+else:
+    def _init_thread_com():
+        """Pusta funkcja dla systemów nie-Windows."""
+        pass
 
 from collectors.collector_master import cleanup_old_raw_files
 from core.collector_registry import get_registry as get_collector_registry
@@ -34,7 +53,9 @@ def run_sync_in_executor(func: Callable, *args, **kwargs):
         Wynik funkcji
     """
     loop = asyncio.get_event_loop()
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=1, initializer=_init_thread_com
+    )
     return loop.run_in_executor(executor, func, *args, **kwargs)
 
 
@@ -351,7 +372,9 @@ def collect_all_async_wrapper(
         if loop.is_running():
             # Event loop już działa - użyj run_until_complete w osobnym wątku
             import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as executor:
+            with concurrent.futures.ThreadPoolExecutor(
+                initializer=_init_thread_com
+            ) as executor:
                 future = executor.submit(
                     asyncio.run, collect_all_async(
                         save_raw, output_dir, progress_callback))

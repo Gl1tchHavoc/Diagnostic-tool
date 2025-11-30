@@ -7,10 +7,30 @@ import concurrent.futures
 from datetime import datetime
 from typing import Callable, Optional
 
+import sys
+
 from collectors.collector_master_async import (
     _save_raw_data,
     run_sync_in_executor,
 )
+
+# Windows COM initialization for PowerShell/psutil
+if sys.platform == "win32":
+    try:
+        import pythoncom
+
+        def _init_thread_com():
+            """Inicjalizuje COM w wątku - wymagane dla PowerShell i części psutil."""
+            pythoncom.CoInitialize()
+    except ImportError:
+        # pythoncom nie dostępne (nie Windows lub brak pywin32)
+        def _init_thread_com():
+            """Pusta funkcja jeśli COM nie jest dostępne."""
+            pass
+else:
+    def _init_thread_com():
+        """Pusta funkcja dla systemów nie-Windows."""
+        pass
 from core.collector_registry import get_registry as get_collector_registry
 from core.config_loader import get_config
 from utils.logger import (
@@ -70,7 +90,9 @@ async def _run_collector_with_timeout(
         else:
             # Synchroniczny collector - uruchom w executorze z timeoutem
             loop = asyncio.get_event_loop()
-            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            executor = concurrent.futures.ThreadPoolExecutor(
+                max_workers=1, initializer=_init_thread_com
+            )
             collector_result = await asyncio.wait_for(
                 loop.run_in_executor(executor, collector_func),
                 timeout=timeout_seconds
@@ -284,7 +306,9 @@ def collect_all_with_timeouts_wrapper(
         loop = asyncio.get_event_loop()
         if loop.is_running():
             import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as executor:
+            with concurrent.futures.ThreadPoolExecutor(
+                initializer=_init_thread_com
+            ) as executor:
                 future = executor.submit(
                     asyncio.run,
                     collect_all_with_timeouts(
