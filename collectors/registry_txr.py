@@ -82,7 +82,10 @@ def collect(max_events=200):
                 })
         except ET.ParseError:
             pass
-    except BaseException:
+    except Exception as e:
+        logger.error(
+            f"[REGISTRY_TXR] Error collecting registry TxR data: {e}",
+            exc_info=True)
         pass
 
     return txr_errors

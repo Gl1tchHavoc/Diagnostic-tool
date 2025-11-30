@@ -340,7 +340,7 @@ def deduplicate_events_advanced(events, time_window_seconds=1):
     # Deduplikuj w ramach grup (ten sam czas w oknie 1 sekundy)
     deduplicated = []
 
-    for key, group_events in grouped.items():
+    for _, group_events in grouped.items():
         if len(group_events) == 1:
             group_events[0]['occurrences'] = 1
             deduplicated.append(group_events[0])
@@ -355,7 +355,7 @@ def deduplicate_events_advanced(events, time_window_seconds=1):
                 time_groups[time_key].append(event)
 
             # Dla każdej grupy czasowej, weź pierwszy event i dodaj occurrences
-            for time_key, time_group in time_groups.items():
+            for _, time_group in time_groups.items():
                 first_event = time_group[0]
                 first_event['occurrences'] = len(time_group)
                 deduplicated.append(first_event)

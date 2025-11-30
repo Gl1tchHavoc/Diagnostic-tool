@@ -95,16 +95,17 @@ def collect():
 
         # Pobierz SMART attributes przez WMI (jeśli dostępne)
         try:
-            for disk in c.Win32_DiskDrive():
+            for _ in c.Win32_DiskDrive():
                 try:
                     # Próba pobrania SMART data
                     smart_data = {}
                     # WMI nie zawsze ma bezpośredni dostęp do SMART, więc
                     # używamy Event Logs
                     storage_data["smart_available"] = False
-                except BaseException:
-                    pass
-        except BaseException:
+                except Exception as e:
+                    logger.debug(
+                        f"[STORAGE_HEALTH] Error processing disk: {e}")
+        except Exception as e:
             pass
 
     except Exception as e:

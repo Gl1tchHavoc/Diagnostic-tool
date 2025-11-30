@@ -52,7 +52,9 @@ def collect():
                             proc_info['create_time'])
                         uptime = datetime.now() - create_time
                         proc_info['uptime_seconds'] = uptime.total_seconds()
-                    except BaseException:
+                    except Exception as e:
+                        logger.debug(
+                            f"[PROCESSES] Error processing process: {e}")
                         proc_info['uptime_seconds'] = 0
 
                 all_procs.append(proc_info)

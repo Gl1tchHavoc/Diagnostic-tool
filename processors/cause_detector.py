@@ -554,8 +554,9 @@ def detect_cpu_thermal_causes(processed_data, collected_data):
                     'evidence': {'cpu_temp': cpu_temp},
                     'recommendation': 'Check CPU cooler, clean dust, reapply thermal paste, verify fan operation'
                 })
-        except BaseException:
-            pass
+        except Exception as e:
+            logger.debug(
+                f"[CAUSE_DETECTOR] Error processing temperature: {e}")
 
     # CPU throttling z powodu temperatury → niedostateczne chłodzenie
     if system_logs:
@@ -1376,8 +1377,10 @@ def parse_wer_timestamp(timestamp_str):
 
     try:
         return datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
-    except BaseException:
-        pass
+    except Exception as e:
+        logger.error(
+            f"[CAUSE_DETECTOR] Error parsing timestamp: {e}",
+            exc_info=True)
 
     return None
 

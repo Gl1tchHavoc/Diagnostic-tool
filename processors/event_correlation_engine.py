@@ -162,12 +162,15 @@ def parse_event_timestamp(timestamp_str):
         for fmt in formats:
             try:
                 return datetime.strptime(timestamp_str[:19], fmt)
-            except BaseException:
+            except Exception:
                 continue
 
         # Fallback: ISO format
         return datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-    except BaseException:
+    except Exception as e:
+        logger.error(
+            f"[EVENT_CORRELATION] Error parsing timestamp: {e}",
+            exc_info=True)
         return None
 
 

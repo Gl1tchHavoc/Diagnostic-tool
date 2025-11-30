@@ -79,7 +79,7 @@ def calculate_confidence(processed_data):
     # Zbierz wszystkie krytyczne eventy
     all_critical = []
 
-    for processor_name, processor_data in processed_data.items():
+    for _, processor_data in processed_data.items():
         if isinstance(processor_data, dict):
             critical = processor_data.get("critical_issues", [])
             if critical:

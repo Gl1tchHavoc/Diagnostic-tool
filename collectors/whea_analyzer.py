@@ -383,7 +383,10 @@ def parse_timestamp(timestamp_str):
 
     try:
         return datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
-    except BaseException:
+    except Exception as e:
+        logger.error(
+            f"[WHEA] Error collecting WHEA data: {e}",
+            exc_info=True)
         pass
 
     return None

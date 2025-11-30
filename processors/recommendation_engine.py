@@ -229,7 +229,7 @@ def generate_recommendations(processed_data):
     detected_issue_types = set()
 
     # Zbierz wszystkie typy problemów
-    for processor_name, processor_data in processed_data.items():
+    for _, processor_data in processed_data.items():
         if isinstance(processor_data, dict):
             # Critical issues
             critical = processor_data.get("critical_issues", [])

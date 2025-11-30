@@ -28,7 +28,7 @@ def collect(sample_duration=2):
 
     # Pobierz próbki przez określony czas
     samples = []
-    for i in range(sample_duration):
+    for _ in range(sample_duration):
         sample = {
             "time": datetime.now().isoformat(),
             "cpu_percent": psutil.cpu_percent(interval=1, percpu=True),

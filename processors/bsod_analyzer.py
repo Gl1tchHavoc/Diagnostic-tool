@@ -1029,12 +1029,15 @@ def _convert_new_correlation_result(new_result, hardware_data, drivers_data):
             # Próbuj parsować ISO format
             bsod_timestamp = datetime.fromisoformat(
                 bsod_timestamp_str.replace('Z', '+00:00'))
-        except BaseException:
+        except Exception as e:
+            logger.debug(
+                f"[BSOD_ANALYZER] Error parsing timestamp: {e}")
             try:
                 # Fallback - użyj istniejącej funkcji parse_timestamp
                 bsod_timestamp = parse_timestamp(bsod_timestamp_str)
-            except BaseException:
-                pass
+            except Exception as e2:
+                logger.debug(
+                    f"[BSOD_ANALYZER] Fallback timestamp parse failed: {e2}")
 
     return {
         "bsod_found": True,
@@ -1239,8 +1242,10 @@ def parse_timestamp(timestamp_str):
             time_part = parts[1] if len(parts) > 1 else "00:00:00"
             combined = f"{date_part} {time_part}"
             return datetime.strptime(combined, "%Y-%m-%d %H:%M:%S")
-    except BaseException:
-        pass
+    except Exception as e:
+        logger.error(
+            f"[BSOD_ANALYZER] Error parsing timestamp: {e}",
+            exc_info=True)
 
     return None
 

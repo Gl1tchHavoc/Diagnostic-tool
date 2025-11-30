@@ -139,6 +139,572 @@ def enable_local_dumps(dump_folder=r"%LOCALAPPDATA%\CrashDumps"):
         return False
 
 
+def _initialize_wer_data():
+    """Inicjalizuje strukturę danych WER."""
+    return {
+        "recent_crashes": [],
+        "reports": [],
+        "grouped_crashes": [],
+        "statistics": {
+            "total_crashes": 0,
+            "crashes_last_30min": 0,
+            "crashes_last_24h": 0,
+            "repeating_crashes": 0
+        }
+    }
+
+
+def _check_and_setup_local_dumps(wer_data):
+    """Sprawdza i konfiguruje LocalDumps."""
+    logger.info("[WER] Checking LocalDumps configuration...")
+    ld = check_local_dumps()
+
+    if not ld["enabled"]:
+        logger.warning(
+            "[WER] LocalDumps is DISABLED – crash diagnostics will be "
+            "incomplete.")
+
+        # Attempt auto-fix
+        if enable_local_dumps():
+            logger.info("[WER] LocalDumps was enabled automatically.")
+            print(
+                "⚠️ LocalDumps were disabled. Enabled now.\n"
+                "Please trigger a crash and re-run the tool for full "
+                "diagnostics.")
+        else:
+            logger.warning(
+                "[WER] LocalDumps could not be enabled automatically.")
+            print(
+                "⚠️ LocalDumps are disabled and cannot be automatically "
+                "enabled.\n"
+                "Run the program as administrator or enable manually.")
+    else:
+        logger.info(
+            f"[WER] LocalDumps is enabled. Dump folder: "
+            f"{ld.get('dump_folder', 'N/A')}")
+        if ld.get("warnings"):
+            logger.warning(f"[WER] LocalDumps warnings: {ld['warnings']}")
+
+    wer_data["local_dumps"] = ld
+    return ld
+
+
+def _collect_all_crashes(wer_data):
+    """Zbiera crashy z Event Log i WER directories."""
+    # Krok 1: Zbieranie z Event Log
+    logger.info("[WER] Collecting crash data from Event Log")
+    event_crashes = collect_from_event_log()
+    wer_data["recent_crashes"].extend(event_crashes)
+
+    # 2️⃣ Parsowanie .wer files z ReportQueue i ReportArchive
+    logger.info(
+        "[WER] Collecting crash data from WER directories "
+        "(ReportQueue, ReportArchive)")
+    wer_crashes = collect_from_wer_directories()
+    wer_data["recent_crashes"].extend(wer_crashes)
+
+    # Dla kompatybilności, zapisz informacje o liczbie sparsowanych plików
+    if wer_crashes:
+        wer_data["reports"].append({
+            "source": "wer_file",
+            "count": len(wer_crashes),
+            "description": (
+                f"Parsed {len(wer_crashes)} .wer files from "
+                "ReportQueue/ReportArchive")
+        })
+
+
+def _validate_grouped_crashes(grouped):
+    """Waliduje i normalizuje grouped_crashes - upewnia się, że to lista."""
+    # DEBUG: Szczegółowe logowanie typu
+    logger.debug(
+        f"[WER] group_and_analyze_crashes() returned type: {type(grouped)}")
+    logger.debug(
+        f"[WER] group_and_analyze_crashes() is list: "
+        f"{isinstance(grouped, list)}")
+    logger.debug(
+        f"[WER] group_and_analyze_crashes() is dict: "
+        f"{isinstance(grouped, dict)}")
+
+    if isinstance(grouped, list):
+        logger.debug(f"[WER] group_and_analyze_crashes() length: {len(grouped)}")
+        if len(grouped) > 0:
+            logger.debug(
+                f"[WER] group_and_analyze_crashes() first element type: "
+                f"{type(grouped[0])}")
+            logger.debug(
+                f"[WER] group_and_analyze_crashes() first element is dict: "
+                f"{isinstance(grouped[0], dict)}")
+    elif isinstance(grouped, dict):
+        logger.debug(
+            f"[WER] group_and_analyze_crashes() dict keys: "
+            f"{list(grouped.keys())[:10]}")
+    sys.stdout.flush()
+
+    # KRYTYCZNE: Upewnij się, że grouped jest ZAWSZE listą
+    if not isinstance(grouped, list):
+        logger.error(
+            f"[WER] CRITICAL: group_and_analyze_crashes returned "
+            f"{type(grouped)}, expected list! Converting...")
+        if isinstance(grouped, dict):
+            logger.warning(
+                f"[WER] grouped is dict with keys: "
+                f"{list(grouped.keys())[:5] if grouped else 'empty'}")
+            grouped = [grouped] if grouped else []
+        else:
+            grouped = [grouped] if grouped is not None else []
+
+    # DODATKOWA WALIDACJA: Upewnij się, że wszystkie elementy są dict
+    if isinstance(grouped, list):
+        validated_grouped = []
+        for i, item in enumerate(grouped):
+            logger.debug(
+                f"[WER] grouped_crashes[{i}] type: {type(item)}, "
+                f"is_dict: {isinstance(item, dict)}")
+            if isinstance(item, dict):
+                validated_grouped.append(item)
+            else:
+                logger.warning(
+                    f"[WER] grouped_crashes[{i}] is not a dict: {type(item)}, "
+                    f"value sample: {str(item)[:100]}, skipping")
+        grouped = validated_grouped
+
+    return grouped
+
+
+def _simplify_crashes(wer_data, max_recent=50):
+    """Upraszcza i ogranicza recent_crashes."""
+    if not wer_data["recent_crashes"]:
+        return
+
+    original_count = len(wer_data["recent_crashes"])
+    try:
+        wer_data["recent_crashes"].sort(
+            key=lambda x: parse_timestamp(x.get("timestamp", ""))
+            if isinstance(x, dict) else datetime.min,
+            reverse=True
+        )
+    except Exception as e:
+        logger.warning(f"[WER] Error sorting recent_crashes: {e}")
+
+    simplified = []
+    for crash in wer_data["recent_crashes"][:max_recent]:
+        if isinstance(crash, dict):
+            simplified.append({
+                "event_id": str(crash.get("event_id", ""))[:20],
+                "timestamp": str(crash.get("timestamp", ""))[:50],
+                "application": str(crash.get("application", ""))[:100],
+                "module_name": str(crash.get("module_name", ""))[:100],
+                "exception_code": str(crash.get("exception_code", ""))[:50],
+                "type": str(crash.get("type", ""))[:50]
+            })
+        else:
+            simplified.append(crash)
+
+    wer_data["recent_crashes"] = simplified
+    if original_count > max_recent:
+        logger.info(
+            f"[WER] Limited recent_crashes: {original_count} -> "
+            f"{len(simplified)}")
+
+
+def _simplify_grouped_crashes(wer_data, max_groups=20):
+    """Upraszcza i ogranicza grouped_crashes."""
+    if not wer_data.get("grouped_crashes"):
+        return
+
+    grouped_crashes = wer_data.get("grouped_crashes", [])
+    if not isinstance(grouped_crashes, list):
+        logger.error(
+            f"[WER] CRITICAL: grouped_crashes is not a list! "
+            f"Type: {type(grouped_crashes)}")
+        from utils.error_analyzer import log_error_with_analysis
+        log_error_with_analysis(
+            TypeError(
+                f"grouped_crashes is {type(grouped_crashes).__name__} "
+                "instead of list"),
+            grouped_crashes,
+            {
+                'variable_name': 'grouped_crashes',
+                'location': 'wer.py:_simplify_grouped_crashes',
+                'function': '_simplify_grouped_crashes'
+            },
+            continue_execution=True
+        )
+        grouped_crashes = []
+
+    original_count = len(grouped_crashes)
+    simplified_groups = []
+
+    for idx, group in enumerate(grouped_crashes[:max_groups]):
+        if not isinstance(group, dict):
+            logger.warning(
+                f"[WER] group[{idx}] is not a dict: {type(group)}, skipping")
+            continue
+
+        try:
+            simplified = {
+                "application": group.get("application", ""),
+                "module_name": group.get("module_name", ""),
+                "exception_code": group.get("exception_code", ""),
+                "total_occurrences": group.get("total_occurrences", 0),
+                "occurrences_30min": group.get("occurrences_30min", 0),
+                "occurrences_24h": group.get("occurrences_24h", 0),
+                "is_repeating": group.get("is_repeating", False),
+                "first_occurrence": group.get("first_occurrence", ""),
+                "last_occurrence": group.get("last_occurrence", "")
+            }
+
+            latest_crash = group.get("latest_crash", {})
+            if latest_crash and isinstance(latest_crash, dict):
+                simplified["latest_crash"] = {
+                    "timestamp": latest_crash.get("timestamp", ""),
+                    "application": latest_crash.get("application", ""),
+                    "module_name": latest_crash.get("module_name", ""),
+                    "exception_code": latest_crash.get("exception_code", "")
+                }
+            else:
+                simplified["latest_crash"] = {}
+
+            simplified_groups.append(simplified)
+        except Exception as e:
+            logger.error(f"[WER] Error processing group[{idx}]: {e}")
+            from utils.error_analyzer import log_error_with_analysis
+            log_error_with_analysis(
+                e,
+                group,
+                {
+                    'variable_name': f'grouped_crashes[{idx}]',
+                    'location': 'wer.py:_simplify_grouped_crashes',
+                    'function': '_simplify_grouped_crashes'
+                },
+                continue_execution=True
+            )
+
+    wer_data["grouped_crashes"] = simplified_groups
+    if original_count > max_groups:
+        logger.info(
+            f"[WER] Limited grouped_crashes: {original_count} -> "
+            f"{len(simplified_groups)}")
+
+
+def _simplify_reports(wer_data, max_reports=20):
+    """Upraszcza i ogranicza reports."""
+    if not wer_data["reports"]:
+        return
+
+    original_count = len(wer_data["reports"])
+    simplified_reports = []
+
+    for report in wer_data["reports"][:max_reports]:
+        if isinstance(report, dict):
+            simplified_reports.append({
+                "timestamp": report.get("timestamp", ""),
+                "report_type": report.get("report_type", ""),
+                "application": report.get("application", ""),
+                "version": report.get("version", ""),
+                "bucket": report.get("bucket", "")
+            })
+        else:
+            simplified_reports.append(report)
+
+    try:
+        simplified_reports.sort(
+            key=lambda x: parse_timestamp(x.get("timestamp", ""))
+            if isinstance(x, dict) else datetime.min,
+            reverse=True
+        )
+    except Exception:
+        pass
+
+    wer_data["reports"] = simplified_reports
+    if original_count > max_reports:
+        logger.info(
+            f"[WER] Limited reports: {original_count} -> "
+            f"{len(simplified_reports)}")
+
+
+def _convert_datetime_to_strings(wer_data):
+    """Konwertuje wszystkie obiekty datetime na stringi."""
+    def convert_datetime_to_string(obj, depth=0, max_depth=50):
+        """Rekurencyjnie konwertuje wszystkie obiekty datetime na stringi."""
+        if depth > max_depth:
+            logger.warning(
+                f"[WER] Max depth {max_depth} reached in datetime conversion")
+            return str(obj) if obj is not None else None
+
+        if obj is None:
+            return None
+
+        if isinstance(obj, datetime):
+            try:
+                return obj.isoformat()
+            except Exception as e:
+                logger.warning(
+                    f"[WER] Error converting datetime to isoformat: {e}")
+                return str(obj)
+
+        elif isinstance(obj, dict):
+            try:
+                return {
+                    k: convert_datetime_to_string(v, depth + 1, max_depth)
+                    for k, v in obj.items()
+                }
+            except Exception as e:
+                logger.warning(
+                    f"[WER] Error converting dict at depth {depth}: {e}")
+                return str(obj)
+
+        elif isinstance(obj, list):
+            try:
+                return [
+                    convert_datetime_to_string(item, depth + 1, max_depth)
+                    for item in obj
+                ]
+            except Exception as e:
+                logger.warning(
+                    f"[WER] Error converting list at depth {depth}: {e}")
+                return str(obj)
+
+        else:
+            return obj
+
+    logger.info(
+        "[WER] Converting datetime objects to strings for serialization...")
+    sys.stdout.flush()
+
+    try:
+        total_items = (
+            len(wer_data.get('recent_crashes', [])) +
+            len(wer_data.get('reports', [])) +
+            len(wer_data.get('grouped_crashes', []))
+        )
+
+        if total_items > 200:
+            logger.warning(
+                f"[WER] Skipping datetime conversion - too many items "
+                f"({total_items}), data already simplified")
+            sys.stdout.flush()
+        else:
+            wer_data = convert_datetime_to_string(wer_data)
+            logger.info("[WER] Datetime conversion completed successfully")
+            sys.stdout.flush()
+    except Exception as e:
+        logger.warning(f"[WER] Error converting datetime objects: {e}")
+        sys.stdout.flush()
+
+    return wer_data
+
+
+def _collect_event_log_crashes(wer_data):
+    """Zbiera crashy z Event Log."""
+    logger.info("[WER] Collecting crash data from Event Log")
+    event_crashes = collect_from_event_log()
+    wer_data["recent_crashes"].extend(event_crashes)
+
+
+def _collect_wer_files_and_reports(wer_data):
+    """Zbiera crashy z plików WER."""
+    logger.info(
+        "[WER] Collecting crash data from WER directories "
+        "(ReportQueue, ReportArchive)")
+    wer_crashes = collect_from_wer_directories()
+    wer_data["recent_crashes"].extend(wer_crashes)
+    if wer_crashes:
+        wer_data["reports"].append({
+            "source": "wer_file",
+            "count": len(wer_crashes),
+            "description": (
+                f"Parsed {len(wer_crashes)} .wer files from "
+                "ReportQueue/ReportArchive"
+            )
+        })
+
+
+def _log_debug_info(wer_data):
+    """Loguje informacje debugowe o strukturze wer_data."""
+    logger.debug(f"[WER] DEBUG: wer_data type: {type(wer_data)}")
+    logger.debug(f"[WER] DEBUG: wer_data keys: {list(wer_data.keys())}")
+    logger.debug(
+        f"[WER] DEBUG: grouped_crashes type: "
+        f"{type(wer_data.get('grouped_crashes'))}")
+    logger.debug(
+        f"[WER] DEBUG: grouped_crashes is list: "
+        f"{isinstance(wer_data.get('grouped_crashes'), list)}")
+    logger.debug(
+        f"[WER] DEBUG: grouped_crashes length: "
+        f"{len(wer_data.get('grouped_crashes', []))}")
+
+
+def _log_return_info(wer_data):
+    """Loguje informacje o zwracanych danych."""
+    logger.debug(
+        f"[WER] DEBUG: Returning wer_data, type: {type(wer_data)}")
+    logger.debug(
+        f"[WER] DEBUG: Returning wer_data keys: "
+        f"{list(wer_data.keys()) if isinstance(wer_data, dict) else 'N/A'}")
+    sys.stdout.flush()
+    for handler in logger.handlers:
+        if hasattr(handler, 'flush'):
+            handler.flush()
+
+
+def _warn_if_no_reports(wer_data):
+    """Ostrzega, jeśli brak raportów."""
+    if wer_data.get("statistics", {}).get("report_count", 0) == 0:
+        logger.warning(
+            "[WER] No WER reports found. LocalDumps might have been "
+            "disabled previously. Now that they're enabled, crashes need "
+            "time to accumulate. Re-run the tool after the next crash.")
+
+
+def _write_debug_file(wer_data):
+    """Zapisuje informacje debugowe do pliku."""
+    try:
+        debug_file = Path("logs/wer_debug.txt")
+        with open(debug_file, "a", encoding="utf-8") as f:
+            f.write(
+                f"{datetime.now()} | [WER] Returning wer_data, "
+                f"type: {type(wer_data)}\n")
+            if isinstance(wer_data, dict):
+                f.write(
+                    f"{datetime.now()} | [WER] Keys: "
+                    f"{list(wer_data.keys())}\n")
+                if 'grouped_crashes' in wer_data:
+                    f.write(
+                        f"{datetime.now()} | [WER] grouped_crashes type: "
+                        f"{type(wer_data['grouped_crashes'])}\n")
+                    f.write(
+                        f"{datetime.now()} | [WER] grouped_crashes is list: "
+                        f"{isinstance(wer_data['grouped_crashes'], list)}\n")
+            f.flush()
+    except Exception as e:
+        logger.warning(f"[WER] Failed to write debug file: {e}")
+
+
+def _optimize_wer_data(wer_data):
+    """Optymalizuje dane WER poprzez uproszczenie i ograniczenie ilości."""
+    original_recent_count = len(wer_data["recent_crashes"])
+    original_reports_count = len(wer_data["reports"])
+    original_grouped_count = len(wer_data["grouped_crashes"])
+
+    _simplify_crashes(wer_data, max_recent=50)
+    _simplify_grouped_crashes(wer_data, max_groups=20)
+    _simplify_reports(wer_data, max_reports=20)
+
+    wer_data["statistics"]["original_recent_crashes_count"] = (
+        original_recent_count
+    )
+    wer_data["statistics"]["original_reports_count"] = original_reports_count
+    wer_data["statistics"]["original_grouped_crashes_count"] = (
+        original_grouped_count
+    )
+
+    wer_data = _convert_datetime_to_strings(wer_data)
+
+    logger.info(
+        f"[WER] Optimized data: {original_recent_count}->"
+        f"{len(wer_data.get('recent_crashes', []))} crashes, "
+        f"{original_reports_count}->"
+        f"{len(wer_data.get('reports', []))} reports, "
+        f"{original_grouped_count}->"
+        f"{len(wer_data.get('grouped_crashes', []))} groups")
+
+    return wer_data
+
+
+def _calculate_statistics(wer_data, grouped):
+    """Oblicza statystyki crashy."""
+    now = datetime.now()
+    last_30min = now - timedelta(minutes=30)
+    last_24h = now - timedelta(hours=24)
+
+    # Bezpieczne filtrowanie crashy z timestampami
+    crashes_30min = []
+    crashes_24h = []
+    for c in wer_data["recent_crashes"]:
+        if not isinstance(c, dict):
+            continue
+        timestamp = parse_timestamp(c.get("timestamp", ""))
+        if timestamp is not None:
+            if timestamp >= last_30min:
+                crashes_30min.append(c)
+            if timestamp >= last_24h:
+                crashes_24h.append(c)
+
+    # Bezpieczne filtrowanie powtarzających się crashy
+    repeating = []
+    logger.debug(
+        f"[WER] Before filtering repeating - grouped type: {type(grouped)}, "
+        f"is_list: {isinstance(grouped, list)}")
+    if isinstance(grouped, list):
+        logger.debug(
+            f"[WER] Before filtering repeating - grouped length: "
+            f"{len(grouped)}")
+        for idx, g in enumerate(grouped):
+            logger.debug(
+                f"[WER] Processing group[{idx}] for repeating check: "
+                f"type={type(g)}, is_dict={isinstance(g, dict)}")
+
+            if isinstance(g, dict):
+                try:
+                    occurrences_30min = g.get("occurrences_30min", 0)
+                    if isinstance(occurrences_30min, (int, float)
+                                  ) and occurrences_30min >= 3:
+                        repeating.append(g)
+                except Exception as e:
+                    logger.warning(
+                        f"[WER] Error processing group[{idx}] for repeating "
+                        f"check: {e}")
+                    from utils.error_analyzer import log_error_with_analysis
+                    log_error_with_analysis(
+                        e,
+                        g,
+                        {
+                            'variable_name': f'grouped[{idx}]',
+                            'location': 'wer.py:_calculate_statistics',
+                            'function': '_calculate_statistics'
+                        },
+                        continue_execution=True
+                    )
+                    continue
+            elif isinstance(g, list):
+                logger.error(
+                    f"[WER] CRITICAL: group[{idx}] is list instead of dict "
+                    "in repeating check! Skipping...")
+                from utils.error_analyzer import log_error_with_analysis
+                log_error_with_analysis(
+                    TypeError(f"group[{idx}] is list instead of dict"),
+                    g,
+                    {
+                        'variable_name': f'grouped[{idx}]',
+                        'location': 'wer.py:_calculate_statistics',
+                        'function': '_calculate_statistics'
+                    },
+                    continue_execution=True
+                )
+                continue
+            else:
+                logger.warning(
+                    f"[WER] Unexpected type in grouped[{idx}] for repeating "
+                    f"check: {type(g)}")
+                continue
+    else:
+        logger.warning(f"[WER] grouped is not a list: {type(grouped)}")
+
+    wer_data["statistics"] = {
+        "total_crashes": len(wer_data["recent_crashes"]),
+        "crashes_last_30min": len(crashes_30min),
+        "crashes_last_24h": len(crashes_24h),
+        "repeating_crashes": len(repeating)
+    }
+
+    logger.info(
+        f"[WER] Collected {wer_data['statistics']['total_crashes']} crashes, "
+        f"{wer_data['statistics']['crashes_last_30min']} in last 30min, "
+        f"{wer_data['statistics']['repeating_crashes']} repeating")
+
+
 def collect():
     """
     Zbiera szczegółowe dane z Windows Error Reporting o crashach aplikacji i systemu.
@@ -156,618 +722,51 @@ def collect():
             }
         }
     """
-    wer_data = {
-        "recent_crashes": [],
-        "reports": [],
-        "grouped_crashes": [],
-        "statistics": {
-            "total_crashes": 0,
-            "crashes_last_30min": 0,
-            "crashes_last_24h": 0,
-            "repeating_crashes": 0
-        }
-    }
+    wer_data = _initialize_wer_data()
 
     if sys.platform != "win32":
         wer_data["error"] = "Windows only"
         return wer_data
 
     # ✅ AUTODETEKCJA i AUTOKONFIGURACJA LocalDumps
-    logger.info("[WER] Checking LocalDumps configuration...")
-    ld = check_local_dumps()
-
-    if not ld["enabled"]:
-        logger.warning(
-            "[WER] LocalDumps is DISABLED – crash diagnostics will be incomplete.")
-
-        # Attempt auto-fix
-        if enable_local_dumps():
-            logger.info("[WER] LocalDumps was enabled automatically.")
-            print(
-                "⚠️ LocalDumps were disabled. Enabled now.\n"
-                "Please trigger a crash and re-run the tool for full diagnostics.")
-        else:
-            logger.warning(
-                "[WER] LocalDumps could not be enabled automatically.")
-            print(
-                "⚠️ LocalDumps are disabled and cannot be automatically enabled.\n"
-                "Run the program as administrator or enable manually.")
-    else:
-        logger.info(
-            f"[WER] LocalDumps is enabled. Dump folder: {ld.get('dump_folder', 'N/A')}")
-        if ld.get("warnings"):
-            logger.warning(f"[WER] LocalDumps warnings: {ld['warnings']}")
-
-    # Zapisz informacje o LocalDumps w wynikach
-    wer_data["local_dumps"] = ld
+    _check_and_setup_local_dumps(wer_data)
 
     try:
-        # Krok 1: Zbieranie z Event Log
-        logger.info("[WER] Collecting crash data from Event Log")
-        event_crashes = collect_from_event_log()
-        wer_data["recent_crashes"].extend(event_crashes)
+        _collect_event_log_crashes(wer_data)
+        _collect_wer_files_and_reports(wer_data)
 
-        # 2️⃣ Parsowanie .wer files z ReportQueue i ReportArchive
-        logger.info(
-            "[WER] Collecting crash data from WER directories (ReportQueue, ReportArchive)")
-        wer_crashes = collect_from_wer_directories()
-        # wer_crashes to lista crash events wyciągniętych z plików .wer
-        wer_data["recent_crashes"].extend(wer_crashes)
-        # Dla kompatybilności, zapisz informacje o liczbie sparsowanych plików .wer
-        # reports jest listą, więc dodajemy dict z informacjami
-        if wer_crashes:
-            wer_data["reports"].append({
-                "source": "wer_file",
-                "count": len(wer_crashes),
-                "description": f"Parsed {len(wer_crashes)} .wer files from ReportQueue/ReportArchive"
-            })
-
-        # 4️⃣ Powiązanie Event Log → WER Files (korelacja)
+        # Korelacja Event Log → WER Files
         logger.info("[WER] Correlating Event Log crashes with WER files")
         wer_data["recent_crashes"] = correlate_event_log_with_wer_files(
             wer_data["recent_crashes"])
 
-        # Krok 3: Grupowanie i analiza powtarzających się crashy
+        # Krok 3: Grupowanie i walidacja
         logger.info("[WER] Grouping and analyzing repeating crashes")
         grouped = group_and_analyze_crashes(wer_data["recent_crashes"])
-
-        # DEBUG: Szczegółowe logowanie typu zwracanego przez
-        # group_and_analyze_crashes()
+        wer_data["grouped_crashes"] = _validate_grouped_crashes(grouped)
         logger.debug(
-            f"[WER] group_and_analyze_crashes() returned type: {type(grouped)}")
-        logger.debug(
-            f"[WER] group_and_analyze_crashes() is list: {isinstance(grouped, list)}")
-        logger.debug(
-            f"[WER] group_and_analyze_crashes() is dict: {isinstance(grouped, dict)}")
-        if isinstance(grouped, list):
-            logger.debug(
-                f"[WER] group_and_analyze_crashes() length: {len(grouped)}")
-            if len(grouped) > 0:
-                logger.debug(
-                    f"[WER] group_and_analyze_crashes() first element type: {type(grouped[0])}")
-                logger.debug(
-                    f"[WER] group_and_analyze_crashes() first element is dict: {isinstance(grouped[0], dict)}")
-                if isinstance(grouped[0], dict):
-                    logger.debug(
-                        f"[WER] group_and_analyze_crashes() first element keys: {list(grouped[0].keys())[:10]}")
-                logger.debug(
-                    f"[WER] group_and_analyze_crashes() content sample (first 3): {grouped[:3]}")
-        elif isinstance(grouped, dict):
-            logger.debug(
-                f"[WER] group_and_analyze_crashes() dict keys: {list(grouped.keys())[:10]}")
-        sys.stdout.flush()
-
-        # KRYTYCZNE: Upewnij się, że grouped jest ZAWSZE listą (group_and_analyze_crashes zwraca listę)
-        # Konsumenci oczekują listy i iterują po niej - NIE słownika!
-        if not isinstance(grouped, list):
-            logger.error(
-                f"[WER] CRITICAL: group_and_analyze_crashes returned {type(grouped)}, expected list! Converting...")
-            if isinstance(grouped, dict):
-                # Jeśli to dict, zamień na listę z jednym elementem
-                logger.warning(
-                    f"[WER] grouped is dict with keys: {list(grouped.keys())[:5] if grouped else 'empty'}")
-                grouped = [grouped] if grouped else []
-            else:
-                grouped = [grouped] if grouped is not None else []
-
-        # DODATKOWA WALIDACJA: Upewnij się, że wszystkie elementy są dict
-        if isinstance(grouped, list):
-            validated_grouped = []
-            for i, item in enumerate(grouped):
-                # DEBUG: Logowanie typu każdego elementu
-                logger.debug(
-                    f"[WER] grouped_crashes[{i}] type: {type(item)}, is_dict: {isinstance(item, dict)}")
-                if isinstance(item, dict):
-                    validated_grouped.append(item)
-                else:
-                    logger.warning(
-                        f"[WER] grouped_crashes[{i}] is not a dict: {type(item)}, value sample: {str(item)[:100]}, skipping")
-            grouped = validated_grouped
-
-        wer_data["grouped_crashes"] = grouped
-        logger.debug(
-            f"[WER] Final grouped_crashes type: {type(wer_data['grouped_crashes'])}, length: {len(wer_data['grouped_crashes'])}")
+            f"[WER] Final grouped_crashes type: "
+            f"{type(wer_data['grouped_crashes'])}, "
+            f"length: {len(wer_data['grouped_crashes'])}")
         sys.stdout.flush()
 
         # Krok 4: Oblicz statystyki
-        now = datetime.now()
-        last_30min = now - timedelta(minutes=30)
-        last_24h = now - timedelta(hours=24)
+        _calculate_statistics(wer_data, grouped)
 
-        # Bezpieczne filtrowanie crashy z timestampami
-        crashes_30min = []
-        crashes_24h = []
-        for c in wer_data["recent_crashes"]:
-            if not isinstance(c, dict):
-                continue
-            timestamp = parse_timestamp(c.get("timestamp", ""))
-            if timestamp is not None:
-                if timestamp >= last_30min:
-                    crashes_30min.append(c)
-                if timestamp >= last_24h:
-                    crashes_24h.append(c)
+        # OPTYMALIZACJA: Ograniczamy ilość danych
+        wer_data = _optimize_wer_data(wer_data)
 
-        # Bezpieczne filtrowanie powtarzających się crashy
-        # grouped to LISTA, więc iterujemy po niej
-        repeating = []
-        # DEBUG: Sprawdź typ grouped przed iteracją
-        logger.debug(
-            f"[WER] Before filtering repeating - grouped type: {type(grouped)}, is_list: {isinstance(grouped, list)}")
-        if isinstance(grouped, list):
-            logger.debug(
-                f"[WER] Before filtering repeating - grouped length: {len(grouped)}")
-            for idx, g in enumerate(grouped):
-                # DEBUG: Logowanie typu każdego elementu
-                logger.debug(
-                    f"[WER] Processing group[{idx}] for repeating check: type={type(g)}, is_dict={isinstance(g, dict)}")
-
-                if isinstance(g, dict):
-                    # Bezpieczne użycie .get() - g jest dict
-                    try:
-                        occurrences_30min = g.get("occurrences_30min", 0)
-                        if isinstance(occurrences_30min, (int, float)
-                                      ) and occurrences_30min >= 3:
-                            repeating.append(g)
-                    except Exception as e:
-                        logger.warning(
-                            f"[WER] Error processing group[{idx}] for repeating check: {e}")
-                        from utils.error_analyzer import (
-                            log_error_with_analysis,
-                        )
-                        log_error_with_analysis(
-                            e,
-                            g,
-                            {
-                                'variable_name': f'grouped[{idx}]',
-                                'location': 'wer.py:134',
-                                'function': 'collect'
-                            },
-                            continue_execution=True
-                        )
-                        continue
-                elif isinstance(g, list):
-                    # BŁĄD: g jest listą zamiast dict
-                    logger.error(
-                        f"[WER] CRITICAL: group[{idx}] is list instead of dict in repeating check! Skipping...")
-                    from utils.error_analyzer import log_error_with_analysis
-                    log_error_with_analysis(
-                        TypeError(f"group[{idx}] is list instead of dict"),
-                        g,
-                        {
-                            'variable_name': f'grouped[{idx}]',
-                            'location': 'wer.py:134',
-                            'function': 'collect'
-                        },
-                        continue_execution=True
-                    )
-                    continue
-                else:
-                    logger.warning(
-                        f"[WER] Unexpected type in grouped[{idx}] for repeating check: {type(g)}")
-                    continue
-        else:
-            logger.warning(f"[WER] grouped is not a list: {type(grouped)}")
-
-        wer_data["statistics"] = {
-            "total_crashes": len(wer_data["recent_crashes"]),
-            "crashes_last_30min": len(crashes_30min),
-            "crashes_last_24h": len(crashes_24h),
-            "repeating_crashes": len(repeating)
-        }
-
-        logger.info(
-            f"[WER] Collected {wer_data['statistics']['total_crashes']} crashes, "
-            f"{wer_data['statistics']['crashes_last_30min']} in last 30min, "
-            f"{wer_data['statistics']['repeating_crashes']} repeating")
-
-        # OPTYMALIZACJA: Ograniczamy ilość danych, aby uniknąć problemów z pamięcią i serializacją
-        # Problem: 348 crashy powodowały zawieszenie aplikacji podczas zwracania danych
-        # Rozwiązanie: Zwracamy tylko ostatnie N crashy i uproszczone
-        # grouped_crashes
-
-        MAX_RECENT_CRASHES = 50  # Zmniejszone z 100 do 50 - mniej danych
-        MAX_GROUPED_CRASHES_DETAIL = 20  # Zmniejszone z 50 do 20 - mniej grup
-
-        original_recent_count = len(wer_data["recent_crashes"])
-        original_reports_count = len(wer_data["reports"])
-        original_grouped_count = len(wer_data["grouped_crashes"])
-
-        # 1. Ogranicz recent_crashes - tylko ostatnie N (najnowsze) + uprość
-        # strukturę
-        if wer_data["recent_crashes"]:
-            # Sortuj po timestamp (najnowsze pierwsze)
-            try:
-                wer_data["recent_crashes"].sort(
-                    key=lambda x: parse_timestamp(
-                        x.get(
-                            "timestamp",
-                            "")) if isinstance(
-                        x,
-                        dict) else datetime.min,
-                    reverse=True
-                )
-            except Exception as e:
-                logger.warning(f"[WER] Error sorting recent_crashes: {e}")
-
-            # Uprość strukturę - usuń zbędne pola z każdego crasha
-            simplified_crashes = []
-            for crash in wer_data["recent_crashes"][:MAX_RECENT_CRASHES]:
-                if isinstance(crash, dict):
-                    # Zachowaj tylko kluczowe pola potrzebne do analizy
-                    simplified = {
-                        "event_id": str(crash.get("event_id", ""))[:20],
-                        "timestamp": str(crash.get("timestamp", ""))[:50],
-                        "application": str(crash.get("application", ""))[:100],
-                        "module_name": str(crash.get("module_name", ""))[:100],
-                        "exception_code": str(crash.get("exception_code", ""))[:50],
-                        "type": str(crash.get("type", ""))[:50]
-                    }
-                    simplified_crashes.append(simplified)
-                else:
-                    simplified_crashes.append(crash)
-
-            wer_data["recent_crashes"] = simplified_crashes
-            logger.info(
-                f"[WER] Limited and simplified recent_crashes: {original_recent_count} -> {len(simplified_crashes)}")
-
-        # 2. Uprość grouped_crashes - usuń pełne obiekty crash, zostaw tylko statystyki
-        # DEBUG: Sprawdź typ grouped_crashes przed iteracją
-        logger.debug(
-            f"[WER] Before simplification - grouped_crashes type: {type(wer_data.get('grouped_crashes'))}")
-        logger.debug(
-            f"[WER] Before simplification - grouped_crashes is list: {isinstance(wer_data.get('grouped_crashes'), list)}")
-        if isinstance(wer_data.get('grouped_crashes'), list):
-            logger.debug(
-                f"[WER] Before simplification - grouped_crashes length: {len(wer_data.get('grouped_crashes', []))}")
-        sys.stdout.flush()
-
-        if wer_data.get("grouped_crashes"):
-            # ZABEZPIECZENIE: Upewnij się, że grouped_crashes jest listą przed
-            # iteracją
-            grouped_crashes = wer_data.get("grouped_crashes", [])
-            if not isinstance(grouped_crashes, list):
-                logger.error(
-                    f"[WER] CRITICAL: grouped_crashes is not a list before simplification! Type: {type(grouped_crashes)}")
-                # Użyj error_analyzer do kompleksowej analizy
-                from utils.error_analyzer import log_error_with_analysis
-                log_error_with_analysis(
-                    TypeError(
-                        f"grouped_crashes is {type(grouped_crashes).__name__} instead of list"),
-                    grouped_crashes,
-                    {
-                        'variable_name': 'grouped_crashes',
-                        'location': 'wer.py:177',
-                        'function': 'collect'
-                    },
-                    continue_execution=True
-                )
-                grouped_crashes = []
-
-            simplified_groups = []
-            for idx, group in enumerate(
-                    grouped_crashes[:MAX_GROUPED_CRASHES_DETAIL]):
-                # DEBUG: Logowanie typu każdego elementu przed użyciem .get()
-                logger.debug(
-                    f"[WER] Processing group[{idx}]: type={type(group)}, is_dict={isinstance(group, dict)}")
-
-                if isinstance(group, dict):
-                    # Bezpieczne użycie .get() - group jest dict
-                    try:
-                        # Zachowaj tylko kluczowe pola, usuń pełne obiekty
-                        # crash
-                        simplified = {
-                            "application": group.get("application", ""),
-                            "module_name": group.get("module_name", ""),
-                            "exception_code": group.get("exception_code", ""),
-                            "total_occurrences": group.get("total_occurrences", 0),
-                            "occurrences_30min": group.get("occurrences_30min", 0),
-                            "occurrences_24h": group.get("occurrences_24h", 0),
-                            "is_repeating": group.get("is_repeating", False),
-                            "first_occurrence": group.get("first_occurrence", ""),
-                            "last_occurrence": group.get("last_occurrence", "")
-                        }
-                        # Usuń latest_crash - może zawierać duże obiekty
-                        # Jeśli latest_crash istnieje, wyciągnij tylko
-                        # podstawowe pola (bez pełnego obiektu)
-                        latest_crash = group.get("latest_crash", {})
-                        if latest_crash and isinstance(latest_crash, dict):
-                            # Zachowaj tylko podstawowe pola z latest_crash
-                            # (bez zagnieżdżonych obiektów)
-                            simplified["latest_crash"] = {
-                                "timestamp": latest_crash.get(
-                                    "timestamp", ""), "application": latest_crash.get(
-                                    "application", ""), "module_name": latest_crash.get(
-                                    "module_name", ""), "exception_code": latest_crash.get(
-                                    "exception_code", "")}
-                        else:
-                            simplified["latest_crash"] = {}
-
-                        simplified_groups.append(simplified)
-                    except Exception as e:
-                        logger.error(
-                            f"[WER] Error processing group[{idx}]: {e}")
-                        from utils.error_analyzer import (
-                            log_error_with_analysis,
-                        )
-                        log_error_with_analysis(
-                            e,
-                            group,
-                            {
-                                'variable_name': f'grouped_crashes[{idx}]',
-                                'location': 'wer.py:179',
-                                'function': 'collect'
-                            },
-                            continue_execution=True
-                        )
-                        # Pomiń ten element, kontynuuj z następnym
-                        continue
-                elif isinstance(group, list):
-                    # BŁĄD: group jest listą zamiast dict - to nie powinno się
-                    # zdarzyć
-                    logger.error(
-                        f"[WER] CRITICAL: group[{idx}] is list (length: {len(group)}) instead of dict! Skipping...")
-                    from utils.error_analyzer import log_error_with_analysis
-                    log_error_with_analysis(
-                        TypeError(f"group[{idx}] is list instead of dict"),
-                        group,
-                        {
-                            'variable_name': f'grouped_crashes[{idx}]',
-                            'location': 'wer.py:179',
-                            'function': 'collect'
-                        },
-                        continue_execution=True
-                    )
-                    # Pomiń ten element
-                    continue
-                else:
-                    logger.warning(
-                        f"[WER] Unexpected type in grouped_crashes[{idx}]: {type(group)}, value sample: {str(group)[:100]}")
-                    # Pomiń ten element
-                    continue
-
-            wer_data["grouped_crashes"] = simplified_groups
-            if original_grouped_count > MAX_GROUPED_CRASHES_DETAIL:
-                logger.info(
-                    f"[WER] Limited grouped_crashes: {original_grouped_count} -> {len(simplified_groups)}")
-
-        # 3. Uprość reports - zostaw tylko podstawowe informacje (bez pełnych
-        # ścieżek i dużych danych)
-        if wer_data["reports"]:
-            simplified_reports = []
-            for report in wer_data["reports"][:20]:  # Limit do 20
-                if isinstance(report, dict):
-                    # Zachowaj tylko podstawowe pola, usuń duże obiekty
-                    simplified = {
-                        "timestamp": report.get("timestamp", ""),
-                        "report_type": report.get("report_type", ""),
-                        "application": report.get("application", ""),
-                        "version": report.get("version", ""),
-                        "bucket": report.get("bucket", "")
-                    }
-                    # Usuń pełne ścieżki i duże dane
-                    simplified_reports.append(simplified)
-                else:
-                    simplified_reports.append(report)
-
-            # Sortuj po czasie (najnowsze pierwsze)
-            try:
-                simplified_reports.sort(
-                    key=lambda x: parse_timestamp(
-                        x.get(
-                            "timestamp",
-                            "")) if isinstance(
-                        x,
-                        dict) else datetime.min,
-                    reverse=True
-                )
-            except Exception:
-                pass
-
-            wer_data["reports"] = simplified_reports
-            if original_reports_count > 20:
-                logger.info(
-                    f"[WER] Limited reports: {original_reports_count} -> {len(simplified_reports)}")
-            elif len(simplified_reports) < original_reports_count:
-                logger.info(
-                    f"[WER] Simplified reports: {original_reports_count} -> {len(simplified_reports)}")
-
-        # Dodaj informację o oryginalnych rozmiarach do statystyk (dla
-        # debugowania)
-        wer_data["statistics"]["original_recent_crashes_count"] = original_recent_count
-        wer_data["statistics"]["original_reports_count"] = original_reports_count
-        wer_data["statistics"]["original_grouped_crashes_count"] = original_grouped_count
-
-        # KONWERSJA DATETIME NA STRINGI - kluczowe dla serializacji!
-        # Problem: obiekty datetime nie są serializowalne do JSON i mogą
-        # powodować zawieszenie
-        def convert_datetime_to_string(obj, depth=0, max_depth=50):
-            """Rekurencyjnie konwertuje wszystkie obiekty datetime na stringi."""
-            # Zabezpieczenie przed nieskończoną rekurencją
-            if depth > max_depth:
-                logger.warning(
-                    f"[WER] Max depth {max_depth} reached in datetime conversion")
-                return str(obj) if obj is not None else None
-
-            # Obsługa None - zwróć None zamiast próbować konwertować
-            if obj is None:
-                return None
-
-            # Obsługa datetime
-            if isinstance(obj, datetime):
-                try:
-                    return obj.isoformat()
-                except Exception as e:
-                    logger.warning(
-                        f"[WER] Error converting datetime to isoformat: {e}")
-                    return str(obj)
-
-            # Obsługa dict
-            elif isinstance(obj, dict):
-                try:
-                    return {k: convert_datetime_to_string(
-                        v, depth + 1, max_depth) for k, v in obj.items()}
-                except Exception as e:
-                    logger.warning(
-                        f"[WER] Error converting dict at depth {depth}: {e}")
-                    return str(obj)
-
-            # Obsługa list
-            elif isinstance(obj, list):
-                try:
-                    return [convert_datetime_to_string(
-                        item, depth + 1, max_depth) for item in obj]
-                except Exception as e:
-                    logger.warning(
-                        f"[WER] Error converting list at depth {depth}: {e}")
-                    return str(obj)
-
-            # Wszystko inne - zwróć jak jest
-            else:
-                return obj
-
-        logger.info(
-            "[WER] Converting datetime objects to strings for serialization...")
-        sys.stdout.flush()
-        try:
-            # ZABEZPIECZENIE: Konwersja może być wolna - wykonaj tylko jeśli dane nie są zbyt duże
-            # Sprawdź rozmiar danych przed konwersją
-            total_items = len(wer_data.get('recent_crashes',
-                                           [])) + len(wer_data.get('reports',
-                                                                   [])) + len(wer_data.get('grouped_crashes',
-                                                                                           []))
-            # Jeśli więcej niż 200 elementów, pomin konwersję (może być wolna)
-            if total_items > 200:
-                logger.warning(
-                    f"[WER] Skipping datetime conversion - too many items ({total_items}), data already simplified")
-                sys.stdout.flush()
-            else:
-                wer_data = convert_datetime_to_string(wer_data)
-                logger.info("[WER] Datetime conversion completed successfully")
-                sys.stdout.flush()
-        except Exception as e:
-            logger.warning(f"[WER] Error converting datetime objects: {e}")
-            sys.stdout.flush()
-            # Nie przerywaj - kontynuuj z oryginalnymi danymi (które są już
-            # uproszczone)
-
-        logger.info(
-            f"[WER] Optimized data: {original_recent_count}->{len(wer_data.get('recent_crashes', []))} crashes, "
-            f"{original_reports_count}->{len(wer_data.get('reports', []))} reports, "
-            f"{original_grouped_count}->{len(wer_data.get('grouped_crashes', []))} groups")
-
-        # DEBUG: Sprawdź strukturę przed zwróceniem
-        logger.debug(f"[WER] DEBUG: wer_data type: {type(wer_data)}")
-        logger.debug(f"[WER] DEBUG: wer_data keys: {list(wer_data.keys())}")
-        logger.debug(
-            f"[WER] DEBUG: grouped_crashes type: {type(wer_data.get('grouped_crashes'))}")
-        logger.debug(
-            f"[WER] DEBUG: grouped_crashes is list: {isinstance(wer_data.get('grouped_crashes'), list)}")
-        logger.debug(
-            f"[WER] DEBUG: grouped_crashes length: {len(wer_data.get('grouped_crashes', []))}")
+        _log_debug_info(wer_data)
 
     except Exception as e:
         logger.exception(f"[WER] Exception during collection: {e}")
         wer_data["collection_error"] = f"Failed to collect WER data: {e}"
 
-    # DEBUG: Sprawdź strukturę przed zwróceniem (nawet po błędzie)
-    logger.debug(f"[WER] DEBUG: Returning wer_data, type: {type(wer_data)}")
-    logger.debug(
-        f"[WER] DEBUG: Returning wer_data keys: {list(wer_data.keys()) if isinstance(wer_data, dict) else 'N/A'}")
+    _log_return_info(wer_data)
+    _write_debug_file(wer_data)
+    _warn_if_no_reports(wer_data)
 
-    # FORCE FLUSH - upewnij się, że logi są zapisane
-    # sys jest już zaimportowany na początku pliku (linia 6)
-    sys.stdout.flush()
-    for handler in logger.handlers:
-        if hasattr(handler, 'flush'):
-            handler.flush()
-
-    # Dodatkowy log do pliku bezpośrednio (na wypadek problemów z loggerem)
-    try:
-        debug_file = Path("logs/wer_debug.txt")
-        with open(debug_file, "a", encoding="utf-8") as f:
-            f.write(
-                f"{datetime.now()} | [WER] Returning wer_data, type: {type(wer_data)}\n")
-            if isinstance(wer_data, dict):
-                f.write(
-                    f"{datetime.now()} | [WER] Keys: {list(wer_data.keys())}\n")
-                if 'grouped_crashes' in wer_data:
-                    f.write(
-                        f"{datetime.now()} | [WER] grouped_crashes type: {type(wer_data['grouped_crashes'])}\n")
-                    f.write(
-                        f"{datetime.now()} | [WER] grouped_crashes is list: {isinstance(wer_data['grouped_crashes'], list)}\n")
-            f.flush()
-    except Exception as e:
-        logger.warning(f"[WER] Failed to write debug file: {e}")
-
-    logger.info(
-        "[WER] DEBUG: About to RETURN wer_data - LAST LINE IN collect()")
-    sys.stdout.flush()
-
-    # Dodatkowy zapis do pliku przed return
-    try:
-        debug_file = Path("logs/wer_return_debug.txt")
-        with open(debug_file, "a", encoding="utf-8") as f:
-            f.write(f"{datetime.now()} | [WER] RETURNING wer_data\n")
-            f.write(f"{datetime.now()} | [WER] Type: {type(wer_data)}\n")
-            if isinstance(wer_data, dict):
-                f.write(
-                    f"{datetime.now()} | [WER] Keys: {list(wer_data.keys())}\n")
-                if 'grouped_crashes' in wer_data:
-                    f.write(
-                        f"{datetime.now()} | [WER] grouped_crashes type: {type(wer_data['grouped_crashes'])}\n")
-                    f.write(
-                        f"{datetime.now()} | [WER] grouped_crashes is list: {isinstance(wer_data['grouped_crashes'], list)}\n")
-            f.flush()
-    except Exception as e:
-        logger.warning(f"[WER] Failed to write return debug file: {e}")
-
-    logger.info("[WER] DEBUG: ACTUALLY RETURNING NOW")
-    sys.stdout.flush()
-
-    # ✅ 3. OSTRZEGANIE / SELF-AWARE MODE – jeżeli dumpów nie ma
-    report_count = len(wer_data.get("reports", []))
-    total_crashes = wer_data.get("statistics", {}).get("total_crashes", 0)
-
-    if report_count == 0 and total_crashes == 0:
-        logger.warning(
-            "[WER] No WER reports found. LocalDumps might have been disabled previously.")
-        print("⚠️ No WER reports found.\n"
-              "LocalDumps might have been disabled previously.\n"
-              "Now that they're enabled, crashes need time to accumulate.\n"
-              "Re-run the tool after the next crash.")
-
-    # Próba zwrócenia z dodatkowym logowaniem
-    try:
-        result = wer_data
-        logger.info("[WER] DEBUG: wer_data assigned to result variable")
-        sys.stdout.flush()
-        logger.info("[WER] DEBUG: About to execute return statement")
-        sys.stdout.flush()
-        return result
-    except Exception as e:
-        logger.exception(f"[WER] DEBUG: Exception during return: {e}")
-        sys.stdout.flush()
-        raise
+    return wer_data
 
 
 def collect_from_event_log():
@@ -1535,7 +1534,7 @@ def parse_wer_ini_with_sections(wer_file_path, content):
                     timestamp,
                     datetime) else str(timestamp),
                 "message": f"WER file: {wer_file_path.name}",
-                "source": "Windows Error Reporting",
+                "source": "wer_file",
                 "provider": "Windows Error Reporting",
                 "application": app_name or "Unknown",
                 "faulting_application_name": app_name or "Unknown",
@@ -1553,7 +1552,6 @@ def parse_wer_ini_with_sections(wer_file_path, content):
                     module_name,
                     exception_code),
                 "severity": get_exception_severity(exception_code),
-                "source": "wer_file",
                 "wer_file_path": str(wer_file_path),
                 "report_type": report_type or "",
                 "report_status": report_status or "",
