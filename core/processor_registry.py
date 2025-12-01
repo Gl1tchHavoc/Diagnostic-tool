@@ -112,7 +112,7 @@ def register_all_processors():
     """
     Rejestruje wszystkie dostępne procesory.
     Wywoływane przy starcie aplikacji.
-    
+
     NOTE: Processors moved to archive/ - not needed in MVP.
     This function is kept for backward compatibility but does nothing.
     """
@@ -142,6 +142,3 @@ def register_all_processors():
     # registry.register("system_info_processor", system_info_processor.process,
     #                   "Processes system info", "system_info")
     pass
-
-    logger.info(
-        f"[PROCESSOR_REGISTRY] Registered {len(registry.get_all())} processors")

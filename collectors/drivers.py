@@ -65,7 +65,7 @@ def _collect_drivers_from_wmi():
         c = wmi.WMI()
         try:
             drivers = c.Win32_PnPSignedDriver()
-        except (AttributeError, TypeError, ValueError) as e:
+        except (AttributeError, TypeError, ValueError):
             # WMI może zwracać różne błędy
             return []
 
@@ -74,7 +74,7 @@ def _collect_drivers_from_wmi():
             if driver_info:
                 results.append(driver_info)
 
-    except (AttributeError, TypeError, ValueError, ImportError) as e:
+    except (AttributeError, TypeError, ValueError, ImportError):
         # WMI może zwracać różne błędy lub może nie być dostępny
         return []
 

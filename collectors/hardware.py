@@ -1098,7 +1098,7 @@ def _collect_usb():
                         'pnp_class': device.PNPClass.strip()
                         if device.PNPClass else None
                     })
-                except (AttributeError, TypeError, ValueError) as e:
+                except (AttributeError, TypeError, ValueError):
                     # USB device może mieć brakujące atrybuty
                     pass
         except Exception as e:

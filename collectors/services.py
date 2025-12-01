@@ -169,7 +169,7 @@ def _collect_services_from_wmi(services_data):
     try:
         c = wmi.WMI()
         services = c.Win32_Service()
-    except (AttributeError, TypeError, ValueError, ImportError) as e:
+    except (AttributeError, TypeError, ValueError, ImportError):
         # WMI może zwracać różne błędy lub może nie być dostępny
         return
 
