@@ -31,10 +31,8 @@ jobs:
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
       with:
-        file: ./coverage.xml
-        flags: unittests
-        name: codecov-umbrella
-        fail_ci_if_error: false  # Nie przerywaj CI jeśli Codecov ma rate limit
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: ./coverage.xml
     
     - name: Validate PlantUML diagram exists
       shell: pwsh
