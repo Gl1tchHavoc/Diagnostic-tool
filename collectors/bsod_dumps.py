@@ -90,7 +90,7 @@ def filter_whea_events(event_id, message):
 
     # Sprawdź wzorce regex - jeśli pasuje, odrzuć event
     for pattern in WHEA_FILTER_PATTERNS:
-        if re.search(pattern, message):
+        if re.search(pattern, message_lower):
             return True  # Odrzuć - to nie jest faktyczny błąd sprzętowy
 
     return False  # Zachowaj - to może być faktyczny błąd sprzętowy
@@ -368,7 +368,7 @@ def _process_minidump_directory(dump_path, bsod_data):
     """
     Przetwarza katalog z minidumpami i tworzy rozszerzone informacje.
 
-    Pobiera WSZYSTKIE pliki minidump z C:\Windows\Minidump\*.dmp.
+    Pobiera WSZYSTKIE pliki minidump z C:\\Windows\\Minidump\\*.dmp.
 
     Args:
         dump_path: Ścieżka do katalogu minidumpów
@@ -426,7 +426,7 @@ def _process_single_dump_file(dump_path, bsod_data):
 
 def collect_minidumps(bsod_data):
     """
-    Skanuje folder C:\Windows\Minidump\ i zbiera informacje o plikach *.dmp.
+    Skanuje folder C:\\Windows\\Minidump\\ i zbiera informacje o plikach *.dmp.
 
     Dla każdego pliku minidump wyciąga:
     - bugcheck_code (np. 0x0000007E)
@@ -618,7 +618,7 @@ def _correlate_whea_with_crashes(whea_event, bugchecks, minidumps):
                             bugcheck_time_str.split("+")[0].split("Z")[0],
                             fmt
                         )
-                        if abs((bugcheck_time - whea_time).total_seconds()) <= 300:
+                        if abs((bugcheck_time - whea_time).total_seconds()) <= time_window.total_seconds():
                             correlations["related_bugcheck"] = {
                                 "bugcheck_code": bugcheck.get("bugcheck_code"),
                                 "timestamp": bugcheck_time_str,

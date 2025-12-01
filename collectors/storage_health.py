@@ -1,14 +1,8 @@
 import os
+import platform
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
-
-# WMI dla Windows
-if sys.platform == "win32":
-    try:
-        import wmi
-    except ImportError:
-        wmi = None
 
 from utils.subprocess_helper import run_powershell_hidden
 
@@ -31,13 +25,19 @@ def _initialize_storage_data():
 def _check_platform_and_wmi():
     """
     Sprawdza czy platforma to Windows i czy WMI jest dostępne.
+    Używa leniwego importu WMI, aby uniknąć problemów w testach.
 
     Returns:
-        bool: True jeśli platforma i WMI są OK
+        tuple: (is_windows, wmi_module) - True/False i moduł WMI lub None
     """
-    if sys.platform != "win32" or not wmi:
-        return False
-    return True
+    if platform.system() != "Windows":
+        return False, None
+
+    try:
+        import wmi  # Lazy import only here
+        return True, wmi
+    except Exception:
+        return False, None
 
 
 def _is_ci_environment():
@@ -74,15 +74,16 @@ def _create_disk_info(disk):
     }
 
 
-def _collect_disk_info_from_wmi(storage_data):
+def _collect_disk_info_from_wmi(storage_data, wmi_module):
     """
     Zbiera informacje o dyskach przez WMI.
 
     Args:
         storage_data: Słownik z danymi storage do uzupełnienia
+        wmi_module: Moduł WMI do użycia
     """
     try:
-        c = wmi.WMI()
+        c = wmi_module.WMI()
         disks = c.Win32_DiskDrive()
     except (AttributeError, TypeError, ValueError, ImportError):
         # WMI może zwracać różne błędy lub może nie być dostępny
@@ -181,15 +182,16 @@ def _collect_disk_errors_from_event_log(storage_data):
         pass
 
 
-def _try_collect_smart_data(storage_data):
+def _try_collect_smart_data(storage_data, wmi_module):
     """
     Próbuje pobrać SMART data (obecnie tylko ustawia flagę).
 
     Args:
         storage_data: Słownik z danymi storage do uzupełnienia
+        wmi_module: Moduł WMI do użycia
     """
     try:
-        c = wmi.WMI()
+        c = wmi_module.WMI()
         for _ in c.Win32_DiskDrive():
             storage_data["smart_available"] = False
             break
@@ -205,7 +207,8 @@ def collect():
     """
     storage_data = _initialize_storage_data()
 
-    if not _check_platform_and_wmi():
+    is_windows, wmi_module = _check_platform_and_wmi()
+    if not is_windows or not wmi_module:
         storage_data["error"] = "WMI not available - Windows only"
         return storage_data
 
@@ -213,9 +216,9 @@ def collect():
         return storage_data
 
     try:
-        _collect_disk_info_from_wmi(storage_data)
+        _collect_disk_info_from_wmi(storage_data, wmi_module)
         _collect_disk_errors_from_event_log(storage_data)
-        _try_collect_smart_data(storage_data)
+        _try_collect_smart_data(storage_data, wmi_module)
     except Exception as e:
         storage_data["error"] = (
             f"Failed to collect storage health: "

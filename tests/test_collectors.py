@@ -185,23 +185,28 @@ class TestCollectors(unittest.TestCase):
     
     def test_storage_health_collector(self):
         """Test collectora storage_health."""
-        # W CI mockuj WMI - może powodować access violation
+        # W CI mockuj _check_platform_and_wmi - unika access violation
         if IS_CI:
-            with patch('collectors.storage_health.wmi') as mock_wmi_module:
-                # Stwórz mock obiektu WMI używając MagicMock
-                mock_wmi_instance = MagicMock()
-                mock_disk = MagicMock()
-                mock_disk.Model = 'Test Disk'
-                mock_disk.SerialNumber = 'TEST123456'
-                mock_disk.Status = 'OK'
-                mock_disk.Size = 1000000000000
-                mock_disk.InterfaceType = 'SATA'
-                mock_disk.MediaType = 'Fixed hard disk media'
-                
-                # Właściwe ustawienie dla dynamicznego atrybutu
-                mock_wmi_instance.Win32_DiskDrive.return_value = [mock_disk]
-                mock_wmi_module.WMI.return_value = mock_wmi_instance
-                
+            # Stwórz mock modułu WMI
+            mock_wmi_module = MagicMock()
+            mock_wmi_instance = MagicMock()
+            mock_disk = MagicMock()
+            mock_disk.Model = 'Test Disk'
+            mock_disk.SerialNumber = 'TEST123456'
+            mock_disk.Status = 'OK'
+            mock_disk.Size = 1000000000000
+            mock_disk.InterfaceType = 'SATA'
+            mock_disk.MediaType = 'Fixed hard disk media'
+            
+            # Właściwe ustawienie dla dynamicznego atrybutu
+            mock_wmi_instance.Win32_DiskDrive.return_value = [mock_disk]
+            mock_wmi_module.WMI.return_value = mock_wmi_instance
+            
+            # Mock _check_platform_and_wmi zamiast bezpośrednio wmi
+            with patch(
+                'collectors.storage_health._check_platform_and_wmi',
+                return_value=(True, mock_wmi_module)
+            ):
                 # Mock również PowerShell command
                 with patch(
                     'utils.subprocess_helper.run_powershell_hidden'
