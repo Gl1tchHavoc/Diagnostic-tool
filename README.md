@@ -1,4 +1,4 @@
-# Diagnostic Tool - MVP
+# Diagnostic Tool - MVP (IN-PROGRESS)
 
 Narzędzie diagnostyczne systemu Windows do zbierania i prezentacji danych diagnostycznych w sposób spójny, czytelny i łatwy do przetworzenia przez dalsze moduły analityczne.
 
