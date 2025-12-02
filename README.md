@@ -81,6 +81,7 @@ graph TB
 - 📐 [PlantUML Diagram](docs/MVP_PIPELINE_FLOW.puml) - Dla edycji i zaawansowanych narzędzi
 - 📖 [Architecture Documentation](docs/MVP_ARCHITECTURE.md) - Pełna dokumentacja architektury
 - 🔄 [Async & Testing](docs/ASYNC_AND_TESTING.md) - Dokumentacja asynchroniczności i testów
+- 🔍 [BSOD Collector Improvements](docs/BSOD_COLLECTOR_IMPROVEMENTS.md) - Ulepszenia BSOD collector z pełnym kontekstem sprzętowym
 
 ### 🔄 Aktualizacja Diagramu Flow
 
@@ -118,7 +119,13 @@ Zebrać i zaprezentować dane diagnostyczne Windows w sposób spójny, czytelny 
 - **Sieć**: konfiguracja adapterów, IP, status połączeń
 - **Drivers**: informacje o sterownikach, status, wersje
 - **Registry TxR**: błędy transakcji rejestru
-- **BSOD/Dumps**: analiza zrzutów pamięci
+- **BSOD/Dumps**: analiza zrzutów pamięci z rozszerzonymi funkcjami:
+  - Automatyczne wykrywanie ścieżek dumpów z rejestru Windows
+  - Obsługa pełnych dumpów (MEMORY.DMP) i minidumpów
+  - Parsowanie z WinDbg dla lepszego wykrywania driverów
+  - Korelacja WHEA errors z crashami (±10 minut)
+  - Zbieranie kontekstu sprzętowego (temperatura, SMART, RAM) w czasie crashu
+  - Rozszerzone eventy systemowe i driver logs z filtrowaniem czasowym
 - **Performance Counters**: liczniki wydajności systemu
 - **WER**: Windows Error Reporting - raporty crashy aplikacji
 - **Processes**: szczegółowe informacje o procesach

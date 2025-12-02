@@ -523,18 +523,21 @@ class DiagnosticsGUIMVP:
         try:
             # Włącz edycję przed modyfikacją
             self.raw_data_text.config(state=tk.NORMAL)
-
-            # Formatuj JSON w czytelny sposób
-            formatted_json = json.dumps(
-                data, indent=2, ensure_ascii=False, default=str)
             self.raw_data_text.delete(1.0, tk.END)
 
-            # Nagłówek z informacją o collectorze
-            header = f"=== {collector_name.upper()} DATA ===\n"
-            header += f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            header += "=" * 60 + "\n\n"
+            # Specjalne formatowanie dla BSOD collector
+            if collector_name == "bsod_dumps":
+                formatted_text = self._format_bsod_data(data)
+            else:
+                # Formatuj JSON w czytelny sposób dla innych collectorów
+                formatted_json = json.dumps(
+                    data, indent=2, ensure_ascii=False, default=str)
+                header = f"=== {collector_name.upper()} DATA ===\n"
+                header += f"Timestamp: {data.get('timestamp', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))}\n"
+                header += "=" * 60 + "\n\n"
+                formatted_text = header + formatted_json
 
-            self.raw_data_text.insert(1.0, header + formatted_json)
+            self.raw_data_text.insert(1.0, formatted_text)
 
             # Ustaw kolor tekstu dla lepszej czytelności
             self.raw_data_text.config(
@@ -549,6 +552,182 @@ class DiagnosticsGUIMVP:
             self.raw_data_text.delete(1.0, tk.END)
             self.raw_data_text.insert(
                 1.0, f"Error displaying data for {collector_name}: {e}")
+
+    def _format_bsod_data(self, data: dict) -> str:
+        """Formatuje dane BSOD w czytelny sposób z nowymi informacjami."""
+        output = []
+        output.append("=" * 80)
+        output.append("BSOD & MEMORY DUMPS ANALYSIS")
+        output.append("=" * 80)
+        output.append(f"Timestamp: {data.get('timestamp', 'N/A')}")
+        output.append("")
+
+        # Bugchecks
+        bugchecks = data.get("bugchecks", [])
+        if bugchecks:
+            output.append("🔴 BUGCHECKS (BSOD Codes)")
+            output.append("-" * 80)
+            for i, bugcheck in enumerate(bugchecks, 1):
+                output.append(f"\n[{i}] Bugcheck Event")
+                output.append(f"  Timestamp: {bugcheck.get('timestamp', 'N/A')}")
+                output.append(f"  Bugcheck Code: {bugcheck.get('bugcheck_code', 'N/A')}")
+                params = bugcheck.get('parameters', [])
+                if params:
+                    output.append(f"  Parameters: {', '.join(str(p) for p in params)}")
+                driver = bugcheck.get('faulting_driver', 'Unknown')
+                if driver and driver != "Unknown":
+                    output.append(f"  ⚠️  Faulting Driver: {driver}")
+                dump_path = bugcheck.get('minidump_path', '')
+                if dump_path:
+                    output.append(f"  Minidump: {dump_path}")
+            output.append("")
+
+        # Minidumps
+        minidumps = data.get("minidumps", [])
+        if minidumps:
+            output.append("💾 MINIDUMPS")
+            output.append("-" * 80)
+            for i, dump in enumerate(minidumps, 1):
+                output.append(f"\n[{i}] {dump.get('filename', 'Unknown')}")
+                output.append(f"  Path: {dump.get('filepath', 'N/A')}")
+                output.append(f"  Size: {dump.get('size_bytes', 0):,} bytes")
+                output.append(f"  Timestamp: {dump.get('timestamp', 'N/A')}")
+                bugcheck_code = dump.get('bugcheck_code')
+                if bugcheck_code:
+                    output.append(f"  Bugcheck Code: {bugcheck_code}")
+                # WinDbg info if available
+                if dump.get('faulting_driver'):
+                    output.append(f"  ⚠️  Faulting Driver: {dump.get('faulting_driver')}")
+            output.append("")
+
+        # WHEA Errors
+        whea_errors = data.get("whea_errors", [])
+        if whea_errors:
+            output.append("⚡ WHEA HARDWARE ERRORS")
+            output.append("-" * 80)
+            for i, whea in enumerate(whea_errors, 1):
+                output.append(f"\n[{i}] WHEA Event ID: {whea.get('event_id', 'N/A')}")
+                output.append(f"  Timestamp: {whea.get('timestamp', 'N/A')}")
+                output.append(f"  Severity: {whea.get('severity', 'Unknown')}")
+                component = whea.get('hardware_component', 'Unknown')
+                output.append(f"  Component: {component}")
+                
+                # Enhanced component details
+                component_details = whea.get('component_details')
+                if component_details:
+                    output.append("  📋 Component Details:")
+                    if component_details.get('error_source'):
+                        output.append(f"    Error Source: {component_details['error_source']}")
+                    if component_details.get('component'):
+                        output.append(f"    Component: {component_details['component']}")
+                    if component_details.get('processor_id'):
+                        output.append(f"    Processor ID: {component_details['processor_id']}")
+                    if component_details.get('memory_id'):
+                        output.append(f"    Memory ID: {component_details['memory_id']}")
+                    if component_details.get('device_id'):
+                        output.append(f"    Device ID: {component_details['device_id']}")
+                
+                # Related bugcheck/minidump
+                related_bugcheck = whea.get('related_bugcheck')
+                if related_bugcheck:
+                    output.append(f"  🔗 Related Bugcheck: {related_bugcheck.get('bugcheck_code', 'N/A')}")
+                related_minidump = whea.get('related_minidump')
+                if related_minidump:
+                    output.append(f"  🔗 Related Minidump: {related_minidump.get('filename', 'N/A')}")
+            output.append("")
+
+        # System Events & Driver Logs
+        system_events = data.get("system_events")
+        if system_events:
+            output.append("📋 SYSTEM EVENTS & DRIVER LOGS")
+            output.append("-" * 80)
+            sys_events = system_events.get("system_events", [])
+            driver_events = system_events.get("driver_events", [])
+            app_events = system_events.get("application_events", [])
+            
+            if sys_events:
+                output.append(f"\n  System Events: {len(sys_events)} events")
+                for event in sys_events[:5]:  # Show first 5
+                    event_id = event.get('Id', 'N/A')
+                    level = event.get('LevelDisplayName', 'N/A')
+                    output.append(f"    [{event_id}] {level}")
+            
+            if driver_events:
+                output.append(f"\n  Driver Events: {len(driver_events)} events")
+                for event in driver_events[:5]:  # Show first 5
+                    event_id = event.get('Id', 'N/A')
+                    output.append(f"    Event ID: {event_id}")
+            
+            if app_events:
+                output.append(f"\n  Application Errors: {len(app_events)} events")
+            output.append("")
+
+        # Hardware Context
+        hardware_context = data.get("hardware_context")
+        if hardware_context:
+            output.append("🌡️  HARDWARE CONTEXT")
+            output.append("-" * 80)
+            
+            # Temperature
+            if hardware_context.get("cpu_temp_celsius"):
+                output.append(f"  CPU Temperature: {hardware_context['cpu_temp_celsius']}°C")
+            if hardware_context.get("gpu_temp_celsius"):
+                output.append(f"  GPU Temperature: {hardware_context['gpu_temp_celsius']}°C")
+            
+            # CPU Load & RAM
+            if hardware_context.get("cpu_load_percent"):
+                output.append(f"  CPU Load: {hardware_context['cpu_load_percent']}%")
+            ram = hardware_context.get("ram")
+            if ram:
+                output.append(f"  RAM: {ram.get('used_gb', 0):.1f} GB / {ram.get('total_gb', 0):.1f} GB ({ram.get('usage_percent', 0):.1f}%)")
+            
+            # Voltage
+            if hardware_context.get("voltage_mv"):
+                output.append(f"  Voltage: {hardware_context['voltage_mv']} mV")
+            
+            # SMART Disks
+            smart_disks = hardware_context.get("smart_disks")
+            if smart_disks:
+                output.append("\n  💾 SMART DISK HEALTH:")
+                for disk in smart_disks:
+                    model = disk.get("model", "Unknown")
+                    health = disk.get("health_status", "Unknown")
+                    output.append(f"    {model}: {health}")
+                    if disk.get("predict_failure"):
+                        output.append(f"      ⚠️  PREDICTED FAILURE!")
+                    if disk.get("read_errors_total"):
+                        output.append(f"      Read Errors: {disk['read_errors_total']}")
+                    if disk.get("write_errors_total"):
+                        output.append(f"      Write Errors: {disk['write_errors_total']}")
+            output.append("")
+
+        # Recent Crashes
+        recent_crashes = data.get("recent_crashes", [])
+        if recent_crashes:
+            output.append("💥 RECENT CRASHES")
+            output.append("-" * 80)
+            for i, crash in enumerate(recent_crashes, 1):
+                output.append(f"\n[{i}] {crash.get('type', 'Unknown')}")
+                output.append(f"  Timestamp: {crash.get('timestamp', 'N/A')}")
+            output.append("")
+
+        # Summary
+        output.append("=" * 80)
+        output.append("SUMMARY")
+        output.append("=" * 80)
+        output.append(f"Total Bugchecks: {len(bugchecks)}")
+        output.append(f"Total Minidumps: {len(minidumps)}")
+        output.append(f"Total WHEA Errors: {len(whea_errors)}")
+        if system_events:
+            total_events = (
+                len(system_events.get("system_events", [])) +
+                len(system_events.get("driver_events", [])) +
+                len(system_events.get("application_events", []))
+            )
+            output.append(f"Total System Events: {total_events}")
+        output.append("")
+
+        return "\n".join(output)
 
     def run_single_collector(self, collector_name: str):
         """Uruchamia pojedynczy collector."""

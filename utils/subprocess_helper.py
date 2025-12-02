@@ -93,12 +93,14 @@ def run_powershell_safe(cmd_list, startupinfo=None, timeout=30):
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
             )
         except subprocess.TimeoutExpired:
+            cmd_str = " ".join(cmd_list) if isinstance(cmd_list, list) else str(cmd_list)
             logger.warning(
-                f"[SUBPROCESS] PowerShell command timeout after {timeout}s")
+                f"[SUBPROCESS] PowerShell command timeout after {timeout}s: {cmd_str[:200]}")
             raise RuntimeError(f"PowerShell command timeout after {timeout}s")
         except subprocess.CalledProcessError as e:
+            cmd_str = " ".join(cmd_list) if isinstance(cmd_list, list) else str(cmd_list)
             logger.warning(
-                f"[SUBPROCESS] PowerShell command failed with code {e.returncode}")
+                f"[SUBPROCESS] PowerShell command failed with code {e.returncode}: {cmd_str[:200]}")
             raise RuntimeError(f"PowerShell command failed: {e}")
         except OSError as e:
             # Błąd 0x800401f0 i podobne błędy COM/Windows API

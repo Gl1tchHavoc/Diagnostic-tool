@@ -80,7 +80,15 @@ User → GUI MVP → Collector Master → Collectors (parallel) → Collector Ma
 - `storage_health` - Dyski, partycje, wolne miejsce, SMART
 - `drivers` - Informacje o sterownikach
 - `registry_txr` - Błędy transakcji rejestru
-- `bsod_dumps` - Analiza zrzutów pamięci
+- `bsod_dumps` - Analiza zrzutów pamięci z rozszerzonymi funkcjami:
+  - Automatyczne wykrywanie ścieżek dumpów z rejestru Windows (`DumpFile`, `MinidumpDir`)
+  - Obsługa pełnych dumpów (MEMORY.DMP) i minidumpów
+  - Parsowanie z WinDbg dla lepszego wykrywania driverów (fallback)
+  - Korelacja WHEA errors z crashami (±10 minut, z kierunkiem korelacji)
+  - Zbieranie kontekstu sprzętowego (temperatura CPU/GPU, SMART, RAM usage) w czasie crashu
+  - Rozszerzone eventy systemowe i driver logs z filtrowaniem czasowym (±10 minut)
+  - Lepsze logowanie błędów PowerShell z identyfikacją komend
+  - Zwiększone timeouty dla długotrwałych operacji (60s dla eventów systemowych)
 - `whea_analyzer` - Błędy sprzętowe WHEA
 - `performance_counters` - Liczniki wydajności
 - `wer` - Windows Error Reporting

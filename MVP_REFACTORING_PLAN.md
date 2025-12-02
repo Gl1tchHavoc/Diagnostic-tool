@@ -99,9 +99,19 @@ Zebrać i zaprezentować dane diagnostyczne Windows w sposób spójny, czytelny 
 5. ✅ Dodać wyświetlanie danych pojedynczych collectorów
 6. ✅ Dodać cache danych collectorów
 
-### ⏳ Faza 4: Uproszczenie CLI (W TRAKCIE)
-1. ⏳ Zrefaktoryzować `main.py` aby wyświetlał status collectorów
-2. ⏳ Dodać czytelny format tabeli dla outputu
+### ✅ Faza 4: Uproszczenie CLI (ZAKOŃCZONA)
+1. ✅ Zrefaktoryzować `main.py` aby wyświetlał status collectorów
+2. ✅ Dodać czytelny format tabeli dla outputu
+
+### ✅ Faza 6: Ulepszenia BSOD Collector (ZAKOŃCZONA)
+1. ✅ Automatyczne wykrywanie ścieżek dumpów z rejestru Windows
+2. ✅ Obsługa pełnych dumpów (MEMORY.DMP) i minidumpów
+3. ✅ Parsowanie z WinDbg dla lepszego wykrywania driverów (fallback)
+4. ✅ Rozszerzona korelacja WHEA errors z crashami (±10 minut)
+5. ✅ Zbieranie kontekstu sprzętowego (temperatura, SMART, RAM) w czasie crashu
+6. ✅ Rozszerzone eventy systemowe i driver logs z filtrowaniem czasowym
+7. ✅ Lepsze logowanie błędów PowerShell z identyfikacją komend
+8. ✅ Zwiększone timeouty dla długotrwałych operacji (60s dla eventów)
 
 ### ✅ Faza 5: Dokumentacja (ZAKOŃCZONA)
 1. ✅ Zaktualizować README.md
